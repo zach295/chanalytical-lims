@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="theme-color" content="#003A5C"/>
+  <title>Chanalytical — My Dashboard</title>
+  <style>
+    :root{--navy:#003A5C;--teal:#00869B;--tl:#e6f4f6;--water:#C8E8F0;--white:#fff;--off:#F5F9FA;--slate:#4A6572;--text:#1a2a32;--border:#CBD8DE;--ok:#1A7A4A;--ok-l:#e8f5ee;--warn:#E67E22;--warn-l:#FFF3E0;--err:#C0392B;--err-l:#fdf0ee;--fd:Georgia,serif;--fb:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--r:10px;--sh:0 2px 12px rgba(0,58,92,.10);}
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:var(--fb);background:var(--off);color:var(--text);min-height:100vh;}
+    header{background:var(--navy);color:var(--white);padding:16px 20px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2);}
+    .hi{max-width:620px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .lname{font-family:var(--fd);font-size:17px;color:var(--white);}
+    .lsub{font-size:11px;color:var(--water);letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+    .hbtns{display:flex;gap:7px;flex-wrap:wrap;}
+    .hbtn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:var(--white);padding:6px 13px;border-radius:20px;font-size:12px;cursor:pointer;font-family:var(--fb);transition:background .15s;}
+    .hbtn:hover{background:rgba(255,255,255,.2);}
+    main{max-width:620px;margin:0 auto;padding:22px 16px 80px;}
+    .view{display:none;} .view.active{display:block;}
+    .welcome{background:linear-gradient(135deg,var(--teal) 0%,var(--navy) 100%);border-radius:var(--r);padding:20px;margin-bottom:20px;color:var(--white);}
+    .wg{font-size:12px;opacity:.8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;}
+    .wn{font-family:var(--fd);font-size:20px;}
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;}
+    .sc{background:var(--white);border-radius:var(--r);padding:16px;box-shadow:var(--sh);border:1px solid var(--border);text-align:center;}
+    .sv{font-size:28px;font-weight:700;color:var(--navy);}
+    .sl{font-size:11px;color:var(--slate);margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;}
+    .btn-new{width:100%;padding:18px;background:var(--teal);color:var(--white);border:none;border-radius:var(--r);font-size:18px;font-weight:700;cursor:pointer;font-family:var(--fd);margin-bottom:20px;box-shadow:0 4px 16px rgba(0,134,155,.3);transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px;}
+    .btn-new:hover{background:#007a8e;transform:translateY(-1px);}
+    .acc-hdr{background:var(--white);border-radius:var(--r);padding:14px 16px;border:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700;color:var(--navy);box-shadow:var(--sh);}
+    .acc-hdr .arr{transition:transform .2s;font-size:12px;}
+    .acc-hdr.open .arr{transform:rotate(180deg);}
+    .acc-body{display:none;} .acc-body.open{display:block;}
+    .sc-card{background:var(--white);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;box-shadow:var(--sh);border:1px solid var(--border);}
+    .sc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
+    .sc-id{font-size:11px;font-family:monospace;color:var(--teal);font-weight:700;}
+    .sc-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;text-transform:uppercase;}
+    .pending-badge{background:var(--warn-l);color:var(--warn);}
+    .recv-badge{background:var(--tl);color:var(--teal);}
+    .sc-loc{font-size:14px;font-weight:600;color:var(--navy);margin-bottom:4px;}
+    .sc-det{font-size:12px;color:var(--slate);}
+    .sc-tests{font-size:12px;color:var(--text);margin-top:4px;font-style:italic;}
+    .empty{text-align:center;padding:32px 20px;color:var(--slate);}
+    .empty-icon{font-size:36px;margin-bottom:10px;}
+    /* account */
+    .card{background:var(--white);border-radius:var(--r);padding:20px;box-shadow:var(--sh);border:1px solid var(--border);margin-bottom:16px;}
+    .ct{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+    .field{margin-bottom:14px;}
+    .field label{display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;}
+    .field input{width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;font-family:var(--fb);color:var(--text);-webkit-appearance:none;}
+    .field input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,134,155,.12);}
+    .field input:read-only{background:var(--off);color:var(--slate);}
+    .btn-save{width:100%;padding:13px;background:var(--teal);color:var(--white);border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--fb);}
+    .btn-danger{width:100%;padding:12px;background:transparent;color:var(--err);border:1.5px solid var(--err);border-radius:8px;font-size:14px;cursor:pointer;font-family:var(--fb);margin-top:8px;}
+    .msg{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;display:none;}
+    .msg.ok{background:var(--ok-l);color:var(--ok);display:block;}
+    .msg.er{background:var(--err-l);color:var(--err);display:block;}
+    .ir{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;}
+    .ir:last-child{border-bottom:none;}
+    .ik{color:var(--slate);}
+    .iv{color:var(--navy);font-weight:600;}
+    .toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:var(--navy);color:white;padding:10px 20px;border-radius:30px;font-size:13px;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
+    .toast.show{opacity:1;}
+    /* feedback modal */
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,58,92,.6);z-index:200;align-items:center;justify-content:center;padding:20px;}
+    .overlay.open{display:flex;}
+    .modal{background:var(--white);border-radius:var(--r);padding:28px;width:100%;max-width:420px;}
+    .modal-title{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:12px;font-family:var(--fd);}
+    textarea{width:100%;min-height:120px;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:var(--fb);resize:vertical;}
+    .modal-actions{display:flex;gap:10px;margin-top:16px;}
+    .btn-cancel{flex:1;padding:12px;background:var(--off);color:var(--slate);border:1.5px solid var(--border);border-radius:8px;font-size:15px;cursor:pointer;font-family:var(--fb);}
+    .btn-ok{flex:1;padding:12px;background:var(--teal);color:var(--white);border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--fb);}
+  </style>
+</head>
+<body>
+<header>
+  <div class="hi">
+    <div>
+      <div class="lname">Chanalytical Laboratories</div>
+      <div class="lsub" id="hdr-sub">Client Portal</div>
+    </div>
+    <div class="hbtns">
+      <button class="hbtn" onclick="showView('dashboard')">🏠 Home</button>
+      <button class="hbtn" onclick="openFeedback()">💬 Feedback</button>
+      <button class="hbtn" onclick="showView('account')">👤 Account</button>
+      <button class="hbtn" id="dash-install-btn" onclick="doInstall()" style="display:none;">⬇ Install App</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- DASHBOARD -->
+  <div class="view active" id="view-dashboard">
+    <div class="welcome">
+      <div class="wg">Welcome back</div>
+      <div class="wn" id="welcome-name">Loading…</div>
+    </div>
+    <div class="stats">
+      <div class="sc"><div class="sv" id="stat-total">0</div><div class="sl">Total Samples</div></div>
+      <div class="sc"><div class="sv" id="stat-pending" style="color:var(--warn)">0</div><div class="sl">Pending Receipt</div></div>
+    </div>
+    <button class="btn-new" onclick="window.location.href='/index.html'">🧪 Submit New Sample</button>
+    <button id="dash-main-install-btn" onclick="doInstall()" style="display:none;width:100%;padding:14px;background:var(--navy);color:white;border:none;border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;font-family:var(--fb);margin-bottom:16px;">⬇ Install App on This Device</button>
+
+    <div class="acc-hdr" onclick="toggleAcc('pending')" id="pending-header">
+      <span>⏳ Pending Samples <span id="pending-count" style="color:var(--warn);margin-left:4px;"></span></span>
+      <span class="arr">▼</span>
+    </div>
+    <div class="acc-body" id="pending-body"><div id="pending-list"></div></div>
+
+    <div class="acc-hdr" onclick="toggleAcc('recent')" id="recent-header" style="margin-top:8px;">
+      <span>📋 Recent Submissions <span id="recent-count" style="color:var(--slate);font-weight:400;font-size:13px;margin-left:4px;"></span></span>
+      <span class="arr">▼</span>
+    </div>
+    <div class="acc-body" id="recent-body"><div id="recent-list"></div></div>
+  </div>
+
+  <!-- ACCOUNT -->
+  <div class="view" id="view-account">
+    <div class="card">
+      <div class="ct">👤 My Profile</div>
+      <div class="msg" id="profile-msg"></div>
+      <div class="field"><label>Display Name</label><input type="text" id="prof-name"/></div>
+      <div class="field"><label>Email</label><input type="email" id="prof-email" readonly/></div>
+      <div class="field"><label>Phone</label><input type="tel" id="prof-phone" placeholder="Your phone number"/></div>
+      <button class="btn-save" onclick="saveProfile()">Save Profile</button>
+    </div>
+    <div class="card">
+      <div class="ct">🏢 Account Details</div>
+      <div class="ir"><span class="ik">Account Type</span><span class="iv" id="acc-role">—</span></div>
+      <div class="ir" id="acc-company-row"><span class="ik">Company</span><span class="iv" id="acc-company">—</span></div>
+      <div class="ir"><span class="ik">Member Since</span><span class="iv" id="acc-since">—</span></div>
+      <div class="ir"><span class="ik">Total Submissions</span><span class="iv" id="acc-total">—</span></div>
+    </div>
+    <div class="card">
+      <div class="ct">🔒 Change Password</div>
+      <div class="msg" id="pw-msg"></div>
+      <div class="field"><label>Current Password</label><input type="password" id="pw-cur" autocomplete="current-password"/></div>
+      <div class="field"><label>New Password</label><input type="password" id="pw-new" autocomplete="new-password"/></div>
+      <div class="field"><label>Confirm New Password</label><input type="password" id="pw-conf" autocomplete="new-password"/></div>
+      <button class="btn-save" onclick="changePw()">Update Password</button>
+    </div>
+    <div class="card">
+      <div class="ct">📱 App</div>
+      <button class="btn-save" id="acc-install-btn" onclick="doInstall()" style="display:none;margin-bottom:10px;background:var(--teal);">⬇ Install App on This Device</button>
+      <button class="btn-danger" onclick="Auth.logout()">Sign Out</button>
+    </div>
+  </div>
+</main>
+
+<!-- FEEDBACK MODAL -->
+<div class="overlay" id="feedback-overlay">
+  <div class="modal">
+    <div class="modal-title">💬 Send Feedback</div>
+    <div style="font-size:13px;color:var(--slate);margin-bottom:14px;">Questions, issues, or suggestions — we read every message.</div>
+    <div class="msg" id="fb-msg"></div>
+    <textarea id="fb-text" placeholder="What's on your mind?"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeFeedback()">Cancel</button>
+      <button class="btn-ok" onclick="sendFeedback()">Send</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="auth.js"></script>
+<script>
+const session = Auth.requireAuth(['wq','client','public','admin','lab']);
+if (!session) throw new Error('Not authenticated');
+if (session.role === 'admin' || session.role === 'lab') location.href='/admin-dashboard.html';
+
+const CLIENT_NAMES = {
+  'ward-water':'Critical Plumbing Inc. a/k/a Ward Water','maine-radon':'Maine Radon & Environmental, LLC',
+  'downeast':'Downeast Home Inspections, LLC','madden':'Madden Home Inspections','yankee':'Yankee Home Inspections',
+  'az-water':'A-Z Water Systems','fontus':'Fontus Water','main-choice':'Main Choice Inspections, Inc.',
+  'defender':'Defender Home Inspections, Inc.','elliotts':"Elliott's Information Service LLC",
+  'campbell':'Campbell Property Inspections','onpoint':'OnPoint Home Inspections Service',
+  'peter-mason':'Peter Mason / Friend Real Estate Inc.','advanced':'Advanced Inspections, Inc',
+  'nova-enviro':'Nova Analytic Labs (Nova EnviroLabs)','evergreen':'Evergreen Inspections',
+  'fpi-chancorp':'FPI / ChanCorp, Inc.','super-inspector':'Super Inspector','all-in-one':'All in One Home Inspections, LLC',
+};
+
+const companyName = session.clientKey ? (CLIENT_NAMES[session.clientKey]||'') : '';
+const userName = session.name || session.email.split('@')[0];
+document.getElementById('welcome-name').textContent = companyName ? `${userName} — ${companyName}` : userName;
+
+// Submissions
+let mySubmissions = [];
+
+async function loadMySubmissions() {
+  try {
+    const res = await fetch(`/.netlify/functions/client-submissions?email=${encodeURIComponent(session.email)}`);
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    mySubmissions = d.submissions || [];
+  } catch { mySubmissions = []; }
+}
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y,m,day] = d.split('-');
+  return `${m}-${day}-${y.slice(-2)}`;
+}
+
+function sampleCard(s) {
+  const recv = s.received;
+  return `<div class="sc-card">
+    <div class="sc-top">
+      <div class="sc-id">${s.id}</div>
+      <div class="sc-badge ${recv?'recv-badge':'pending-badge'}">${recv?'Received at Lab':'Pending Receipt'}</div>
+    </div>
+    <div class="sc-loc">${s.location||'—'}${s.city?', '+s.city:''}</div>
+    <div class="sc-det">📅 ${fmtDate(s.dateDrawn)}${s.timeDrawn?' at '+s.timeDrawn:''}</div>
+    <div class="sc-tests">🧪 ${s.services||'—'}</div>
+    ${s.notes?`<div class="sc-det" style="margin-top:4px">📝 ${s.notes}</div>`:''}
+  </div>`;
+}
+
+async function render() {
+  showLoading(true);
+  await loadMySubmissions();
+  showLoading(false);
+  const all = [...mySubmissions].reverse();
+  const pending = all.filter(s=>!s.received);
+  const recent = all.filter(s=>s.received).slice(0,20);
+  document.getElementById('stat-total').textContent = all.length;
+  document.getElementById('stat-pending').textContent = pending.length;
+  document.getElementById('pending-count').textContent = pending.length ? `(${pending.length})` : '';
+  document.getElementById('recent-count').textContent = recent.length ? `(${recent.length})` : '';
+  document.getElementById('pending-list').innerHTML = pending.length ? pending.map(sampleCard).join('') : '<div class="empty"><div class="empty-icon">✅</div>No pending samples.</div>';
+  document.getElementById('recent-list').innerHTML = recent.length ? recent.map(sampleCard).join('') : '<div class="empty"><div class="empty-icon">📋</div>No submitted samples yet.</div>';
+}
+
+function showLoading(show) {
+  let el = document.getElementById('loading-pill');
+  if (!el) { el=document.createElement('div'); el.id='loading-pill'; el.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);background:var(--navy);color:white;padding:6px 16px;border-radius:20px;font-size:12px;z-index:150;'; el.textContent='Loading…'; document.body.appendChild(el); }
+  el.style.display = show ? 'block' : 'none';
+}
+
+function toggleAcc(id) {
+  document.getElementById(`${id}-header`).classList.toggle('open');
+  document.getElementById(`${id}-body`).classList.toggle('open');
+}
+
+render();
+document.getElementById('pending-header').classList.add('open');
+document.getElementById('pending-body').classList.add('open');
+setInterval(render, 30000);
+
+// Views
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(`view-${name}`).classList.add('active');
+  document.getElementById('hdr-sub').textContent = name==='account' ? 'My Account' : 'Client Portal';
+  if (name==='account') loadAccountView();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function loadAccountView() {
+  const users = Auth.getUsers();
+  const user = users[session.email] || {};
+  document.getElementById('prof-name').value = user.name||'';
+  document.getElementById('prof-email').value = session.email;
+  document.getElementById('prof-phone').value = user.profilePhone||'';
+  const roleLabels = {admin:'Administrator',lab:'Lab Staff',client:'Business Client',public:'Public'};
+  document.getElementById('acc-role').textContent = roleLabels[session.role]||session.role;
+  document.getElementById('acc-company').textContent = companyName||'—';
+  document.getElementById('acc-company-row').style.display = companyName ? 'flex' : 'none';
+  document.getElementById('acc-since').textContent = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+  document.getElementById('acc-total').textContent = mySubmissions.length;
+}
+
+function saveProfile() {
+  const name = document.getElementById('prof-name').value.trim();
+  const phone = document.getElementById('prof-phone').value.trim();
+  const msgEl = document.getElementById('profile-msg');
+  if (!name) { showMsg(msgEl,'er','Name cannot be blank.'); return; }
+  const users = Auth.getUsers();
+  users[session.email].name = name;
+  users[session.email].profilePhone = phone;
+  Auth.saveUsers(users);
+  const s = Auth.getSession(); s.name=name; localStorage.setItem('cha_session',JSON.stringify(s));
+  document.getElementById('welcome-name').textContent = companyName ? `${name} — ${companyName}` : name;
+  showMsg(msgEl,'ok','✅ Profile saved.');
+  toast('Profile updated!');
+}
+
+function changePw() {
+  const cur = document.getElementById('pw-cur').value;
+  const nw = document.getElementById('pw-new').value;
+  const conf = document.getElementById('pw-conf').value;
+  const msgEl = document.getElementById('pw-msg');
+  if (!cur||!nw||!conf) { showMsg(msgEl,'er','Fill in all fields.'); return; }
+  if (nw.length<6) { showMsg(msgEl,'er','Password must be 6+ characters.'); return; }
+  if (nw!==conf) { showMsg(msgEl,'er','Passwords do not match.'); return; }
+  const users = Auth.getUsers();
+  if (users[session.email].password !== Auth.hashPassword(cur)) { showMsg(msgEl,'er','Current password is incorrect.'); return; }
+  users[session.email].password = Auth.hashPassword(nw);
+  Auth.saveUsers(users);
+  ['pw-cur','pw-new','pw-conf'].forEach(id=>document.getElementById(id).value='');
+  showMsg(msgEl,'ok','✅ Password updated.');
+}
+
+function showMsg(el,type,msg) { el.className=`msg ${type}`; el.textContent=msg; setTimeout(()=>el.className='msg',4000); }
+
+// Feedback
+function openFeedback() { document.getElementById('fb-text').value=''; document.getElementById('fb-msg').className='msg'; document.getElementById('feedback-overlay').classList.add('open'); }
+function closeFeedback() { document.getElementById('feedback-overlay').classList.remove('open'); }
+
+async function sendFeedback() {
+  const text = document.getElementById('fb-text').value.trim();
+  const msgEl = document.getElementById('fb-msg');
+  if (!text) { showMsg(msgEl,'er','Please enter a message.'); return; }
+  try {
+    const res = await fetch('/.netlify/functions/submit-feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:session.email,name:session.name||session.email,company:companyName||'Public',message:text})});
+    if (!res.ok) throw new Error();
+    closeFeedback(); toast('✅ Feedback sent — thank you!');
+  } catch { showMsg(msgEl,'er','Failed to send. Please try again.'); }
+}
+
+function toast(msg,dur=3000) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),dur); }
+
+// ── INSTALL PROMPT ──────────────────────────────────────────────────────────
+let _installPrompt = null;
+
+function isInstalledPWA() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function showInstallButtons() {
+  if (isInstalledPWA()) return; // already installed — hide everything
+  ['dash-install-btn', 'dash-main-install-btn', 'acc-install-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === 'acc-install-btn' ? 'block' : id === 'dash-install-btn' ? 'flex' : 'block';
+  });
+}
+
+function hideInstallButtons() {
+  ['dash-install-btn', 'dash-main-install-btn', 'acc-install-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// Android Chrome fires this — lets us trigger the native prompt
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _installPrompt = e;
+  showInstallButtons();
+});
+
+window.addEventListener('appinstalled', () => {
+  _installPrompt = null;
+  hideInstallButtons();
+  toast('✅ App installed!');
+});
+
+// Show immediately for iOS (no beforeinstallprompt on Safari)
+if (!isInstalledPWA()) showInstallButtons();
+
+function doInstall() {
+  if (_installPrompt) {
+    // Android Chrome — native prompt
+    _installPrompt.prompt();
+    _installPrompt.userChoice.then(r => {
+      if (r.outcome === 'accepted') hideInstallButtons();
+      _installPrompt = null;
+    });
+  } else {
+    // iOS Safari — show manual instructions
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    alert(isIOS
+      ? 'To install on iPhone:\n1. Tap the Share button ↑ at the bottom of Safari\n2. Scroll down and tap "Add to Home Screen"\n3. Tap Add'
+      : 'To install:\n1. Tap the three dots ⋮ in your browser menu\n2. Tap "Add to Home Screen" or "Install App"\n3. Tap Add');
+  }
+}
+</script>
+</body>
+</html>
