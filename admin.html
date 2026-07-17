@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chanalytical — Admin Dashboard</title>
+  <style>
+    :root {
+      --navy: #003A5C;
+      --navy-light: #004f7c;
+      --teal: #00869B;
+      --teal-light: #e6f4f6;
+      --water: #C8E8F0;
+      --white: #ffffff;
+      --off-white: #F5F9FA;
+      --slate: #4A6572;
+      --text: #1a2a32;
+      --border: #CBD8DE;
+      --success: #1A7A4A;
+      --success-light: #e8f5ee;
+      --warning: #E67E22;
+      --warning-light: #FFF3E0;
+      --error: #C0392B;
+      --error-light: #fdf0ee;
+      --font-display: 'Georgia', 'Times New Roman', serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --radius: 10px;
+      --shadow: 0 2px 12px rgba(0,58,92,0.10);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--off-white);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    header {
+      background: var(--navy);
+      color: var(--white);
+      padding: 16px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .header-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-block { display: flex; flex-direction: column; }
+    .lab-name { font-family: var(--font-display); font-size: 18px; color: var(--white); }
+    .lab-sub { font-size: 11px; color: var(--water); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+
+    .btn-header {
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      transition: all 0.15s;
+    }
+
+    .btn-primary { background: var(--teal); color: white; }
+    .btn-primary:hover { background: #007a8e; }
+    .btn-outline { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); }
+    .btn-outline:hover { background: rgba(255,255,255,0.2); }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+    }
+
+    /* SUMMARY CARDS */
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    @media (max-width: 900px) { .summary-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .summary-row { grid-template-columns: 1fr; } }
+
+    .summary-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .summary-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--slate);
+      margin-bottom: 8px;
+    }
+
+    .summary-value {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--navy);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .summary-sub { font-size: 12px; color: var(--slate); }
+
+    .summary-card.teal { border-top: 3px solid var(--teal); }
+    .summary-card.green { border-top: 3px solid var(--success); }
+    .summary-card.orange { border-top: 3px solid var(--warning); }
+    .summary-card.navy { border-top: 3px solid var(--navy); }
+
+    /* SECTION HEADER */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    /* CLIENT INVENTORY TABLE */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    th.right, td.right { text-align: right; }
+    th.center, td.center { text-align: center; }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--off-white); }
+
+    td {
+      padding: 12px 16px;
+      vertical-align: middle;
+    }
+
+    .client-name { font-weight: 600; color: var(--navy); }
+    .tier-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .tier-wq { background: #E3F2FD; color: #1565C0; }
+    .tier-inspector { background: var(--teal-light); color: var(--teal); }
+    .tier-public { background: #F3E5F5; color: #6A1B9A; }
+
+    .stock-value {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .stock-high { color: var(--success); }
+    .stock-medium { color: var(--warning); }
+    .stock-low { color: var(--error); }
+
+    .action-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--white);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-weight: 600;
+      transition: all 0.15s;
+      color: var(--text);
+    }
+
+    .action-btn:hover { border-color: var(--teal); color: var(--teal); background: var(--teal-light); }
+    .action-btn.danger:hover { border-color: var(--error); color: var(--error); background: var(--error-light); }
+
+    .btn-group { display: flex; gap: 6px; }
+
+    /* ACTIVITY LOG */
+    .log-table td { font-size: 12px; }
+    .log-type {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .log-sent { background: #E3F2FD; color: #1565C0; }
+    .log-sampled { background: var(--warning-light); color: var(--warning); }
+    .log-received { background: var(--success-light); color: var(--success); }
+    .log-initial { background: #F3E5F5; color: #6A1B9A; }
+
+    /* MODAL */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,58,92,0.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 28px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 20px;
+      font-family: var(--font-display);
+    }
+
+    .form-field { margin-bottom: 16px; }
+
+    .form-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 6px;
+      letter-spacing: .03em;
+    }
+
+    .form-field input,
+    .form-field select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: var(--font-body);
+      color: var(--text);
+      background: var(--white);
+      -webkit-appearance: none;
+    }
+
+    .form-field input:focus,
+    .form-field select:focus {
+      outline: none;
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(0,134,155,0.12);
+    }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+
+    .btn-modal-primary {
+      flex: 1;
+      padding: 12px;
+      background: var(--teal);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+    }
+
+    .btn-modal-cancel {
+      flex: 1;
+      padding: 12px;
+      background: var(--off-white);
+      color: var(--slate);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      cursor: pointer;
+      font-family: var(--font-body);
+    }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--navy);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .toast.show { opacity: 1; }
+
+    /* EMPTY STATE */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--slate);
+      font-size: 14px;
+    }
+
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+
+    /* PASSWORD SCREEN */
+    #auth-screen {
+      position: fixed;
+      inset: 0;
+      background: var(--navy);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    #auth-screen .auth-box {
+      background: white;
+      border-radius: var(--radius);
+      padding: 36px;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+    }
+
+    #auth-screen .auth-title {
+      font-family: var(--font-display);
+      font-size: 22px;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+
+    #auth-screen .auth-sub {
+      font-size: 13px;
+      color: var(--slate);
+      margin-bottom: 24px;
+    }
+
+    #auth-screen input {
+      width: 100%;
+      padding: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 16px;
+      margin-bottom: 12px;
+      text-align: center;
+      letter-spacing: .1em;
+    }
+
+    #auth-screen button {
+      width: 100%;
+      padding: 12px;
+      background: var(--teal);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #auth-screen .auth-error {
+      color: var(--error);
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- PASSWORD GATE -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-title">Chanalytical Admin</div>
+    <div class="auth-sub">Enter your admin password to continue</div>
+    <input type="password" id="auth-input" placeholder="Password" onkeydown="if(event.key==='Enter') checkAuth()" />
+    <button onclick="checkAuth()">Sign In →</button>
+    <div class="auth-error" id="auth-error">Incorrect password. Try again.</div>
+  </div>
+</div>
+
+<header>
+  <div class="header-inner">
+    <div class="logo-block">
+      <span class="lab-name">Chanalytical Laboratories</span>
+      <span class="lab-sub">Kit Inventory Dashboard</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn-header btn-outline" onclick="window.open('/', '_blank')">← Field App</button>
+      <button class="btn-header btn-primary" onclick="openModal('send')">📦 Send Kits</button>
+      <button class="btn-header btn-primary" onclick="openModal('receive')">✅ Receive Kits</button>
+      <button class="btn-header btn-primary" onclick="openModal('initial')">➕ Set Initial Stock</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- SUMMARY CARDS -->
+  <div class="summary-row">
+    <div class="summary-card teal">
+      <div class="summary-label">Total Kits in Field</div>
+      <div class="summary-value" id="total-in-field">0</div>
+      <div class="summary-sub">Across all clients</div>
+    </div>
+    <div class="summary-card orange">
+      <div class="summary-label">Sampled — Pending Receipt</div>
+      <div class="summary-value" id="total-sampled">0</div>
+      <div class="summary-sub">Submitted, not yet received</div>
+    </div>
+    <div class="summary-card green">
+      <div class="summary-label">Received This Month</div>
+      <div class="summary-value" id="total-received">0</div>
+      <div class="summary-sub" id="received-month">—</div>
+    </div>
+    <div class="summary-card navy">
+      <div class="summary-label">Active Clients</div>
+      <div class="summary-value" id="total-clients">0</div>
+      <div class="summary-sub">Tracked in system</div>
+    </div>
+  </div>
+
+  <!-- CLIENT INVENTORY -->
+  <div class="section-header">
+    <div class="section-title">Kit Inventory by Client</div>
+    <div style="font-size:12px;color:var(--slate);">Last updated: <span id="last-updated">—</span></div>
+  </div>
+
+  <div class="card">
+    <table id="inventory-table">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th>Tier</th>
+          <th class="center">Kits in Stock</th>
+          <th class="center">Sampled (Pending)</th>
+          <th class="center">Total Sent</th>
+          <th class="center">Total Received</th>
+          <th>Last Activity</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-body">
+        <tr><td colspan="8"><div class="empty-state"><div class="icon">📦</div>No clients set up yet. Use "Set Initial Stock" to add a client.</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ACTIVITY LOG -->
+  <div class="section-header">
+    <div class="section-title">Activity Log</div>
+    <button class="action-btn danger" onclick="clearLog()">Clear Log</button>
+  </div>
+
+  <div class="card">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Client</th>
+          <th>Type</th>
+          <th class="right">Qty</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="log-body">
+        <tr><td colspan="5"><div class="empty-state"><div class="icon">📋</div>No activity yet.</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- SEND KITS MODAL -->
+<div class="modal-overlay" id="modal-send">
+  <div class="modal">
+    <div class="modal-title">📦 Send Kits to Client</div>
+    <div class="form-field">
+      <label>Client</label>
+      <select id="send-client"></select>
+    </div>
+    <div class="form-field">
+      <label>Number of Kits Sent</label>
+      <input type="number" id="send-qty" min="1" placeholder="e.g. 25" />
+    </div>
+    <div class="form-field">
+      <label>Date Sent</label>
+      <input type="date" id="send-date" />
+    </div>
+    <div class="form-field">
+      <label>Notes (optional)</label>
+      <input type="text" id="send-notes" placeholder="e.g. Second batch of the month" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('send')">Cancel</button>
+      <button class="btn-modal-primary" onclick="submitSend()">Send Kits</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECEIVE KITS MODAL -->
+<div class="modal-overlay" id="modal-receive">
+  <div class="modal">
+    <div class="modal-title">✅ Receive Kits from Client</div>
+    <div class="form-field">
+      <label>Client</label>
+      <select id="receive-client"></select>
+    </div>
+    <div class="form-field">
+      <label>Number of Kits Received</label>
+      <input type="number" id="receive-qty" min="1" placeholder="e.g. 7" />
+    </div>
+    <div class="form-field">
+      <label>Date Received</label>
+      <input type="date" id="receive-date" />
+    </div>
+    <div class="form-field">
+      <label>Notes (optional)</label>
+      <input type="text" id="receive-notes" placeholder="e.g. All samples intact" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('receive')">Cancel</button>
+      <button class="btn-modal-primary" onclick="submitReceive()">Receive Kits</button>
+    </div>
+  </div>
+</div>
+
+<!-- INITIAL STOCK MODAL -->
+<div class="modal-overlay" id="modal-initial">
+  <div class="modal">
+    <div class="modal-title">➕ Set Initial Stock</div>
+    <div class="form-field">
+      <label>Client</label>
+      <select id="initial-client"></select>
+    </div>
+    <div class="form-field">
+      <label>Starting Kit Count</label>
+      <input type="number" id="initial-qty" min="0" placeholder="e.g. 15" />
+    </div>
+    <div class="form-field">
+      <label>As of Date</label>
+      <input type="date" id="initial-date" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('initial')">Cancel</button>
+      <button class="btn-modal-primary" onclick="submitInitial()">Set Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADJUST MODAL -->
+<div class="modal-overlay" id="modal-adjust">
+  <div class="modal">
+    <div class="modal-title">✏️ Adjust Kit Count</div>
+    <input type="hidden" id="adjust-client-key" />
+    <div class="form-field">
+      <label>Client</label>
+      <div id="adjust-client-name" style="font-weight:600;color:var(--navy);padding:10px 0;font-size:15px;"></div>
+    </div>
+    <div class="form-field">
+      <label>Adjustment Type</label>
+      <select id="adjust-type">
+        <option value="add">Add kits (correction / recount)</option>
+        <option value="remove">Remove kits (lost / damaged)</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label>Quantity</label>
+      <input type="number" id="adjust-qty" min="1" placeholder="Number of kits" />
+    </div>
+    <div class="form-field">
+      <label>Reason</label>
+      <input type="text" id="adjust-notes" placeholder="e.g. Recount correction" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal('adjust')">Cancel</button>
+      <button class="btn-modal-primary" onclick="submitAdjust()">Apply Adjustment</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = 'chal2024'; // Change this to your preferred password
+
+function checkAuth() {
+  const input = document.getElementById('auth-input').value;
+  if (input === ADMIN_PASSWORD) {
+    document.getElementById('auth-screen').style.display = 'none';
+    initDashboard();
+  } else {
+    document.getElementById('auth-error').style.display = 'block';
+    document.getElementById('auth-input').value = '';
+  }
+}
+
+// ─── CLIENT LIST (matches field app) ────────────────────────────────────────
+const CLIENTS = [
+  { key: 'ward-water',      name: 'Critical Plumbing Inc. a/k/a Ward Water', tier: 'wq' },
+  { key: 'maine-radon',     name: 'Maine Radon & Environmental, LLC', tier: 'inspector' },
+  { key: 'downeast',        name: 'Downeast Home Inspections, LLC', tier: 'inspector' },
+  { key: 'madden',          name: 'Madden Home Inspections', tier: 'inspector' },
+  { key: 'yankee',          name: 'Yankee Home Inspections', tier: 'inspector' },
+  { key: 'az-water',        name: 'A-Z Water Systems', tier: 'wq' },
+  { key: 'fontus',          name: 'Fontus Water', tier: 'wq' },
+  { key: 'main-choice',     name: 'Main Choice Inspections, Inc.', tier: 'inspector' },
+  { key: 'defender',        name: 'Defender Home Inspections, Inc.', tier: 'inspector' },
+  { key: 'elliotts',        name: "Elliott's Information Service LLC", tier: 'inspector' },
+  { key: 'advanced',        name: 'Advanced Inspections, Inc', tier: 'inspector' },
+  { key: 'fpi-chancorp',    name: 'FPI / ChanCorp, Inc.', tier: 'inspector' },
+  { key: 'super-inspector', name: 'Super Inspector', tier: 'inspector' },
+  { key: 'all-in-one',      name: 'All in One Home Inspections, LLC', tier: 'inspector' },
+];
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+// inventory[clientKey] = { inStock, sampled, totalSent, totalReceived, lastActivity }
+let inventory = JSON.parse(localStorage.getItem('cha_inventory') || '{}');
+let activityLog = JSON.parse(localStorage.getItem('cha_log') || '[]');
+
+function saveState() {
+  localStorage.setItem('cha_inventory', JSON.stringify(inventory));
+  localStorage.setItem('cha_log', JSON.stringify(activityLog));
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+function initDashboard() {
+  // Init any missing clients
+  CLIENTS.forEach(c => {
+    if (!inventory[c.key]) {
+      inventory[c.key] = { inStock: 0, sampled: 0, totalSent: 0, totalReceived: 0, lastActivity: null };
+    }
+  });
+
+  populateSelects();
+  setDefaultDates();
+
+  // Listen for new field app submissions (cross-tab via storage events)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'chanalytical_queue') {
+      syncFromFieldApp();
+    }
+  });
+
+  syncFromFieldApp();
+  render();
+}
+
+function setDefaultDates() {
+  const today = new Date().toISOString().split('T')[0];
+  ['send-date', 'receive-date', 'initial-date'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = today;
+  });
+}
+
+function populateSelects() {
+  const selects = ['send-client', 'receive-client', 'initial-client', 'adjust-client'];
+  selects.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = CLIENTS.map(c => `<option value="${c.key}">${c.name}</option>`).join('');
+  });
+}
+
+// ─── SYNC FROM FIELD APP ─────────────────────────────────────────────────────
+// When clients submit samples via the field app, auto-decrement stock
+function syncFromFieldApp() {
+  const queue = JSON.parse(localStorage.getItem('chanalytical_queue') || '[]');
+  const tracked = JSON.parse(localStorage.getItem('cha_tracked_submissions') || '[]');
+
+  queue.forEach(sub => {
+    if (tracked.includes(sub.id)) return; // already counted
+    const key = sub.clientKey;
+    if (!key || key === 'general' || !inventory[key]) return;
+
+    // Decrement in-stock, increment sampled
+    inventory[key].inStock = Math.max(0, (inventory[key].inStock || 0) - 1);
+    inventory[key].sampled = (inventory[key].sampled || 0) + 1;
+    inventory[key].lastActivity = sub.dateDrawn || new Date().toISOString().split('T')[0];
+
+    // Log it
+    activityLog.unshift({
+      date: sub.dateDrawn || new Date().toISOString().split('T')[0],
+      client: key,
+      type: 'sampled',
+      qty: 1,
+      notes: `Sample ${sub.id} submitted via field app`,
+      id: sub.id,
+    });
+
+    tracked.push(sub.id);
+  });
+
+  localStorage.setItem('cha_tracked_submissions', JSON.stringify(tracked));
+  saveState();
+  render();
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+function submitSend() {
+  const key = document.getElementById('send-client').value;
+  const qty = parseInt(document.getElementById('send-qty').value);
+  const date = document.getElementById('send-date').value;
+  const notes = document.getElementById('send-notes').value.trim();
+
+  if (!qty || qty < 1) { showToast('Enter a valid quantity.'); return; }
+
+  inventory[key].inStock = (inventory[key].inStock || 0) + qty;
+  inventory[key].totalSent = (inventory[key].totalSent || 0) + qty;
+  inventory[key].lastActivity = date;
+
+  activityLog.unshift({ date, client: key, type: 'sent', qty, notes });
+  saveState();
+  closeModal('send');
+  render();
+  showToast(`✅ ${qty} kits sent to ${clientName(key)}`);
+  document.getElementById('send-qty').value = '';
+  document.getElementById('send-notes').value = '';
+}
+
+function submitReceive() {
+  const key = document.getElementById('receive-client').value;
+  const qty = parseInt(document.getElementById('receive-qty').value);
+  const date = document.getElementById('receive-date').value;
+  const notes = document.getElementById('receive-notes').value.trim();
+
+  if (!qty || qty < 1) { showToast('Enter a valid quantity.'); return; }
+
+  // Receiving kits: reduce sampled count, increase totalReceived
+  const currentSampled = inventory[key].sampled || 0;
+  const fromSampled = Math.min(qty, currentSampled);
+  const remainder = qty - fromSampled;
+
+  inventory[key].sampled = Math.max(0, currentSampled - fromSampled);
+  // Any overage comes from inStock (edge case)
+  inventory[key].inStock = Math.max(0, (inventory[key].inStock || 0) - remainder);
+  inventory[key].totalReceived = (inventory[key].totalReceived || 0) + qty;
+  inventory[key].lastActivity = date;
+
+  activityLog.unshift({ date, client: key, type: 'received', qty, notes });
+  saveState();
+  closeModal('receive');
+  render();
+  showToast(`✅ ${qty} kits received from ${clientName(key)}`);
+  document.getElementById('receive-qty').value = '';
+  document.getElementById('receive-notes').value = '';
+}
+
+function submitInitial() {
+  const key = document.getElementById('initial-client').value;
+  const qty = parseInt(document.getElementById('initial-qty').value);
+  const date = document.getElementById('initial-date').value;
+
+  if (isNaN(qty) || qty < 0) { showToast('Enter a valid quantity.'); return; }
+
+  inventory[key].inStock = qty;
+  inventory[key].lastActivity = date;
+
+  activityLog.unshift({ date, client: key, type: 'initial', qty, notes: 'Initial stock set' });
+  saveState();
+  closeModal('initial');
+  render();
+  showToast(`✅ ${clientName(key)} starting stock set to ${qty}`);
+  document.getElementById('initial-qty').value = '';
+}
+
+function openAdjust(key) {
+  document.getElementById('adjust-client-key').value = key;
+  document.getElementById('adjust-client-name').textContent = clientName(key);
+  document.getElementById('adjust-qty').value = '';
+  document.getElementById('adjust-notes').value = '';
+  openModal('adjust');
+}
+
+function submitAdjust() {
+  const key = document.getElementById('adjust-client-key').value;
+  const type = document.getElementById('adjust-type').value;
+  const qty = parseInt(document.getElementById('adjust-qty').value);
+  const notes = document.getElementById('adjust-notes').value.trim();
+
+  if (!qty || qty < 1) { showToast('Enter a valid quantity.'); return; }
+
+  const date = new Date().toISOString().split('T')[0];
+
+  if (type === 'add') {
+    inventory[key].inStock = (inventory[key].inStock || 0) + qty;
+  } else {
+    inventory[key].inStock = Math.max(0, (inventory[key].inStock || 0) - qty);
+  }
+  inventory[key].lastActivity = date;
+
+  activityLog.unshift({ date, client: key, type: type === 'add' ? 'sent' : 'received', qty, notes: `Manual adjustment: ${notes}` });
+  saveState();
+  closeModal('adjust');
+  render();
+  showToast(`✅ Adjustment applied for ${clientName(key)}`);
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+function render() {
+  renderSummary();
+  renderInventory();
+  renderLog();
+  document.getElementById('last-updated').textContent = new Date().toLocaleString();
+}
+
+function renderSummary() {
+  let totalStock = 0, totalSampled = 0, totalReceived = 0, activeClients = 0;
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+
+  CLIENTS.forEach(c => {
+    const inv = inventory[c.key] || {};
+    totalStock += inv.inStock || 0;
+    totalSampled += inv.sampled || 0;
+    if ((inv.inStock || 0) > 0 || (inv.sampled || 0) > 0 || (inv.totalSent || 0) > 0) activeClients++;
+  });
+
+  // Count received this month from log
+  activityLog.forEach(entry => {
+    if (entry.type === 'received' && entry.date) {
+      const d = new Date(entry.date + 'T12:00:00');
+      if (d.getMonth() === thisMonth && d.getFullYear() === thisYear) {
+        totalReceived += entry.qty || 0;
+      }
+    }
+  });
+
+  document.getElementById('total-in-field').textContent = totalStock;
+  document.getElementById('total-sampled').textContent = totalSampled;
+  document.getElementById('total-received').textContent = totalReceived;
+  document.getElementById('total-clients').textContent = activeClients;
+  document.getElementById('received-month').textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+}
+
+function renderInventory() {
+  const tbody = document.getElementById('inventory-body');
+  const rows = CLIENTS.map(c => {
+    const inv = inventory[c.key] || { inStock: 0, sampled: 0, totalSent: 0, totalReceived: 0 };
+    const stock = inv.inStock || 0;
+    const sampled = inv.sampled || 0;
+    const stockClass = stock > 20 ? 'stock-high' : stock > 5 ? 'stock-medium' : 'stock-low';
+    const tierClass = `tier-${c.tier}`;
+    const tierLabel = c.tier === 'wq' ? 'WQ' : c.tier === 'inspector' ? 'Inspector' : 'Public';
+    const lastAct = inv.lastActivity ? formatDate(inv.lastActivity) : '—';
+
+    return `<tr>
+      <td><div class="client-name">${c.name}</div></td>
+      <td><span class="tier-badge ${tierClass}">${tierLabel}</span></td>
+      <td class="center"><span class="stock-value ${stockClass}">${stock}</span></td>
+      <td class="center">${sampled > 0 ? `<span style="color:var(--warning);font-weight:700;">${sampled}</span>` : '0'}</td>
+      <td class="center">${inv.totalSent || 0}</td>
+      <td class="center">${inv.totalReceived || 0}</td>
+      <td style="font-size:12px;color:var(--slate);">${lastAct}</td>
+      <td>
+        <div class="btn-group">
+          <button class="action-btn" onclick="quickSend('${c.key}')">+ Send</button>
+          <button class="action-btn" onclick="quickReceive('${c.key}')">✓ Recv</button>
+          <button class="action-btn" onclick="openAdjust('${c.key}')">✏️</button>
+        </div>
+      </td>
+    </tr>`;
+  });
+
+  tbody.innerHTML = rows.join('');
+}
+
+function renderLog() {
+  const tbody = document.getElementById('log-body');
+  if (activityLog.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">📋</div>No activity yet.</div></td></tr>';
+    return;
+  }
+
+  const typeLabels = { sent: 'Kits Sent', sampled: 'Sample Submitted', received: 'Kits Received', initial: 'Initial Stock' };
+  const typeClasses = { sent: 'log-sent', sampled: 'log-sampled', received: 'log-received', initial: 'log-initial' };
+
+  tbody.innerHTML = activityLog.slice(0, 100).map(entry => `
+    <tr>
+      <td>${formatDate(entry.date)}</td>
+      <td>${clientName(entry.client)}</td>
+      <td><span class="log-type ${typeClasses[entry.type] || ''}">${typeLabels[entry.type] || entry.type}</span></td>
+      <td class="right" style="font-weight:600;">${entry.qty}</td>
+      <td style="color:var(--slate);">${entry.notes || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// ─── QUICK ACTIONS ───────────────────────────────────────────────────────────
+function quickSend(key) {
+  document.getElementById('send-client').value = key;
+  openModal('send');
+}
+
+function quickReceive(key) {
+  document.getElementById('receive-client').value = key;
+  openModal('receive');
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function clientName(key) {
+  const c = CLIENTS.find(c => c.key === key);
+  return c ? c.name : key;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const [y, m, d] = dateStr.split('-');
+    return `${m}/${d}/${y.slice(-2)}`;
+  } catch { return dateStr; }
+}
+
+function openModal(name) {
+  setDefaultDates();
+  document.getElementById(`modal-${name}`).classList.add('open');
+}
+
+function closeModal(name) {
+  document.getElementById(`modal-${name}`).classList.remove('open');
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+function clearLog() {
+  if (confirm('Clear the entire activity log? This cannot be undone.')) {
+    activityLog = [];
+    saveState();
+    renderLog();
+    showToast('Log cleared.');
+  }
+}
+
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="CHA Intake" />
+  <meta name="theme-color" content="#003A5C" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Chanalytical — Sample Intake</title>
+  <link rel="manifest" href="manifest.json" />
+  <!-- Register SW immediately in <head> — iOS Safari requires early registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .catch(err => console.warn('[SW] Registration failed:', err));
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+  <style>
+    :root {
+      --navy: #003A5C;
+      --navy-light: #004f7c;
+      --teal: #00869B;
+      --teal-light: #e6f4f6;
+      --water: #C8E8F0;
+      --white: #ffffff;
+      --off-white: #F5F9FA;
+      --slate: #4A6572;
+      --text: #1a2a32;
+      --border: #CBD8DE;
+      --error: #C0392B;
+      --success: #1A7A4A;
+      --warning: #E67E22;
+      --font-display: 'Georgia', 'Times New Roman', serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --radius: 10px;
+      --shadow: 0 2px 12px rgba(0,58,92,0.10);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--off-white);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* HEADER */
+    header {
+      background: var(--navy);
+      color: var(--white);
+      padding: 16px 20px 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .header-inner {
+      max-width: 600px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-block {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .lab-name {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: normal;
+      letter-spacing: 0.02em;
+      color: var(--white);
+      line-height: 1.2;
+    }
+
+    .lab-sub {
+      font-size: 11px;
+      color: var(--water);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .sync-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--water);
+      background: rgba(255,255,255,0.1);
+      padding: 5px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s;
+    }
+
+    .sync-badge:hover { background: rgba(255,255,255,0.18); }
+
+    .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--teal);
+    }
+
+    .sync-dot.offline { background: var(--warning); }
+    .sync-dot.syncing { 
+      background: var(--teal);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* MAIN */
+    main {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px 16px 100px;
+    }
+
+    /* WELCOME CARD for known clients */
+    .welcome-banner {
+      background: linear-gradient(135deg, var(--teal) 0%, var(--navy) 100%);
+      color: var(--white);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .welcome-banner.visible { display: block; }
+
+    .welcome-banner .greeting {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.8;
+      margin-bottom: 4px;
+    }
+
+    .welcome-banner .client-name {
+      font-family: var(--font-display);
+      font-size: 20px;
+    }
+
+    /* SECTION CARDS */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--teal);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--teal-light);
+    }
+
+    /* FORM FIELDS */
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field:last-child { margin-bottom: 0; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--slate);
+      margin-bottom: 6px;
+      letter-spacing: 0.03em;
+    }
+
+    label .required {
+      color: var(--teal);
+      margin-left: 2px;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 16px; /* prevents iOS zoom */
+      font-family: var(--font-body);
+      color: var(--text);
+      background: var(--white);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(0,134,155,0.12);
+    }
+
+    input.prefilled {
+      background: var(--teal-light);
+      border-color: var(--teal);
+      color: var(--navy);
+      font-weight: 500;
+    }
+
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .row-3 {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* DATETIME ROW */
+    .datetime-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* SERVICES */
+    .services-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .services-grid.two-col {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .services-grid.two-col .service-category,
+    .services-grid.two-col .other-field {
+      grid-column: 1 / -1;
+    }
+
+    .service-category {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--slate);
+      margin: 12px 0 6px;
+      padding-left: 2px;
+    }
+
+    .service-category:first-child { margin-top: 0; }
+
+    .service-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: var(--white);
+    }
+
+    .service-item:hover {
+      border-color: var(--teal);
+      background: var(--teal-light);
+    }
+
+    .service-item.selected {
+      border-color: var(--teal);
+      background: var(--teal-light);
+    }
+
+    .service-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      accent-color: var(--teal);
+      margin-top: 1px;
+      cursor: pointer;
+    }
+
+    .service-label {
+      flex: 1;
+    }
+
+    .service-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .service-desc {
+      font-size: 11px;
+      color: var(--slate);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    .other-field {
+      margin-top: 10px;
+      display: none;
+    }
+
+    .other-field.visible { display: block; }
+
+    /* BARCODE AREA */
+    .barcode-field {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    .barcode-field input {
+      flex: 1;
+    }
+
+    .scan-btn {
+      padding: 12px 14px;
+      background: var(--teal-light);
+      border: 1.5px solid var(--teal);
+      border-radius: 8px;
+      color: var(--teal);
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .scan-btn:hover {
+      background: var(--teal);
+      color: var(--white);
+    }
+
+    /* SUBMIT BUTTON */
+    .submit-area {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      padding: 14px 16px;
+      z-index: 100;
+    }
+
+    .submit-inner {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 16px;
+      background: var(--teal);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      letter-spacing: 0.02em;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:hover { background: var(--navy); }
+
+    /* PENDING QUEUE BANNER */
+    .queue-banner {
+      background: #FFF3E0;
+      border: 1px solid #FFB74D;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      display: none;
+      font-size: 13px;
+      color: #7B4F00;
+    }
+
+    .queue-banner.visible { display: flex; align-items: center; gap: 10px; }
+
+    .queue-banner .icon { font-size: 18px; }
+
+    /* SUCCESS SCREEN */
+    #success-screen {
+      display: none;
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    #success-screen.visible { display: block; }
+
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .success-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      color: var(--navy);
+      margin-bottom: 6px;
+    }
+
+    .success-sub {
+      font-size: 14px;
+      color: var(--slate);
+      margin-bottom: 24px;
+    }
+
+    .barcode-display {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin: 0 auto 24px;
+      max-width: 340px;
+      box-shadow: var(--shadow);
+    }
+
+    .barcode-display canvas,
+    .barcode-display svg {
+      width: 100%;
+      max-width: 300px;
+    }
+
+    .barcode-label {
+      font-size: 12px;
+      color: var(--slate);
+      margin-top: 8px;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    .submission-summary {
+      background: var(--teal-light);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: left;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .summary-row:last-child { border-bottom: none; }
+
+    .summary-key {
+      color: var(--slate);
+      font-weight: 500;
+    }
+
+    .summary-val {
+      color: var(--navy);
+      font-weight: 600;
+      text-align: right;
+      max-width: 60%;
+    }
+
+    .btn-new {
+      width: 100%;
+      padding: 14px;
+      background: var(--navy);
+      color: var(--white);
+      border: none;
+      border-radius: var(--radius);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body);
+      margin-bottom: 10px;
+    }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 12px;
+      background: transparent;
+      color: var(--slate);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      cursor: pointer;
+      font-family: var(--font-body);
+    }
+
+    /* CAMERA MODAL */
+    #camera-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    #camera-modal.open { display: flex; }
+
+    #camera-modal video {
+      width: 100%;
+      max-width: 400px;
+      border-radius: var(--radius);
+      border: 2px solid var(--teal);
+    }
+
+    .camera-hint {
+      color: var(--white);
+      font-size: 13px;
+      margin-top: 12px;
+      opacity: 0.8;
+    }
+
+    .btn-close-camera {
+      margin-top: 16px;
+      padding: 12px 32px;
+      background: var(--white);
+      border: none;
+      border-radius: 30px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* OFFLINE TOAST */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--navy);
+      color: var(--white);
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      z-index: 300;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .toast.show { opacity: 1; }
+
+    /* VALIDATION */
+    .field-error {
+      font-size: 11px;
+      color: var(--error);
+      margin-top: 4px;
+    }
+
+    input.invalid, select.invalid, textarea.invalid {
+      border-color: var(--error);
+    }
+
+    @media (max-width: 380px) {
+      .row-3 { grid-template-columns: 1fr 1fr; }
+      .row-3 .field:first-child { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- PWA INSTALL BANNER - shown only in browser, hidden when installed -->
+<div id="install-banner" style="display:none;background:#003A5C;color:white;padding:10px 16px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+  <span>📲 Add this app to your home screen for quick access</span>
+  <div style="display:flex;gap:8px;flex-shrink:0;">
+    <button onclick="showInstallHelp()" style="background:#00869B;border:none;color:white;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;">How to</button>
+    <button onclick="document.getElementById('install-banner').style.display='none';localStorage.setItem('cha_banner_dismissed','1')" style="background:rgba(255,255,255,0.15);border:none;color:white;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;">✕</button>
+  </div>
+</div>
+
+<!-- INSTALL HELP MODAL -->
+<div id="install-help-modal" style="display:none;position:fixed;inset:0;background:rgba(0,58,92,0.85);z-index:300;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:white;border-radius:14px;padding:28px;max-width:380px;width:100%;">
+    <div style="font-size:18px;font-weight:700;color:#003A5C;margin-bottom:16px;font-family:Georgia,serif;">Add to Home Screen</div>
+    <div id="install-ios" style="display:none;">
+      <div style="font-size:13px;color:#4A6572;line-height:1.7;margin-bottom:16px;">
+        <strong style="color:#003A5C;">On iPhone / iPad (Safari):</strong><br/>
+        1. Make sure you're using <strong>Safari</strong> — not Chrome<br/>
+        2. Tap the <strong>Share button</strong> ↑ at the bottom of the screen<br/>
+        3. Scroll down and tap <strong>"Add to Home Screen"</strong><br/>
+        4. Tap <strong>Add</strong> — done
+      </div>
+    </div>
+    <div id="install-android" style="display:none;">
+      <div style="font-size:13px;color:#4A6572;line-height:1.7;margin-bottom:16px;">
+        <strong style="color:#003A5C;">On Android (Chrome):</strong><br/>
+        1. Tap the <strong>three dots ⋮</strong> in the top right<br/>
+        2. Tap <strong>"Add to Home Screen"</strong> or <strong>"Install App"</strong><br/>
+        3. Tap <strong>Add</strong> — done
+      </div>
+    </div>
+    <div id="install-other" style="display:none;">
+      <div style="font-size:13px;color:#4A6572;line-height:1.7;margin-bottom:16px;">
+        Open this page in your browser, then look for an <strong>"Add to Home Screen"</strong> or <strong>"Install"</strong> option in the browser menu.
+      </div>
+    </div>
+    <button onclick="document.getElementById('install-help-modal').style.display='none'" style="width:100%;padding:12px;background:#00869B;color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;">Got it</button>
+  </div>
+</div>
+
+<header>
+  <div class="header-inner">
+    <div class="logo-block">
+      <span class="lab-name">Chanalytical Laboratories</span>
+      <span class="lab-sub">Sample Intake · Gorham, ME</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="sync-badge" id="sync-btn" onclick="attemptSync()">
+        <span class="sync-dot" id="sync-dot"></span>
+        <span id="sync-label">Online</span>
+      </button>
+      <button class="sync-badge" id="install-btn" onclick="showInstallHelp()" style="display:none;">⬇ Install App</button>
+      <button class="sync-badge" onclick="window.location.href='/dashboard.html'" style="cursor:pointer;text-decoration:none;">⬅ Dashboard</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- QUEUE BANNER -->
+  <div class="queue-banner" id="queue-banner">
+    <span class="icon">📤</span>
+    <span id="queue-text">You have pending submissions waiting to sync.</span>
+  </div>
+
+  <!-- WELCOME BANNER for known clients -->
+  <div class="welcome-banner" id="welcome-banner">
+    <div class="greeting">Welcome back</div>
+    <div class="client-name" id="welcome-name"></div>
+  </div>
+
+  <!-- FORM -->
+  <div id="form-view">
+
+    <!-- SAMPLE DATE/TIME -->
+    <div class="card">
+      <div class="card-title">Collection Details</div>
+
+      <div class="datetime-row">
+        <div class="field">
+          <label for="date-drawn">Date Drawn <span class="required">*</span></label>
+          <input type="date" id="date-drawn" required />
+        </div>
+        <div class="field">
+          <label for="time-drawn">Time Drawn</label>
+          <input type="time" id="time-drawn" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="barcode-input">Kit Barcode ID</label>
+        <div class="barcode-field">
+          <input type="text" id="barcode-input" placeholder="Enter or scan barcode" autocomplete="off" />
+          <button class="scan-btn" onclick="openCamera()" title="Scan barcode">📷</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLIENT INFO -->
+    <div class="card">
+      <div class="card-title">Client Information</div>
+
+      <div class="field">
+        <label for="customer">Customer / Company <span class="required">*</span></label>
+        <input type="text" id="customer" placeholder="Company or individual name" required />
+      </div>
+
+      <div class="field">
+        <label for="email">Email Address <span class="required">*</span></label>
+        <input type="email" id="email" placeholder="email@example.com" inputmode="email" autocomplete="email" required />
+      </div>
+
+      <div class="field">
+        <label for="phone">Phone Number <span class="required">*</span></label>
+        <input type="tel" id="phone" placeholder="(207) 555-0100" inputmode="tel" autocomplete="tel" required />
+      </div>
+
+      <div class="field">
+        <label for="location">Sample Site Address <span class="required">*</span></label>
+        <input type="text" id="location" placeholder="Street address" required />
+      </div>
+
+      <div class="row-3">
+        <div class="field">
+          <label for="city">City / Town <span class="required">*</span></label>
+          <input type="text" id="city" placeholder="Town" required />
+        </div>
+        <div class="field">
+          <label for="state">State</label>
+          <input type="text" id="state" placeholder="ME" maxlength="2" value="ME" />
+        </div>
+        <div class="field">
+          <label for="zip">Zip</label>
+          <input type="text" id="zip" placeholder="04038" maxlength="5" inputmode="numeric" />
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVICES -->
+    <div class="card">
+      <div class="card-title">Tests Requested</div>
+
+      <div class="services-grid" id="services-grid">
+
+        <div class="service-category">Packages</div>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Basic Safety (FHA)" />
+          <div class="service-label">
+            <div class="service-name">Basic Safety (FHA)</div>
+            <div class="service-desc">Coliform & E. coli (MPN), Nitrate, Nitrite, Lead</div>
+          </div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Standard Safety" />
+          <div class="service-label">
+            <div class="service-name">Standard Safety</div>
+            <div class="service-desc">Coliform & E. coli (MPN), Nitrate, Iron, Manganese, Sodium, pH, Chloride, Hardness</div>
+          </div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Expanded Safety (Mortgage Test)" />
+          <div class="service-label">
+            <div class="service-name">Expanded Safety (Mortgage Test)</div>
+            <div class="service-desc">Coliform & E. coli (MPN), Nitrate, Nitrite, Lead, Arsenic, Uranium, Copper, Iron, Manganese, Sodium, Magnesium, Calcium, Hardness, pH, Fluoride, Chloride</div>
+          </div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Comprehensive" />
+          <div class="service-label">
+            <div class="service-name">Comprehensive</div>
+            <div class="service-desc">Coliform & E. coli (MPN), Nitrate, Nitrite, Lead, Arsenic, Uranium, Copper, Iron, Manganese, Sodium, Magnesium, Calcium, Hardness, Alkalinity, pH, Fluoride, Chloride, Antimony, Chromium, Cadmium, Sulfate</div>
+          </div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Pro Plus" />
+          <div class="service-label">
+            <div class="service-name">Pro Plus</div>
+            <div class="service-desc">pH, Alkalinity, Iron, Manganese, Uranium, Tannins</div>
+          </div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Radon Water" />
+          <div class="service-label">
+            <div class="service-name">Radon Water</div>
+            <div class="service-desc">Radon Water Results in pCi/L</div>
+          </div>
+        </label>
+
+        </div>
+        <div class="service-category" style="margin-top:4px;">Individual Tests</div>
+        <div class="services-grid two-col" id="individual-grid">
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Alkalinity" />
+          <div class="service-label"><div class="service-name">Alkalinity</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Arsenic, Total" />
+          <div class="service-label"><div class="service-name">Arsenic, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Bacteria (Coliform & E. coli)" />
+          <div class="service-label"><div class="service-name">Bacteria (Coliform & E. coli)</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Cadmium, Total" />
+          <div class="service-label"><div class="service-name">Cadmium, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Calcium, Total" />
+          <div class="service-label"><div class="service-name">Calcium, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Chloride" />
+          <div class="service-label"><div class="service-name">Chloride</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Copper, Total" />
+          <div class="service-label"><div class="service-name">Copper, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Fluoride" />
+          <div class="service-label"><div class="service-name">Fluoride</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Hardness, Total" />
+          <div class="service-label"><div class="service-name">Hardness, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Iron, Total" />
+          <div class="service-label"><div class="service-name">Iron, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Lead, Total" />
+          <div class="service-label"><div class="service-name">Lead, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Magnesium" />
+          <div class="service-label"><div class="service-name">Magnesium</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Manganese, Total" />
+          <div class="service-label"><div class="service-name">Manganese, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Nitrate" />
+          <div class="service-label"><div class="service-name">Nitrate</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Nitrite" />
+          <div class="service-label"><div class="service-name">Nitrite</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="pH" />
+          <div class="service-label"><div class="service-name">pH</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Sodium, Total" />
+          <div class="service-label"><div class="service-name">Sodium, Total</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Sulfate" />
+          <div class="service-label"><div class="service-name">Sulfate</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Sulfur" />
+          <div class="service-label"><div class="service-name">Sulfur</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Tannins" />
+          <div class="service-label"><div class="service-name">Tannins</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="TDS" />
+          <div class="service-label"><div class="service-name">TDS</div></div>
+        </label>
+
+        <label class="service-item" onclick="toggleService(this)">
+          <input type="checkbox" value="Uranium, Total" />
+          <div class="service-label"><div class="service-name">Uranium, Total</div></div>
+        </label>
+
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="card">
+      <div class="card-title">Notes</div>
+      <div class="field">
+        <textarea id="notes" placeholder="Special instructions, source description, concerns, or anything the lab should know…"></textarea>
+      </div>
+
+      <div style="margin-top: 14px; padding: 10px 12px; background: var(--teal-light); border-radius: 8px; font-size: 13px; color: var(--navy); line-height: 1.5; text-align: center; font-weight: 500;">
+        ⚠️ Samples must reach the lab within 24 hours of collection. ⚠️
+      </div>
+    </div>
+
+  </div><!-- /#form-view -->
+
+  <!-- SUCCESS SCREEN -->
+  <div id="success-screen">
+    <div class="success-icon">✅</div>
+    <div class="success-title">Sample Submitted</div>
+    <div class="success-sub" id="success-sub">Your submission has been recorded.</div>
+
+    <div class="barcode-display">
+      <svg id="barcode-svg"></svg>
+      <div class="barcode-label" id="barcode-label-text"></div>
+    </div>
+
+    <div class="submission-summary" id="submission-summary"></div>
+
+    <button class="btn-new" onclick="startNew()">Submit Another Sample</button>
+    <button class="btn-secondary" onclick="window.location.href='/dashboard.html'">⬅ Back to Dashboard</button>
+    <button class="btn-secondary" onclick="viewQueue()" style="margin-top:8px;">View Pending Submissions</button>
+  </div>
+
+</main>
+
+<!-- FIXED SUBMIT BUTTON -->
+<div class="submit-area" id="submit-area">
+  <div class="submit-inner">
+    <button class="btn-submit" onclick="submitForm()">Submit Sample →</button>
+  </div>
+</div>
+
+<!-- CAMERA MODAL -->
+<div id="camera-modal">
+  <video id="camera-feed" autoplay playsinline muted></video>
+  <div class="camera-hint">Point at the barcode on your kit</div>
+  <button class="btn-close-camera" onclick="closeCamera()">Cancel</button>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script src="auth.js"></script>
+<script>
+// ─── AUTH CHECK ─────────────────────────────────────────────────────────────
+const _session = Auth.getSession();
+if (!_session) window.location.href = '/login.html';
+
+
+// Google Sheets config
+// Credentials are stored securely in Netlify environment variables
+// and accessed via the /.netlify/functions/sync-to-sheets serverless function
+
+// Pricing tiers: 'wq' = WQ Pricing, 'inspector' = Inspector Pricing, 'public' = Public Pricing
+const PRICING = {
+  wq: {
+    'Basic Safety (FHA)': '$65', 'AZ Basic Plus': '$45', 'Standard Safety': '$70',
+    'Expanded Safety (Mortgage Test)': '$75', 'WW - Expanded Safety': '$90',
+    'Comprehensive': '$110', 'Nova EnviroLabs-WQ': '$65', 'Pro Plus': '$50',
+    'Bacteria': '$25', 'Radon Water': '$26', 'Alkalinity': '$35', 'Antimony, Total': '$20',
+    'Arsenic, Total': '$20', 'Arsenic, Speciation': '$75', 'Bromide': '$20',
+    'Cadmium, Total': '$20', 'Calcium, Total': '$20', 'Chloride, Total': '$20',
+    'Chromium, Total': '$20', 'Cobalt': '$20', 'Copper, Total': '$20', 'Fluoride': '$20',
+    'Iron, Total': '$20', 'Lead, Total': '$20', 'Magnesium, Total': '$20',
+    'Manganese, Total': '$20', 'Nitrate': '$25', 'Nitrite': '$25', 'pH': '$15',
+    'Sodium, Total': '$20', 'Sulfate': '$20', 'Tannins': '$35',
+    'Total Dissolved Solids (TDS)': '$20', 'Total Hardness': '$20', 'Uranium, Total': '$20',
+  },
+  inspector: {
+    'Basic Safety (FHA)': '$65', 'AZ Basic Plus': '--', 'Standard Safety': '$70',
+    'Expanded Safety (Mortgage Test)': '$75', 'WW - Expanded Safety': '--',
+    'Comprehensive': '$110', 'Nova EnviroLabs-WQ': '$65', 'Pro Plus': '$50',
+    'Bacteria': '$25', 'Radon Water': '$45', 'Alkalinity': '$35', 'Antimony, Total': '$20',
+    'Arsenic, Total': '$20', 'Arsenic, Speciation': '$75', 'Bromide': '$20',
+    'Cadmium, Total': '$20', 'Calcium, Total': '$20', 'Chloride, Total': '$20',
+    'Chromium, Total': '$20', 'Cobalt': '$20', 'Copper, Total': '$20', 'Fluoride': '$25',
+    'Iron, Total': '$20', 'Lead, Total': '$20', 'Magnesium, Total': '$20',
+    'Manganese, Total': '$20', 'Nitrate': '$25', 'Nitrite': '$25', 'pH': '$15',
+    'Sodium, Total': '$20', 'Sulfate': '$20', 'Tannins': '$35',
+    'Total Dissolved Solids (TDS)': '$20', 'Total Hardness': '$20', 'Uranium, Total': '$20',
+  },
+  public: {
+    'Basic Safety (FHA)': '$120', 'AZ Basic Plus': '--', 'Standard Safety': '$135',
+    'Expanded Safety (Mortgage Test)': '$195', 'WW - Expanded Safety': '--',
+    'Comprehensive': '$235', 'Nova EnviroLabs-WQ': '--', 'Pro Plus': '$130',
+    'Bacteria': '$65', 'Radon Water': '$170', 'Alkalinity': '$65', 'Antimony, Total': '$45',
+    'Arsenic, Total': '$65', 'Arsenic, Speciation': '$195', 'Bromide': '$65',
+    'Cadmium, Total': '$45', 'Calcium, Total': '$45', 'Chloride, Total': '$45',
+    'Chromium, Total': '$45', 'Cobalt': '$45', 'Copper, Total': '$45', 'Fluoride': '$45',
+    'Iron, Total': '$45', 'Lead, Total': '$45', 'Magnesium, Total': '$45',
+    'Manganese, Total': '$45', 'Nitrate': '$45', 'Nitrite': '$45', 'pH': '$45',
+    'Sodium, Total': '$45', 'Sulfate': '$45', 'Tannins': '$75',
+    'Total Dissolved Solids (TDS)': '$45', 'Total Hardness': '$65', 'Uranium, Total': '$45',
+  },
+};
+
+// tier: 'wq' | 'inspector' | 'public'
+// wardWater: true = show WW-Expanded Safety instead of Expanded Safety (Mortgage Test)
+const CLIENT_PROFILES = {
+  'ward-water':      { name: 'Critical Plumbing Inc. a/k/a Ward Water', email: 'office@wardwater.com, Aaronjdion@gmail.com', phone: '207-675-3272', tier: 'wq', wardWater: true, code: 'WARD0823' },
+  'maine-radon':     { name: 'Maine Radon & Environmental, LLC', email: 'labs@maineradonwater.com', phone: '207-503-3888', tier: 'inspector', code: 'MERW0823' },
+  'downeast':        { name: 'Downeast Home Inspections, LLC', email: 'LussierTeam@pillartopost.com', phone: '207-749-3775', tier: 'inspector', code: 'P2P0823' },
+  'madden':          { name: 'Madden Home Inspections', email: 'maddenhomeinspection@gmail.com', phone: '207-989-5010', tier: 'inspector', code: 'MHI0226' },
+  'yankee':          { name: 'Yankee Home Inspections', email: 'yankeehomeinspections@gmail.com', phone: '207-659-2853', tier: 'inspector', code: 'MHI0226' },
+  'az-water':        { name: 'A-Z Water Systems', email: 'benoit@a-zwatersystems.com', phone: '207-653-6923', tier: 'wq', code: 'AZW0224' },
+  'fontus':          { name: 'Fontus Water', email: 'labtests@fontusH2O.com', phone: '207-865-8165', tier: 'wq', code: 'FONT0823' },
+  'main-choice':     { name: 'Main Choice Inspections, Inc.', email: 'labs@mainchoiceinspections.com', phone: '207-312-3403', tier: 'inspector', code: 'MCI0823' },
+  'defender':        { name: 'Defender Home Inspections, Inc.', email: 'info@defenderme.com', phone: '207-745-3900', tier: 'inspector', code: 'DHI0226' },
+  'elliotts':        { name: "Elliott's Information Service LLC", email: 'Bill@eisllc.org', phone: '207-551-4240', tier: 'inspector', code: 'EIS0226' },
+  'campbell':        { name: 'Campbell Property Inspections', email: 'jeff@maineshomeinspector.com', phone: '207-441-9802', tier: 'inspector', code: 'CPI0224' },
+  'onpoint':         { name: 'OnPoint Home Inspections Service', email: 'onpointhomeinspectionsmaine@gmail.com', phone: '207-807-7195', tier: 'inspector', code: 'OPH0224' },
+  'peter-mason':     { name: 'Peter Mason / Friend Real Estate Inc.', email: 'peter@pogorealty.com', phone: '207-632-8822', tier: 'inspector', code: 'PMASON23' },
+  'advanced':        { name: 'Advanced Inspections, Inc', email: 'tonia@advancedinspectionsinc.com', phone: '207-248-2690', tier: 'inspector', code: 'ADV1123' },
+  'nova-enviro':     { name: 'Nova Analytic Labs (Nova EnviroLabs)', email: 'innovation@nova-analyticlabs.com, zac.smith@testnovalabs.com, scrispo@novaenvirolabs.com', phone: '207-804-7327', tier: 'wq', code: 'NOV1224' },
+  'evergreen':       { name: 'Evergreen Inspections', email: 'info@evergreen-inspections.com', phone: '207-656-2572', tier: 'inspector', code: 'EVGRN0325' },
+  'fpi-chancorp':    { name: 'FPI / ChanCorp, Inc.', email: 'fpi@fpi-web.com', phone: '207-839-6595', tier: 'inspector', code: 'FPI0823' },
+  'super-inspector': { name: 'Super Inspector', email: 'Assistant@yoursuperinspector.com', phone: '405-414-6712', tier: 'inspector', code: 'SUPIN0526' },
+  'all-in-one':      { name: 'All in One Home Inspections, LLC', email: 'Assistant@yoursuperinspector.com', phone: '405-414-6712', tier: 'inspector', code: 'AIOHI0526' },
+};
+
+// ─── QUEUE (IndexedDB — shared with service worker for background sync) ───────
+
+const IDB_NAME = 'cha_db';
+const IDB_STORE = 'queue';
+let _idb = null;
+
+function openIDB() {
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE, { keyPath: 'id' });
+    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getQueue() {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+
+async function saveToQueue(submission) {
+  try {
+    const db = await openIDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(IDB_STORE, 'readwrite').objectStore(IDB_STORE).put(submission);
+      req.onsuccess = resolve;
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) { console.warn('IDB write failed:', err); }
+}
+
+async function updateInQueue(id, updates) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    const store = tx.objectStore(IDB_STORE);
+    const existing = await new Promise((res, rej) => {
+      const r = store.get(id); r.onsuccess = () => res(r.result); r.onerror = rej;
+    });
+    if (existing) {
+      const updated = { ...existing, ...updates };
+      store.put(updated);
+    }
+  } catch (err) { console.warn('IDB update failed:', err); }
+}
+
+// Keep pendingQueue in memory for UI, backed by IDB
+let pendingQueue = [];
+
+async function loadQueue() {
+  pendingQueue = await getQueue();
+  updateQueueBanner();
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
+let currentClientKey = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Load queue from IDB
+  await loadQueue();
+  // Set default date to today
+  document.getElementById('date-drawn').valueAsDate = new Date();
+
+  // Set default time to now
+  const now = new Date();
+  document.getElementById('time-drawn').value =
+    now.getHours().toString().padStart(2,'0') + ':' +
+    now.getMinutes().toString().padStart(2,'0');
+
+  // Check for client param in URL first, then fall back to logged-in session
+  const params = new URLSearchParams(window.location.search);
+  const clientKey = params.get('client') || (_session && _session.clientKey) || null;
+
+  if (clientKey && CLIENT_PROFILES[clientKey]) {
+    currentClientKey = clientKey;
+    const profile = CLIENT_PROFILES[clientKey];
+    const customerInput = document.getElementById('customer');
+    customerInput.value = profile.name;
+    customerInput.classList.add('prefilled');
+
+    if (profile.email) {
+      const emailInput = document.getElementById('email');
+      emailInput.value = profile.email;
+      emailInput.classList.add('prefilled');
+    }
+
+    if (profile.phone) {
+      const phoneInput = document.getElementById('phone');
+      phoneInput.value = profile.phone;
+      phoneInput.classList.add('prefilled');
+    }
+
+    // Apply pricing tier and Ward Water special tests
+    applyClientConfig(profile);
+
+    const banner = document.getElementById('welcome-banner');
+    document.getElementById('welcome-name').textContent = profile.name;
+    banner.classList.add('visible');
+  }
+
+  updateSyncStatus();
+  updateQueueBanner();
+
+  window.addEventListener('online', () => {
+    updateSyncStatus();
+    attemptSync();
+    registerBackgroundSync(); // Android Chrome only
+  });
+
+  window.addEventListener('offline', updateSyncStatus);
+
+  // iOS Safari doesn't support Background Sync, so sync on app resume/focus
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && navigator.onLine) {
+      attemptSync();
+    }
+  });
+
+  // Also sync when window regains focus (covers iOS app resume)
+  window.addEventListener('focus', () => {
+    if (navigator.onLine) attemptSync();
+  });
+
+  // Listen for SW background sync completion (Android Chrome)
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data?.type === 'SYNC_COMPLETE') {
+        loadQueue().then(() => {
+          updateQueueBanner();
+          updateSyncStatus();
+          const synced = (event.data.queue || []).filter(s => s.synced).length;
+          if (synced > 0) showToast(`✅ ${synced} submission${synced > 1 ? 's' : ''} synced in background`);
+        });
+      }
+    });
+  }
+});
+
+// ─── SYNC STATUS ────────────────────────────────────────────────────────────
+
+function updateSyncStatus() {
+  const dot = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  if (navigator.onLine) {
+    dot.className = 'sync-dot';
+    label.textContent = 'Online';
+  } else {
+    dot.className = 'sync-dot offline';
+    label.textContent = 'Offline';
+  }
+}
+
+function applyClientConfig(profile) {
+  const tier = profile.tier || 'public';
+  const prices = PRICING[tier] || PRICING.public;
+
+  // Update all service item prices
+  document.querySelectorAll('.service-item').forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    if (!cb) return;
+    const testName = cb.value;
+    const nameEl = item.querySelector('.service-name');
+    if (!nameEl || !prices[testName]) return;
+    // Replace price in label (format: "Test Name — $XX")
+    nameEl.textContent = nameEl.textContent.replace(/—\s*\$[\d,]+/, `— ${prices[testName]}`);
+  });
+
+  // Ward Water: swap Expanded Safety for WW - Expanded Safety
+  if (profile.wardWater) {
+    document.querySelectorAll('.service-item').forEach(item => {
+      const cb = item.querySelector('input[type="checkbox"]');
+      if (!cb) return;
+      if (cb.value === 'Expanded Safety (Mortgage Test)') {
+        cb.value = 'WW - Expanded Safety';
+        const nameEl = item.querySelector('.service-name');
+        const descEl = item.querySelector('.service-desc');
+        if (nameEl) nameEl.textContent = `WW - Expanded Safety — ${prices['WW - Expanded Safety'] || '$90'}`;
+        if (descEl) descEl.textContent = 'Chloride, Fluoride, Nitrite-N, Nitrate-N, Arsenic, Lead, Uranium, Copper, Iron, Manganese, Sodium, Hardness, pH, Alkalinity, Coliform, E. coli';
+      }
+    });
+  }
+}
+
+function updateQueueBanner() {
+  const banner = document.getElementById('queue-banner');
+  const text = document.getElementById('queue-text');
+  const unsynced = pendingQueue.filter(s => !s.synced);
+  if (unsynced.length > 0) {
+    banner.classList.add('visible');
+    text.textContent = `${unsynced.length} submission${unsynced.length > 1 ? 's' : ''} waiting to sync — will send automatically when online.`;
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+// ─── SERVICE SELECTION ──────────────────────────────────────────────────────
+
+function toggleService(label) {
+  const cb = label.querySelector('input[type="checkbox"]');
+  label.classList.toggle('selected', cb.checked);
+}
+
+// Fix: prevent double-toggle from label+checkbox both firing
+document.querySelectorAll('.service-item').forEach(item => {
+  item.addEventListener('click', (e) => {
+    if (e.target.tagName === 'INPUT') {
+      item.classList.toggle('selected', e.target.checked);
+    }
+  });
+});
+
+function getSelectedServices() {
+  const checked = document.querySelectorAll('.service-item input[type="checkbox"]:checked');
+  const services = [];
+  checked.forEach(cb => services.push(cb.value));
+  return services;
+}
+
+// ─── CAMERA / BARCODE SCAN ──────────────────────────────────────────────────
+
+let cameraStream = null;
+
+async function openCamera() {
+  const modal = document.getElementById('camera-modal');
+  modal.classList.add('open');
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+    document.getElementById('camera-feed').srcObject = cameraStream;
+    showToast('Camera active — barcode scanning coming in v2. Enter manually for now.');
+  } catch (err) {
+    showToast('Camera not available — please enter barcode manually.');
+    modal.classList.remove('open');
+  }
+}
+
+function closeCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  document.getElementById('camera-modal').classList.remove('open');
+}
+
+// ─── VALIDATION ─────────────────────────────────────────────────────────────
+
+function validateForm() {
+  let valid = true;
+  const required = ['date-drawn', 'customer', 'email', 'phone', 'location', 'city'];
+
+  required.forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('invalid');
+    if (!el.value.trim()) {
+      el.classList.add('invalid');
+      valid = false;
+    }
+  });
+
+  const services = getSelectedServices();
+  if (services.length === 0) {
+    showToast('Please select at least one test.');
+    valid = false;
+  }
+
+  if (!valid && document.querySelector('.invalid')) {
+    document.querySelector('.invalid').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Please fill in all required fields.');
+  }
+
+  return valid;
+}
+
+// ─── SUBMIT ─────────────────────────────────────────────────────────────────
+
+async function submitForm() {
+  if (!validateForm()) return;
+
+  const services = getSelectedServices();
+  const barcode = document.getElementById('barcode-input').value.trim();
+
+  // Generate a sample ID if no barcode was provided
+  const sampleId = barcode || generateSampleId();
+
+  const submission = {
+    id: sampleId,
+    timestamp: new Date().toISOString(),
+    dateDrawn: document.getElementById('date-drawn').value,
+    timeDrawn: document.getElementById('time-drawn').value,
+    customer: document.getElementById('customer').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    phone: document.getElementById('phone').value.trim(),
+    location: document.getElementById('location').value.trim(),
+    city: document.getElementById('city').value.trim(),
+    state: document.getElementById('state').value.trim(),
+    zip: document.getElementById('zip').value.trim(),
+    services: services.join('; '),
+    notes: document.getElementById('notes').value.trim(),
+    clientKey: currentClientKey || 'general',
+    synced: false,
+  };
+
+  // Save to IDB queue (accessible by service worker for background sync)
+  pendingQueue.push(submission);
+  await saveToQueue(submission);
+  updateQueueBanner();
+
+  // Register background sync for when connectivity returns (Android Chrome)
+  registerBackgroundSync();
+
+  // Try to sync immediately if online
+  syncToSheets(submission);
+  updateClientInventory(submission);
+
+  showSuccess(submission);
+}
+
+async function updateClientInventory(submission) {
+  // Directly updates Sheet2 (inventory) + Sheet4 (activity log) server-side
+  // so this works regardless of which device the admin checks later
+  try {
+    await fetch('/.netlify/functions/update-inventory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientKey: submission.clientKey,
+        sampleId: submission.id,
+        dateDrawn: submission.dateDrawn,
+        timeDrawn: submission.timeDrawn,
+        customerName: submission.customer,
+      }),
+    });
+  } catch (err) {
+    console.error('Inventory update failed:', err);
+  }
+}
+
+function generateSampleId() {
+  const date = new Date();
+  const prefix = 'CHA';
+  const dateStr = date.getFullYear().toString().slice(-2) +
+    (date.getMonth()+1).toString().padStart(2,'0') +
+    date.getDate().toString().padStart(2,'0');
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return `${prefix}-${dateStr}-${rand}`;
+}
+
+// ─── GOOGLE SHEETS SYNC ─────────────────────────────────────────────────────
+
+function registerBackgroundSync() {
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.sync.register('cha-sync-queue').catch(() => {});
+    });
+  }
+}
+
+async function syncToSheets(submission) {
+  try {
+    const res = await fetch('/.netlify/functions/sync-to-sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submission),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      showToast('Sync failed: ' + (data.error || 'Unknown error'), 6000);
+      return;
+    }
+
+    // Mark synced in memory and IDB
+    const idx = pendingQueue.findIndex(s => s.id === submission.id);
+    if (idx > -1) {
+      pendingQueue[idx].synced = true;
+      pendingQueue[idx].syncedAt = new Date().toISOString();
+    }
+    await updateInQueue(submission.id, { synced: true, syncedAt: new Date().toISOString() });
+
+    updateQueueBanner();
+    updateSyncStatus();
+    showToast('✅ Synced to lab!');
+
+  } catch (err) {
+    // Offline — submission stays in IDB queue for background sync
+    console.log('[Sync] Offline, queued for later:', submission.id);
+  }
+}
+
+async function attemptSync() {
+  const queue = await getQueue();
+  const unsynced = queue.filter(s => !s.synced);
+  if (!unsynced.length) return;
+
+  let count = 0;
+  for (const s of unsynced) {
+    try {
+      const res = await fetch('/.netlify/functions/sync-to-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(s),
+      });
+      if (res.ok) {
+        await updateInQueue(s.id, { synced: true, syncedAt: new Date().toISOString() });
+        count++;
+      }
+    } catch { break; } // Still offline, stop trying
+  }
+
+  // Reload queue from IDB to get fresh state
+  pendingQueue = await getQueue();
+  updateQueueBanner();
+  updateSyncStatus();
+
+  if (count > 0) {
+    showToast(`✅ ${count} submission${count > 1 ? 's' : ''} synced!`);
+  }
+}
+
+// ─── SUCCESS SCREEN ─────────────────────────────────────────────────────────
+
+function showSuccess(submission) {
+  document.getElementById('form-view').style.display = 'none';
+  document.getElementById('submit-area').style.display = 'none';
+  document.getElementById('welcome-banner').classList.remove('visible');
+  document.getElementById('queue-banner').classList.remove('visible');
+
+  const screen = document.getElementById('success-screen');
+  screen.classList.add('visible');
+
+  // Sub message
+  const sub = document.getElementById('success-sub');
+  sub.textContent = 'Submitted — syncing to Chanalytical lab systems.';
+
+  // Barcode
+  try {
+    JsBarcode('#barcode-svg', submission.id, {
+      format: 'CODE128',
+      width: 2,
+      height: 60,
+      displayValue: true,
+      fontSize: 12,
+      margin: 8,
+      background: '#ffffff',
+      lineColor: '#003A5C',
+    });
+  } catch(e) {
+    console.warn('Barcode render error:', e);
+  }
+  document.getElementById('barcode-label-text').textContent = submission.id;
+
+  // Summary
+  const summary = document.getElementById('submission-summary');
+  const formatDate = (d) => {
+    const [y,m,day] = d.split('-');
+    return `${m}-${day}-${y.slice(-2)}`;
+  };
+  const row = (key, val) => val ? `<div class="summary-row"><span class="summary-key">${key}</span><span class="summary-val">${val}</span></div>` : '';
+  summary.innerHTML = `
+    ${row('Sample ID', submission.id)}
+    ${row('Customer', submission.customer)}
+    ${row('Email', submission.email)}
+    ${row('Phone', submission.phone)}
+    ${row('Date Drawn', formatDate(submission.dateDrawn) + (submission.timeDrawn ? ' at ' + submission.timeDrawn : ''))}
+    ${row('Address', submission.location)}
+    ${row('City / Town', submission.city)}
+    ${row('State', submission.state)}
+    ${row('Zip', submission.zip)}
+    ${row('Tests Requested', submission.services)}
+    ${row('Notes', submission.notes)}
+  `;
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function startNew() {
+  // Reset form
+  document.getElementById('date-drawn').valueAsDate = new Date();
+  const now = new Date();
+  document.getElementById('time-drawn').value =
+    now.getHours().toString().padStart(2,'0') + ':' +
+    now.getMinutes().toString().padStart(2,'0');
+  document.getElementById('barcode-input').value = '';
+  document.getElementById('location').value = '';
+  document.getElementById('city').value = '';
+  document.getElementById('zip').value = '';
+  document.getElementById('notes').value = '';
+
+  // Reset services
+  document.querySelectorAll('.service-item').forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    cb.checked = false;
+    item.classList.remove('selected');
+  });
+
+  // If no known client, also clear customer, email and phone
+  if (!currentClientKey) {
+    document.getElementById('customer').value = '';
+    document.getElementById('customer').classList.remove('prefilled');
+    document.getElementById('email').value = '';
+    document.getElementById('email').classList.remove('prefilled');
+    document.getElementById('phone').value = '';
+  } else {
+    // Re-apply prefills for known clients
+    const profile = CLIENT_PROFILES[currentClientKey];
+    if (profile) {
+      document.getElementById('customer').value = profile.name;
+      document.getElementById('customer').classList.add('prefilled');
+      if (profile.email) {
+        document.getElementById('email').value = profile.email;
+        document.getElementById('email').classList.add('prefilled');
+      }
+      if (profile.phone) {
+        document.getElementById('phone').value = profile.phone;
+        document.getElementById('phone').classList.add('prefilled');
+      }
+    }
+  }
+
+  // Show form, hide success
+  document.getElementById('success-screen').classList.remove('visible');
+  document.getElementById('form-view').style.display = '';
+  document.getElementById('submit-area').style.display = '';
+
+  if (currentClientKey) {
+    document.getElementById('welcome-banner').classList.add('visible');
+  }
+
+  updateQueueBanner();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function viewQueue() {
+  const all = [...pendingQueue].reverse();
+  if (all.length === 0) {
+    showToast('No submissions yet.', 3000);
+    return;
+  }
+
+  // Build modal
+  const existing = document.getElementById('history-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'history-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,58,92,0.85);z-index:200;
+    display:flex;flex-direction:column;padding:20px;overflow-y:auto;
+  `;
+
+  const unsynced = all.filter(s => !s.synced);
+  const synced = all.filter(s => s.synced);
+
+  const formatD = (d) => d ? d.replace(/(\d{4})-(\d{2})-(\d{2})/, '$2/$3/$1') : '';
+
+  const renderGroup = (label, items) => {
+    if (!items.length) return '';
+    return `
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#C8E8F0;margin:16px 0 8px;">${label}</div>
+      ${items.map(s => `
+        <div style="background:white;border-radius:10px;padding:14px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:12px;font-weight:700;color:#003A5C;">${s.customer}</span>
+            <span style="font-size:10px;padding:3px 8px;border-radius:20px;background:${s.synced ? '#e6f4f6' : '#FFF3E0'};color:${s.synced ? '#00869B' : '#7B4F00'};">${s.synced ? '✓ Synced' : '⏳ Pending'}</span>
+          </div>
+          <div style="font-size:12px;color:#4A6572;margin-bottom:4px;">📅 ${formatD(s.dateDrawn)}${s.timeDrawn ? ' at ' + s.timeDrawn : ''}</div>
+          <div style="font-size:12px;color:#4A6572;margin-bottom:4px;">📍 ${s.location}, ${s.city}</div>
+          <div style="font-size:12px;color:#4A6572;margin-bottom:6px;">🧪 ${s.services}</div>
+          <div style="font-size:10px;font-family:monospace;color:#003A5C;background:#F5F9FA;padding:4px 8px;border-radius:4px;">${s.id}</div>
+        </div>
+      `).join('')}
+    `;
+  };
+
+  modal.innerHTML = `
+    <div style="max-width:600px;margin:0 auto;width:100%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="color:white;font-size:18px;font-weight:700;">Submission History</div>
+        <button onclick="document.getElementById('history-modal').remove()" 
+          style="background:rgba(255,255,255,0.15);border:none;color:white;padding:8px 16px;border-radius:20px;font-size:14px;cursor:pointer;">Close</button>
+      </div>
+      ${renderGroup('Pending Sync (' + unsynced.length + ')', unsynced)}
+      ${unsynced.length > 0 ? `<button onclick="clearPendingQueue()" style="width:100%;padding:12px;background:#E67E22;color:white;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:16px;">Clear Pending Queue</button>` : ''}
+      ${renderGroup('Submitted (' + synced.length + ')', synced)}
+      ${all.length > 0 ? `<button onclick="clearAllHistory()" style="width:100%;padding:12px;background:rgba(255,255,255,0.1);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:10px;font-size:13px;cursor:pointer;margin-top:8px;">Clear All History</button>` : ''}
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+}
+
+function clearPendingQueue() {
+  if (confirm('Clear all pending submissions?')) {
+    pendingQueue = pendingQueue.filter(s => s.synced);
+    localStorage.setItem('chanalytical_queue', JSON.stringify(pendingQueue));
+    updateQueueBanner();
+    document.getElementById('history-modal').remove();
+    showToast('Pending queue cleared.');
+  }
+}
+
+function clearAllHistory() {
+  if (confirm('Clear all submission history from this device?')) {
+    pendingQueue = [];
+    localStorage.setItem('chanalytical_queue', JSON.stringify(pendingQueue));
+    updateQueueBanner();
+    document.getElementById('history-modal').remove();
+    showToast('History cleared.');
+  }
+}
+
+// ─── TOAST ──────────────────────────────────────────────────────────────────
+
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ─── INSTALL BANNER ─────────────────────────────────────────────────────────
+
+// ─── INSTALL BANNER & BUTTON ─────────────────────────────────────────────────
+
+let _deferredInstallPrompt = null; // Chrome/Android native install prompt
+
+// Capture Chrome's beforeinstallprompt so we can trigger it from our button
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  showInstallButton();
+});
+
+// Hide button if already installed
+window.addEventListener('appinstalled', () => {
+  _deferredInstallPrompt = null;
+  hideInstallButton();
+  showToast('✅ App installed!');
+});
+
+function isRunningAsPWA() {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+}
+
+function showInstallButton() {
+  if (isRunningAsPWA()) return;
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.style.display = 'flex';
+}
+
+function hideInstallButton() {
+  const btn = document.getElementById('install-btn');
+  if (btn) btn.style.display = 'none';
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function showInstallBanner() {
+  if (isRunningAsPWA()) return;
+  if (localStorage.getItem('cha_banner_dismissed')) return;
+  // On iOS show the banner since there's no native prompt
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (isIOS) {
+    const banner = document.getElementById('install-banner');
+    if (banner) banner.style.display = 'flex';
+  }
+  showInstallButton();
+}
+
+function showInstallHelp() {
+  // Android Chrome — use native install prompt if available
+  if (_deferredInstallPrompt) {
+    _deferredInstallPrompt.prompt();
+    _deferredInstallPrompt.userChoice.then(result => {
+      if (result.outcome === 'accepted') hideInstallButton();
+      _deferredInstallPrompt = null;
+    });
+    return;
+  }
+
+  // iOS or no native prompt — show manual instructions
+  document.getElementById('install-help-modal').style.display = 'flex';
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  document.getElementById('install-ios').style.display = isIOS ? 'block' : 'none';
+  document.getElementById('install-android').style.display = isAndroid ? 'block' : 'none';
+  document.getElementById('install-other').style.display = (!isIOS && !isAndroid) ? 'block' : 'none';
+}
+
+setTimeout(showInstallBanner, 2000);
+
+// ─── SERVICE WORKER REGISTRATION ────────────────────────────────────────────
+
+// ─── SERVICE WORKER ──────────────────────────────────────────────────────────
+// (registered early in <head> for iOS Safari compatibility)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.ready.then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          showToast('App updated — tap here to reload', 8000);
+          document.getElementById('toast').style.cursor = 'pointer';
+          document.getElementById('toast').onclick = () => window.location.reload();
+        }
+      });
+    });
+  });
+}
+</script>
+</body>
+</html>

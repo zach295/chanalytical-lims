@@ -1,0 +1,16 @@
+{
+  "name": "chanalytical-api",
+  "version": "1.0.0",
+  "description": "Chanalytical LIMS Azure Functions API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "func start",
+    "build": "echo 'No build step'"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.0.0",
+    "@azure/identity": "^4.0.0",
+    "xlsx": "^0.18.5",
+    "pdf-lib": "^1.17.1"
+  }
+}

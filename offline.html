@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Chanalytical — Offline</title>
+  <style>
+    body{font-family:-apple-system,sans-serif;background:#003A5C;color:white;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;}
+    h1{font-family:Georgia,serif;font-size:24px;margin-bottom:12px;}
+    p{font-size:15px;opacity:.8;line-height:1.6;margin-bottom:24px;}
+    button{background:#00869B;border:none;color:white;padding:14px 28px;border-radius:10px;font-size:16px;cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div>
+    <h1>Chanalytical Laboratories</h1>
+    <p>You're offline. Open the app once while connected to the internet so it can load offline in the future.</p>
+    <button onclick="window.location.reload()">Try Again</button>
+  </div>
+  <script>
+    // Auto-redirect once online
+    window.addEventListener('online', () => window.location.href = '/');
+  </script>
+</body>
+</html>
