@@ -13,3 +13,5 @@ require('./mark-scan-processed');
 require('./test-types');
 require('./admin');
 require('./setup-lists');
+require('./scan-folder');
+require('./generate-report');
