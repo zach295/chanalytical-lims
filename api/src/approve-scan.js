@@ -105,7 +105,7 @@ app.http('approve-scan', {
       const normalizedTests = tests.map(normalizeTest);
       const selectedPackage = normalizedTests.find(t => PACKAGE_SET.has(t)) || null;
       const selectedElements = normalizedTests.filter(t => !PACKAGE_SET.has(t) && t !== 'Radon Water');
-      const hasRadon = hasRadon || normalizedTests.includes('Radon Water');
+      const radonRequested = hasRadon || normalizedTests.includes('Radon Water');
 
       if (!selectedPackage && !selectedElements.length)
         return { status:400, body: JSON.stringify({ error:'No valid tests selected' }) };
@@ -144,7 +144,7 @@ app.http('approve-scan', {
       }
 
       // Radon item
-      if (hasRadon) {
+      if (radonRequested) { 
         labItems.push({ baseId, fullId:`${baseId} RW`, suffix:'RW', isRadon:true, coaTest:'Radon Water' });
       }
 
