@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="format-detection" content="telephone=no,address=no,email=no" />
+  <meta name="google" content="nositelinkssearchbox" />
   <title>Chanalytical — Lab Dashboard</title>
   <style>
     :root {
@@ -131,19 +133,28 @@
 </head>
 <body autocomplete="off">
 <script>
-// Globally disable browser autofill on all inputs except intentional password fields
+// Globally suppress browser autofill, "Save to Google", and credential saving
 document.addEventListener('DOMContentLoaded', function() {
   function disableAutofill(root) {
-    root.querySelectorAll('input:not([type=password]), select, textarea').forEach(function(el) {
-      if (!el.dataset.allowAutofill) {
-        el.setAttribute('autocomplete', 'off');
-        el.setAttribute('data-form-type', 'other');
-        el.setAttribute('data-lpignore', 'true');
-      }
+    root.querySelectorAll('input, select, textarea').forEach(function(el) {
+      if (el.dataset.allowAutofill) return;
+      el.setAttribute('autocomplete', 'new-password'); // "new-password" is the most effective blocker
+      el.setAttribute('data-form-type', 'other');
+      el.setAttribute('data-lpignore', 'true');
+      el.setAttribute('data-1p-ignore', 'true');
+      el.setAttribute('readonly', 'true'); // prevent autofill on focus
+      el.addEventListener('focus', function() { this.removeAttribute('readonly'); }, { once: false });
+      // Chrome triggers "Save" popup on type=email and type=password — use type=text instead
+      if (el.type === 'email' || el.type === 'password') el.type = 'text';
+    });
+    root.querySelectorAll('form').forEach(function(f) {
+      f.setAttribute('autocomplete', 'off');
     });
   }
+
   disableAutofill(document);
-  // Watch for dynamically added inputs (scan cards)
+
+  // Re-run whenever the DOM changes (scan cards, modals, etc.)
   new MutationObserver(function(mutations) {
     mutations.forEach(function(m) {
       m.addedNodes.forEach(function(node) {
@@ -151,6 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   }).observe(document.body, { childList: true, subtree: true });
+
 });
 </script>
 <div style="display:flex;min-height:100vh;">
@@ -170,6 +182,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="sb-btn active" onclick="showSection('overview',this)">📊 Overview</button>
     <button class="sb-btn" onclick="showSection('review',this)">🔬 Review Queue <span id="review-badge" style="background:var(--warning);color:white;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px;display:none;"></span></button>
     <button class="sb-btn" onclick="showSection('rejected',this)">🚫 Rejected Samples</button>
+    <button class="sb-btn" onclick="showSection('sample-correction',this)">✏️ Sample Correction</button>
 
     <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
@@ -275,9 +288,11 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="section" id="section-review">
     <div class="section-hdr">
       <div class="section-hdr-title">🔬 Review Queue</div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn-ok" style="padding:8px 18px;font-size:13px;" onclick="triggerScanNow(this)">⚡ Check Drive Now</button>
         <button class="action-btn" onclick="refreshQueueSafe()">↻ Refresh Queue</button>
+        <button class="btn-secondary" id="create-cs-btn" style="padding:8px 18px;font-size:13px;background:var(--slate);color:#fff;border:none;border-radius:8px;cursor:pointer;" onclick="createTodaysControlSheet(this)">📋 Create Today's Control Sheet</button>
+        <span id="create-cs-status" style="font-size:12px;color:var(--slate);"></span>
       </div>
     </div>
 
@@ -877,6 +892,9 @@ document.addEventListener('DOMContentLoaded', function() {
               <input type="checkbox" class="rej-type-cb" value="Rejected - Timeout" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Timeout
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Missing Information" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Missing Information
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
               <input type="checkbox" class="rej-type-cb" value="Rejected - Chlorine" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Chlorine
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -908,6 +926,76 @@ document.addEventListener('DOMContentLoaded', function() {
       </table>
     </div>
   </div>
+  <!-- ══ SAMPLE CORRECTION ════════════════════════════════════════════════════ -->
+  <div class="section" id="section-sample-correction">
+    <div class="card" style="max-width:700px;">
+      <div class="card-header"><div class="card-title">✏️ Sample Correction</div></div>
+      <div style="padding:20px;">
+        <p style="margin:0 0 16px;color:var(--slate);font-size:14px;">Look up a Lab ID and edit sample information. Changes will update Archived Intake in SharePoint.</p>
+
+        <div style="display:flex;gap:10px;margin-bottom:20px;">
+          <input type="text" id="sc-lookup-id" placeholder="Lab ID (e.g. 072126-003)"
+            style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;"
+            onkeydown="if(event.key==='Enter')lookupSampleForCorrection()" />
+          <button class="btn-ok" onclick="lookupSampleForCorrection()" style="padding:10px 16px;white-space:nowrap;">Look Up</button>
+        </div>
+
+        <div id="sc-lookup-status" style="font-size:13px;color:var(--slate);margin-bottom:12px;min-height:18px;"></div>
+
+        <div id="sc-edit-form" style="display:none;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div class="form-field" style="grid-column:1/-1;">
+              <label>Customer / Company</label>
+              <input type="text" id="sc-edit-customer" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Date Sampled</label>
+              <input type="text" id="sc-edit-dateDrawn" placeholder="MM-DD-YY" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Time Sampled (HH:MM)</label>
+              <input type="text" id="sc-edit-timeDrawn" placeholder="HH:MM" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Date Received</label>
+              <input type="text" id="sc-edit-receivedDate" placeholder="MM-DD-YY" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Time Received (HH:MM)</label>
+              <input type="text" id="sc-edit-receivedTime" placeholder="HH:MM" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field" style="grid-column:1/-1;">
+              <label>Street Address</label>
+              <input type="text" id="sc-edit-location" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>City</label>
+              <input type="text" id="sc-edit-city" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>State</label>
+              <input type="text" id="sc-edit-state" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Zip</label>
+              <input type="text" id="sc-edit-zip" maxlength="5" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Notes</label>
+              <input type="text" id="sc-edit-notes" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button class="btn-ok" onclick="saveSampleCorrection()" id="sc-save-btn" style="padding:11px 24px;">💾 Save Changes</button>
+            <button class="btn-cancel" onclick="document.getElementById('sc-edit-form').style.display='none';document.getElementById('sc-lookup-status').textContent='';document.getElementById('sc-lookup-id').value='';" style="padding:11px 16px;">Cancel</button>
+            <span id="sc-save-status" style="font-size:13px;color:var(--slate);"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ TEST TYPES ══════════════════════════════════════════════════════════ -->
   <div class="section" id="section-testtypes">
 
@@ -1196,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/admin-read');
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Sheets read failed (${res.status}): ${errText.slice(0,300)}`);
+        throw new Error(`Load failed (${res.status}): ${errText.slice(0,300)}`);
       }
       const data = await res.json();
 
@@ -1224,52 +1312,36 @@ document.addEventListener('DOMContentLoaded', function() {
         activityLog = data.activityLog.reverse();
       }
 
-      const errBanner = document.getElementById('sheets-error-banner');
+      const errBanner = document.getElementById('sp-error-banner');
       if (errBanner) errBanner.style.display = 'none';
 
     } catch(err) {
       console.error('Load failed:', err);
       ensureInventoryKeys();
-      let errBanner = document.getElementById('sheets-error-banner');
+      let errBanner = document.getElementById('sp-error-banner');
       if (!errBanner) {
         errBanner = document.createElement('div');
-        errBanner.id = 'sheets-error-banner';
+        errBanner.id = 'sp-error-banner';
         errBanner.style.cssText = 'background:#fdf0ee;border:2px solid #C0392B;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#C0392B;';
         const mainEl = document.querySelector('main');
         if (mainEl) mainEl.prepend(errBanner);
       }
       errBanner.style.display = 'block';
       errBanner.innerHTML = `
-        <strong>⚠️ Could not connect to Google Sheets</strong><br>
+        <strong>⚠️ Could not connect to SharePoint</strong><br>
         <code style="font-size:11px;word-break:break-all;">${err.message}</code><br><br>
         <strong>Checklist:</strong><br>
-        • Sheet tabs named exactly: <code>Client Inventory</code>, <code>Bottle Inventory</code>, <code>Activity Log</code><br>
-        • Netlify env vars set: <code>SPREADSHEET_ID</code>, <code>GOOGLE_PRIVATE_KEY</code>, <code>GOOGLE_CLIENT_EMAIL</code>, <code>GOOGLE_PRIVATE_KEY_ID</code>, <code>GOOGLE_CLIENT_ID</code><br>
-        • Service account has Editor access to the Sheet<br>
-        • Netlify has been redeployed since last env var change<br><br>
+        • SharePoint Lists created (run /api/setup-lists if not done)<br>
+        • Azure env vars set: <code>MS_TENANT_ID</code>, <code>MS_CLIENT_ID</code>, <code>MS_CLIENT_SECRET</code>, <code>SP_SITE_ID</code><br>
+        • Admin consent granted for <code>Sites.FullControl.All</code> in App registrations<br><br>
         <button onclick="loadFromSheets().then(render)" style="padding:8px 16px;background:#C0392B;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">↺ Retry</button>
-        &nbsp;
-        <button onclick="runConnectionDiag()" style="padding:8px 16px;background:#003A5C;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 Run Diagnostic</button>
       `;
     }
     _loading = false;
     showLoadingOverlay(false);
   }
 
-  async function runConnectionDiag() {
-    const banner = document.getElementById('sheets-error-banner');
-    if (banner) banner.innerHTML += '<br>🔍 Running diagnostic...';
-    try {
-      const res = await fetch('/api/admin-read');
-      const text = await res.text();
-      let parsed = null;
-      try { parsed = JSON.parse(text); } catch(e) {}
-      const detail = parsed ? JSON.stringify(parsed, null, 2).slice(0, 500) : text.slice(0, 500);
-      if (banner) banner.innerHTML += `<br><pre style="font-size:10px;background:#fff;padding:8px;border-radius:4px;overflow:auto;max-height:200px;">${detail}</pre>`;
-    } catch(err) {
-      if (banner) banner.innerHTML += `<br>❌ Fetch failed entirely: ${err.message}`;
-    }
-  }
+  
 
   async function writeInventory() {
     try {
@@ -1283,7 +1355,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function writeBottles() {
     try {
-      // Write both bottles and kitBoxes to Sheet3
       const allBottles = { ...bottles, ...kitBoxes };
       await fetch('/api/admin-write', {
         method: 'POST',
@@ -1323,7 +1394,7 @@ document.addEventListener('DOMContentLoaded', function() {
       el = document.createElement('div');
       el.id = 'loading-overlay';
       el.style.cssText = 'position:fixed;inset:0;background:rgba(0,58,92,0.5);z-index:999;display:flex;align-items:center;justify-content:center;';
-      el.innerHTML = '<div style="background:white;border-radius:10px;padding:28px 40px;text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⏳</div><div style="font-weight:600;color:#003A5C;">Loading from Sheets...</div></div>';
+      el.innerHTML = '<div style="background:white;border-radius:10px;padding:28px 40px;text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⏳</div><div style="font-weight:600;color:#003A5C;">Loading from SharePoint...</div></div>';
       document.body.appendChild(el);
     }
     el.style.display = show ? 'flex' : 'none';
@@ -1369,6 +1440,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const labLabel = document.getElementById('sb-labtool-label');
     if (labLabel) labLabel.style.display = 'none';
   }
+  // ── Client list state — must be declared before loadScanQueue() is called ──
+  let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
+  let _clientsLastLoaded = 0;
+  let _CLIENT_EMAILS     = {}; // map: clientName → report email
+  let _CLIENT_FLAGS      = {}; // map: clientName → warning message shown on scan card
+
   // Load from Sheets then render
   loadFromSheets().then(() => {
     syncFromFieldApp();
@@ -1984,7 +2061,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── CLIENTS MANAGEMENT ────────────────────────────────────────────────────
   let _clientsData = [];
-  let _ALL_CLIENTS = []; // populated when scan cards render, used by approveScan
   let _editingRow  = null;
 
   // ── USERS TAB ─────────────────────────────────────────────────────────────
@@ -2317,6 +2393,101 @@ document.addEventListener('DOMContentLoaded', function() {
       </tr>`).join('');
     } catch {
       tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">⚠️ Could not load rejection history.</div></td></tr>';
+    }
+  }
+
+  // ── SAMPLE CORRECTION TAB ────────────────────────────────────────────────
+  let _scCurrentData = null; // holds the looked-up sample data
+
+  async function lookupSampleForCorrection() {
+    const labIdRaw = document.getElementById('sc-lookup-id').value.trim();
+    const statusEl = document.getElementById('sc-lookup-status');
+    const formEl   = document.getElementById('sc-edit-form');
+    if (!labIdRaw) { statusEl.textContent = 'Enter a Lab ID first.'; return; }
+
+    const baseId = labIdRaw.match(/(\d{6}-\d{3})/)?.[1] || labIdRaw;
+    statusEl.textContent = '⏳ Looking up...';
+    statusEl.style.color = 'var(--slate)';
+    formEl.style.display = 'none';
+
+    try {
+      // Search directly in Archived Intake — works for any date
+      const res = await fetch(`/api/lookup-labid?baseId=${encodeURIComponent(baseId)}`);
+      if (!res.ok) throw new Error('Could not search Archived Intake');
+      const data = await res.json();
+
+      if (!data.found) {
+        statusEl.textContent = `⚠️ Lab ID ${baseId} not found in Archived Intake.`;
+        statusEl.style.color = 'var(--error)';
+        return;
+      }
+
+      const found = data.record;
+      _scCurrentData = { ...found, baseId };
+
+      // Populate fields
+      document.getElementById('sc-edit-customer').value     = found.customer     || '';
+      document.getElementById('sc-edit-dateDrawn').value    = found.dateDrawn    || '';
+      document.getElementById('sc-edit-timeDrawn').value    = found.timeDrawn    || '';
+      document.getElementById('sc-edit-receivedDate').value = found.receivedDate || found.dateReceived || '';
+      document.getElementById('sc-edit-receivedTime').value = found.receivedTime || found.timeReceived || '';
+      document.getElementById('sc-edit-location').value     = found.location     || '';
+      document.getElementById('sc-edit-city').value         = found.city         || '';
+      document.getElementById('sc-edit-state').value        = found.state        || 'ME';
+      document.getElementById('sc-edit-zip').value          = found.zip          || '';
+      document.getElementById('sc-edit-notes').value        = found.notes        || '';
+      document.getElementById('sc-save-status').textContent = '';
+
+      statusEl.textContent = `✅ Found: ${baseId} — ${found.customer||'Unknown'}`;
+      statusEl.style.color = 'var(--success)';
+      formEl.style.display = 'block';
+    } catch(e) {
+      statusEl.textContent = '⚠️ ' + e.message;
+      statusEl.style.color = 'var(--error)';
+    }
+  }
+
+  async function saveSampleCorrection() {
+    if (!_scCurrentData) return;
+    const saveBtn  = document.getElementById('sc-save-btn');
+    const statusEl = document.getElementById('sc-save-status');
+
+    const g = id => document.getElementById(id).value.trim();
+    const updates = {
+      customer:     g('sc-edit-customer'),
+      dateDrawn:    g('sc-edit-dateDrawn'),
+      timeDrawn:    g('sc-edit-timeDrawn'),
+      receivedDate: g('sc-edit-receivedDate'),
+      receivedTime: g('sc-edit-receivedTime'),
+      location:     g('sc-edit-location'),
+      city:         g('sc-edit-city'),
+      state:        g('sc-edit-state'),
+      zip:          g('sc-edit-zip'),
+      notes:        g('sc-edit-notes'),
+    };
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Saving...';
+    statusEl.textContent = '';
+
+    try {
+      const res = await fetch('/api/update-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseId: _scCurrentData.baseId, updates, updatedBy: getAdminName() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+
+      statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s) in SharePoint.`;
+      statusEl.style.color = 'var(--success)';
+      showToast(`✅ Sample ${_scCurrentData.baseId} updated successfully`);
+    } catch(e) {
+      statusEl.textContent = '⚠️ ' + e.message;
+      statusEl.style.color = 'var(--error)';
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 Save Changes';
     }
   }
 
@@ -3057,6 +3228,37 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  async function createTodaysControlSheet(btn) {
+    const statusEl = document.getElementById('create-cs-status');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '⏳ Creating...';
+    statusEl.textContent = '';
+    try {
+      const res = await fetch('/api/control-sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create' }),
+      });
+      const data = await res.json();
+      if (data.alreadyExists) {
+        statusEl.textContent = `✅ ${data.message}`;
+        statusEl.style.color = 'var(--success)';
+      } else if (data.success) {
+        statusEl.textContent = `✅ ${data.message}`;
+        statusEl.style.color = 'var(--success)';
+        showToast(`📋 ${data.fileName} created in Test C/${data.monthFolder}`);
+      } else {
+        statusEl.textContent = `⚠️ ${data.error || 'Failed'}`;
+        statusEl.style.color = 'var(--error)';
+      }
+    } catch(e) {
+      statusEl.textContent = '⚠️ ' + e.message;
+      statusEl.style.color = 'var(--error)';
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+
   async function triggerScanNow(btn) {
     const orig = btn.textContent;
     btn.textContent = '⏳ Scanning...';
@@ -3064,8 +3266,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const countBefore = scanQueueData?.pending?.length || 0;
 
-    // Fire the scan without awaiting — Opus takes longer than Netlify's HTTP timeout
-    // but the function DOES complete and write to the queue in the background
+    // HARD RESET — button always resets after 100 seconds
+    const hardReset = setTimeout(() => {
+      btn.textContent = orig; btn.disabled = false;
+    }, 100000);
+
+    let elapsed = 0;
+    const POLL_MS = 5000;
+    const MAX_MS  = 90000;
+    const resetBtn = () => { clearTimeout(hardReset); btn.textContent = orig; btn.disabled = false; };
+
+    // poll declared before fetch so the .then() callback can reference it
+    let poll;
+
+    // Fire scan — don't await, Netlify may timeout but function completes in background
     fetch('/api/scan-folder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3074,38 +3288,31 @@ document.addEventListener('DOMContentLoaded', function() {
       const text = await res.text();
       try {
         const data = JSON.parse(text);
-        if (data.checked === 0 || data.processed === 0) {
-          // Silently let the poll handle it — no toast here to avoid false "empty" messages
-          console.log('[scan]', data.message || `checked=${data.checked}, processed=${data.processed}`);
+        if (data.checked === 0) {
+          // Empty folder — stop immediately
+          clearInterval(poll); resetBtn();
+          showToast("📭 Couldn't find any scans in the folder", 4000);
+        } else if (data.processed === 0 && data.checked > 0) {
+          // Files found but failed to process — keep polling in case it recovered
+          // and let the 90-second timeout handle it
+          console.log(`[scan] ${data.checked} file(s) found but processed=0: ${data.message||''}`);
+          showToast(`⚠️ Found ${data.checked} file(s) but processing failed — check Netlify logs`, 6000);
+          clearInterval(poll); resetBtn();
         }
-      } catch { /* timeout — polling will catch results */ }
+      } catch { /* timeout — poll handles results */ }
     }).catch(() => { /* timeout expected */ });
 
     showToast('⏳ Scanning... results will appear automatically', 4000);
 
-    // HARD RESET — button ALWAYS resets after 100 seconds no matter what
-    // This is the fail-safe independent of the poll
-    const hardReset = setTimeout(() => {
-      btn.textContent = orig; btn.disabled = false;
-      console.log('[scan] Hard reset fired');
-    }, 100000);
-
-    // Poll queue every 5 seconds for up to 90 seconds
-    let elapsed = 0;
-    const POLL_MS = 5000;
-    const MAX_MS  = 90000;
-    const resetBtn = () => { clearTimeout(hardReset); btn.textContent = orig; btn.disabled = false; };
-    const poll = setInterval(async () => {
+    poll = setInterval(async () => {
       elapsed += POLL_MS;
       try {
-        // Don't re-render if user is actively editing a scan card field
         const activeEl = document.activeElement;
         const isEditingScanCard = activeEl && (
           activeEl.closest?.('#section-review') &&
           (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')
         );
         if (isEditingScanCard) {
-          // Just fetch new data silently without re-rendering
           const res = await fetch('/api/get-scan-queue');
           if (res.ok) { const d = await res.json(); scanQueueData = d; }
         } else {
@@ -3119,7 +3326,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast(`✅ ${n} new scan${n > 1 ? 's' : ''} ready for review`);
       } else if (elapsed >= MAX_MS) {
         clearInterval(poll); resetBtn();
-        console.log('[scan] Poll timed out');
+        showToast("📭 No new scans found — folder may be empty", 4000);
       }
     }, POLL_MS);
   }
@@ -3171,23 +3378,64 @@ document.addEventListener('DOMContentLoaded', function() {
   function enforceRejectedTimeout(checkbox, fileId) {
     const container = document.getElementById(`sc-${fileId}-tests`);
     if (!container) return;
-    if (checkbox.checked) {
-      // Uncheck everything else and disable all other test inputs
+
+    if (!checkbox.checked) {
+      setRejectedTimeoutExclusion(container, false, null);
+      return;
+    }
+
+    // Uncheck other rejection checkboxes (only one rejection type at a time)
+    const rejectionValues = new Set(['Rejected - Timeout','Rejected - Missing Information','WQ - Reject','RW - Reject']);
+    container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      if (cb !== checkbox && rejectionValues.has(cb.value)) cb.checked = false;
+    });
+
+    if (checkbox.value === 'WQ - Reject') {
+      // Uncheck all package tests and individual elements (but leave Radon Water alone)
+      // Only Radon Water should be selectable alongside WQ-Reject
       container.querySelectorAll('input[type=checkbox]').forEach(cb => {
-        if (cb !== checkbox) { cb.checked = false; }
+        if (!rejectionValues.has(cb.value) && cb.value !== 'Radon Water') cb.checked = false;
       });
-      setRejectedTimeoutExclusion(container, true);
+      setRejectedTimeoutExclusion(container, true, 'allow-radon');
+
+    } else if (checkbox.value === 'RW - Reject') {
+      // Uncheck Radon Water only — keep the package test the user had selected
+      container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        if (cb.value === 'Radon Water') cb.checked = false;
+      });
+      setRejectedTimeoutExclusion(container, true, 'lock-radon');
+
     } else {
-      setRejectedTimeoutExclusion(container, false);
+      // Standard full lock (Timeout, Missing Info) — uncheck everything
+      container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        if (cb !== checkbox) cb.checked = false;
+      });
+      setRejectedTimeoutExclusion(container, true, null);
     }
   }
 
-  function setRejectedTimeoutExclusion(container, lock) {
+  function setRejectedTimeoutExclusion(container, lock, mode) {
+    const rejectionValues = new Set(['Rejected - Timeout','Rejected - Missing Information','WQ - Reject','RW - Reject']);
     container.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      if (cb.value !== 'Rejected - Timeout') {
-        cb.disabled = lock;
-        cb.closest('label').style.opacity = lock ? '0.35' : '';
-        cb.closest('label').style.cursor  = lock ? 'not-allowed' : 'pointer';
+      if (rejectionValues.has(cb.value)) return; // never lock rejection checkboxes
+
+      const isRadon = cb.value === 'Radon Water';
+
+      let shouldLock;
+      if (!lock) {
+        shouldLock = false;                        // unlocking everything
+      } else if (mode === 'allow-radon') {
+        shouldLock = !isRadon;                     // WQ-Reject: lock all except Radon Water
+      } else if (mode === 'lock-radon') {
+        shouldLock = isRadon;                      // RW-Reject: lock only Radon Water
+      } else {
+        shouldLock = true;                         // full lock (Timeout etc.)
+      }
+
+      cb.disabled = shouldLock;
+      if (cb.closest('label')) {
+        cb.closest('label').style.opacity = shouldLock ? '0.35' : '';
+        cb.closest('label').style.cursor  = shouldLock ? 'not-allowed' : 'pointer';
       }
     });
   }
@@ -3270,23 +3518,34 @@ document.addEventListener('DOMContentLoaded', function() {
     loadScanQueue();
   }
 
-  // ── Load real client names from Clients sheet ─────────────────────────────
-  // _ALL_CLIENTS is used by scan card to decide whether to show email field
+  // ── Load real client names + emails from Clients sheet ────────────────────
   async function refreshClientList() {
+    if (Date.now() - _clientsLastLoaded < 5 * 60 * 1000 && _ALL_CLIENTS.length) return;
     try {
       const res = await fetch('/api/clients-read');
       if (!res.ok) return;
       const data = await res.json();
-      const names = (data.clients || [])
-        .filter(c => c.active !== false && c.active !== 'FALSE' && c.clientName)
-        .map(c => c.clientName.trim());
-      if (names.length) _ALL_CLIENTS = names;
+      const active = (data.clients || []).filter(c => c.active !== false && c.active !== false && c.clientName);
+      const names  = active.filter(c => !c.clientName.startsWith('Public-')).map(c => c.clientName.trim());
+      const emails = {};
+      active.forEach(c => { if (c.email) emails[c.clientName.trim()] = c.email.trim(); });
+      if (names.length) {
+        _ALL_CLIENTS    = names;
+        _CLIENT_EMAILS  = emails;
+        _clientsLastLoaded = Date.now();
+
+        // Client-specific flags — shown as warning banners on scan cards
+        // Add entries here for any client that needs a reminder
+        _CLIENT_FLAGS = {
+          'Campbell Property Inspections': '💳 Make sure test is paid for before approving',
+        };
+      }
     } catch(e) { console.warn('[refreshClientList]', e.message); }
   }
 
   async function loadScanQueue() {
-    // Refresh client list in parallel with scan queue so email field is correct
-    refreshClientList();
+    // Load client list FIRST so scan cards use the live Clients sheet, not the hardcoded list
+    await refreshClientList();
     try {
       const res = await fetch('/api/get-scan-queue');
       if (!res.ok) throw new Error(await res.text());
@@ -3483,17 +3742,8 @@ document.addEventListener('DOMContentLoaded', function() {
       'Uranium, Total',
     ];
 
-    _ALL_CLIENTS = [
-      'A-Z Water Systems','Advanced Inspections, Inc','All in One Home Inspections, LLC',
-      'Campbell Property Inspections','Defender Home Inspections, Inc.',
-      'Downeast Home Inspections, LLC',"Elliott's Information Service LLC",
-      'Evergreen Inspections','FPI / ChanCorp, Inc.','Fontus Water',
-      'Madden Home Inspections','Main Choice Inspections, Inc.',
-      'Maine Radon & Environmental, LLC','Nova Analytic Labs (Nova EnviroLabs)',
-      'OnPoint Home Inspections Service','Peter Mason / Friend Real Estate Inc.',
-      'Super Inspector','Ward Water / Critical Plumbing Inc.',
-      'Yankee Home Inspections','Other / Walk-in',
-    ];
+    // _ALL_CLIENTS is loaded from the Clients sheet by refreshClientList() before cards render
+    // No hardcoded fallback — if it's empty it means the sheet hasn't loaded yet
 
     const paddedZip = r.zip ? String(r.zip).padStart(5,'0') : '';
 
@@ -3524,7 +3774,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let scanReceivedDate = today;
     let scanReceivedTime = '';
     if (r.processedDate) {
-      const parts = r.processedDate.trim().split(' '); // ["MM-DD-YY", "HH:MM", "AM/PM"]
+      const parts = r.processedDate.trim().split(/\s+/); // ["MM-DD-YY", "HH:MM", "AM/PM"]
       if (parts[0]) {
         const dp = parts[0].split('-');
         if (dp.length === 3) {
@@ -3532,17 +3782,25 @@ document.addEventListener('DOMContentLoaded', function() {
           scanReceivedDate = `${yr}-${dp[0]}-${dp[1]}`;
         }
       }
-      if (parts[1]) {
-        const timePart = parts[1]; // "HH:MM"
-        const ampm = (parts[2] || '').toUpperCase();
-        const [hh, mm] = timePart.split(':').map(Number);
-        if (!isNaN(hh) && !isNaN(mm)) {
-          let h24 = hh;
-          if (ampm === 'PM' && hh !== 12) h24 = hh + 12;
-          if (ampm === 'AM' && hh === 12) h24 = 0;
-          scanReceivedTime = `${String(h24).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+      // Try HH:MM from parts[1], with optional AM/PM in parts[2]
+      const timePart = parts[1] || '';
+      const ampm = (parts[2] || '').toUpperCase().replace(/[^APM]/g,'');
+      const tm = timePart.match(/(\d{1,2}):(\d{2})/);
+      if (tm) {
+        let h = parseInt(tm[1]), m = parseInt(tm[2]);
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+          scanReceivedTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
         }
       }
+    }
+    // Final fallback: use current ET time if still empty
+    if (!scanReceivedTime) {
+      const now = new Date();
+      const etH = parseInt(now.toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',hour12:false}));
+      const etM = now.toLocaleString('en-US',{timeZone:'America/New_York',minute:'2-digit'}).padStart(2,'0');
+      scanReceivedTime = `${String(etH).padStart(2,'0')}:${etM}`;
     }
 
     // Timeout detection — use scan received time (more reliable than OCR Lab Use Only box)
@@ -3553,17 +3811,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const hasRejectedTimeout = timeoutResult?.flags?.some(f => f.type === 'rejected');
     const hasExpiredInPackage = timeoutResult?.flags?.some(f => f.type === 'expired');
 
-    // Auto-convert to Rejected - Timeout when any element exceeds its limit
+    // Auto-convert to Rejected - Timeout — but ONLY for standalone elements
+    // If bacteria/nitrate/nitrite expire inside a PACKAGE, keep the package and add a note
     let displayTests = [...tests];
+    let timeoutNotes = [];
     if (hasRejectedTimeout || hasExpiredInPackage) {
-      // Remove all packages and expired individual elements, add Rejected - Timeout
       const allPackages = [...(PACKAGE_TESTS_LIST||[]), ...(AIO_TESTS_LIST||[])];
-      const rejectedElements = (timeoutResult?.flags||[]).filter(f=>f.type==='rejected').map(f=>f.element);
-      displayTests = displayTests.filter(t =>
-        !allPackages.includes(t) &&           // remove all packages (expired element was in one)
-        !rejectedElements.includes(t)          // remove expired individual elements
-      );
-      if (!displayTests.includes('Rejected - Timeout')) displayTests.push('Rejected - Timeout');
+      const rejectedFlags = (timeoutResult?.flags||[]).filter(f=>f.type==='rejected'||f.type==='expired');
+      const selectedPackage = displayTests.find(t => allPackages.includes(t));
+      const expiredElements = rejectedFlags.map(f=>f.element);
+      if (selectedPackage && expiredElements.length) {
+        // Elements expired inside a package — keep the package, add a note, do NOT reject
+        timeoutNotes = expiredElements.map(el => {
+          const flag = rejectedFlags.find(f=>f.element===el);
+          return `${el} over time limit (${flag?.hours||'?'} hrs old, limit ${flag?.limit||'?'} hrs)`;
+        });
+        // Only remove standalone expired elements that aren't covered by the package
+        displayTests = displayTests.filter(t => allPackages.includes(t) || !expiredElements.includes(t));
+      } else {
+        // Standalone elements expired — reject them
+        displayTests = displayTests.filter(t =>
+          !allPackages.includes(t) &&
+          !expiredElements.includes(t)
+        );
+        if (!displayTests.includes('Rejected - Timeout')) displayTests.push('Rejected - Timeout');
+      }
     }
 
     // Timeout / expiry banner
@@ -3572,11 +3844,15 @@ document.addEventListener('DOMContentLoaded', function() {
       const hasRejected = timeoutResult.flags.some(f=>f.type==='rejected');
       const hasExpired  = timeoutResult.flags.some(f=>f.type==='expired');
       const hasClose    = timeoutResult.flags.some(f=>f.type==='close');
-      const bgColor = hasRejected||hasExpired ? '#fff0f0' : '#fffbe6';
-      const borderColor = hasRejected||hasExpired ? 'var(--error)' : 'var(--warning)';
-      const icon = hasRejected||hasExpired ? '⛔' : '⏰';
+      const inPackage   = hasExpired && !hasRejected; // expired inside a package — note only, not rejected
+      const bgColor     = hasRejected ? '#fff0f0' : inPackage ? '#fff8e6' : '#fffbe6';
+      const borderColor = hasRejected ? 'var(--error)' : inPackage ? '#f59e0b' : 'var(--warning)';
+      const icon        = hasRejected ? '⛔' : inPackage ? '⚠️' : '⏰';
+      const headline    = hasRejected ? 'Sample(s) REJECTED — Timeout'
+                        : inPackage   ? 'Element(s) over time limit — package kept'
+                        : 'Close to timeout';
       timeoutBanner = `<div style="background:${bgColor};border-left:4px solid ${borderColor};padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;">
-        ${icon} <strong>${hasRejected?'Sample(s) REJECTED - Timeout':hasExpired?'Element(s) expired in package':'Close to timeout'}</strong>
+        ${icon} <strong>${headline}</strong>
         <ul style="margin:6px 0 0;padding-left:18px;">
           ${timeoutResult.flags.map(f=>`<li>${f.element}: ${f.hours} hrs old${f.type==='close'?` (${f.remaining} hrs remaining)`:f.over?` — ${f.over} hrs over ${f.limit} hr limit`:` — exceeds ${f.limit} hr limit`}</li>`).join('')}
         </ul>
@@ -3607,10 +3883,25 @@ document.addEventListener('DOMContentLoaded', function() {
           style="width:16px;height:16px;cursor:pointer;" />Radon Water
       </label>` +
       '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;border-top:1px solid var(--border);padding-top:8px;">Rejection</div>' +
-      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
         <input type="checkbox" value="Rejected - Timeout" aria-label="Rejected - Timeout" ${displayTests.includes('Rejected - Timeout') ? 'checked' : ''}
           onchange="enforceRejectedTimeout(this,'${r.fileId}')"
           style="width:16px;height:16px;cursor:pointer;" />Rejected - Timeout
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+        <input type="checkbox" value="Rejected - Missing Information" aria-label="Rejected - Missing Information" ${displayTests.includes('Rejected - Missing Information') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />Rejected - Missing Information
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;" title="Water quality test rejected — Radon Water still processed normally">
+        <input type="checkbox" value="WQ - Reject" aria-label="WQ - Reject" ${displayTests.includes('WQ - Reject') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />WQ — Reject <span style="font-size:11px;color:var(--slate);margin-left:4px;">(water quality rejected, RW proceeds)</span>
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:8px;" title="Radon Water rejected — water quality test still processed normally">
+        <input type="checkbox" value="RW - Reject" aria-label="RW - Reject" ${displayTests.includes('RW - Reject') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />RW — Reject <span style="font-size:11px;color:var(--slate);margin-left:4px;">(radon rejected, WQ proceeds)</span>
       </label>` +
       '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;border-top:1px solid var(--border);padding-top:8px;">Individual Elements</div>' +
       ALL_TESTS.filter(t => !PACKAGE_TESTS_LIST.includes(t) && !AIO_TESTS_LIST.includes(t) && t !== 'Radon Water').map(t =>
@@ -3621,35 +3912,56 @@ document.addEventListener('DOMContentLoaded', function() {
       ).join('');
 
     // Customer dropdown — with the OCR value pre-selected if it matches, otherwise blank
-    // Check if OCR customer matches any known client — full name or significant word match
+    // Check if OCR customer matches any known client
+    // Use strict matching — avoid common words that cause false positives
+    const STOP_WORDS = new Set(['water','home','inspection','inspections','inc','llc','ltd',
+      'corp','co','systems','services','plumbing','well','environmental','testing',
+      'labs','laboratory','laboratories','and','the','of','for']);
     const customerLower = (r.customer||'').toLowerCase().trim();
     const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
       const cl = c.toLowerCase();
-      // Exact match or one contains the other (handles abbreviations/partial names)
-      return cl === customerLower || cl.includes(customerLower) || customerLower.includes(cl) ||
-        // First meaningful word match (skip short words like "the", "a")
-        cl.split(/\s+/).filter(w=>w.length>2).some(w => customerLower.includes(w));
+      // Exact match
+      if (cl === customerLower) return true;
+      // One fully contains the other (handles abbreviations like "FPI" in "FPI / ChanCorp")
+      if (cl.includes(customerLower) || customerLower.includes(cl)) return true;
+      // Significant word match — only non-stop words of 4+ chars
+      const sigWords = cl.split(/[\s,./]+/).filter(w => w.length >= 4 && !STOP_WORDS.has(w));
+      if (!sigWords.length) return false;
+      // ALL significant words must appear in customer (not just one)
+      return sigWords.length >= 2
+        ? sigWords.filter(w => customerLower.includes(w)).length >= 2
+        : sigWords.every(w => customerLower.includes(w));
     }) : null;
     const isPublicClient = !matchedClient;
+
+    // Client-specific flag banner — must be after matchedClient is declared
+    const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
+    const flagBanner = clientFlag
+      ? `<div style="background:#fff8e6;border-left:4px solid #f59e0b;padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;font-weight:600;">
+          ⚠️ ${clientFlag}
+        </div>`
+      : '';
     const clientOptions = ['<option value="">— Select or type below —</option>',
       ..._ALL_CLIENTS.map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
     ].join('');
 
-    // Email field — only shown for public/unmatched clients (known clients have email in Clients sheet)
-    const emailFieldHtml = isPublicClient ? `<div class="form-field" style="grid-column:1/-1;">
-      <label for="sc-${r.fileId}-email">Email Address <span style="color:var(--error);font-size:11px;">(required — client not on list)</span></label>
+    // Email field — always shown, auto-filled from Clients sheet if client is known
+    const clientEmail = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
+    const emailFieldHtml = `<div class="form-field" style="grid-column:1/-1;">
+      <label for="sc-${r.fileId}-email">Email Address</label>
       <input type="text" id="sc-${r.fileId}-email" inputmode="email" autocomplete="new-password" spellcheck="false"
-        value="${(r.email||'').replace(/"/g,'&quot;')}"
-        placeholder="Required — for report delivery"
+        value="${clientEmail.replace(/"/g,'&quot;')}"
+        placeholder="For report delivery"
         oninput="this.style.borderColor=''"
         style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
-    </div>` : `<input type="hidden" id="sc-${r.fileId}-email" value="${(r.email||'').replace(/"/g,'&quot;')}" />`;
+    </div>`;
 
     // Use Eastern Time for date defaults in the browser
 
     // Convert value to safe date string for date inputs
-    const safeDate = (val) => {
-      if (!val) return today; // default to today
+    // For dateDrawn (Date Sampled): NEVER default to today if blank — leave it empty
+    const safeDate = (val, allowBlank=false) => {
+      if (!val) return allowBlank ? '' : today;
       const s = String(val).trim();
       // Already YYYY-MM-DD
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
@@ -3664,13 +3976,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const d = new Date(s);
         if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
       } catch {}
-      return today;
+      // Unrecognised format — if blank allowed return '', otherwise today
+      // For dateDrawn (Date Sampled) allowBlank=true so bad OCR → ''
+      return allowBlank ? '' : today;
     };
 
     const inp = (id, type, val, lbl, hint='') => {
       const isTime = type === 'time';
-      // For date inputs, convert value and default received date to today
-      const safeVal = type === 'date' ? safeDate(val) : String(val||'');
+      // dateDrawn always uses allowBlank — never default to today for Date Sampled
+      const safeVal = type === 'date'
+        ? (id === 'dateDrawn' ? safeDate(val, true) : safeDate(val))
+        : String(val||'');
       const inputAttrs = isTime
         ? `type="text" placeholder="HH:MM" pattern="[0-2][0-9]:[0-5][0-9]" maxlength="5"`
         : `type="${type}"`;
@@ -3697,6 +4013,7 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
 
       ${r.validationErrors ? `<div style="background:var(--error-light);color:var(--error);padding:10px 16px;font-size:13px;font-weight:600;">⚠️ ${r.validationErrors}</div>` : ''}
+      ${flagBanner}
       ${timeoutBanner}
 
       <div style="padding:20px;">
@@ -3707,7 +4024,21 @@ document.addEventListener('DOMContentLoaded', function() {
           <!-- Customer dropdown -->
           <div class="form-field" style="grid-column:1/-1;">
             <label for="sc-${r.fileId}-customer-select">Customer / Company <span style="font-size:10px;color:var(--slate);font-weight:400;margin-left:4px;">(Report To section)</span></label>
-            <select id="sc-${r.fileId}-customer-select" onchange="document.getElementById('sc-${r.fileId}-customer').value=this.value"
+            <select id="sc-${r.fileId}-customer-select" onchange="
+              const typed = document.getElementById('sc-${r.fileId}-customer');
+              typed.value = this.value;
+              const em = document.getElementById('sc-${r.fileId}-email');
+              if (em) {
+                if (this.value) {
+                  // Known client selected — fill email from client map
+                  const lookup = (_CLIENT_EMAILS && _CLIENT_EMAILS[this.value]) || '';
+                  if (lookup) em.value = lookup;
+                } else {
+                  // Dropdown cleared — user will type a name; clear email so they can fill it
+                  em.value = '';
+                }
+              }
+            "
               style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);background:white;margin-bottom:6px;">
               ${clientOptions}
             </select>
@@ -3719,7 +4050,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
           ${emailFieldHtml}
 
-          ${inp('dateDrawn','date', r.dateDrawn, 'Date Sampled', '(collection date)')}
+          ${inp('dateDrawn','date', r.dateDrawn||'', 'Date Sampled', '(collection date)')}
           ${inp('timeDrawn','time', normTime(r.timeDrawn), 'Time Sampled 24hr', '(HH:MM)')}
           ${inp('receivedDate','date', scanReceivedDate, 'Date Received', '(scan date)')}
           ${inp('receivedTime','time', scanReceivedTime || normTime(r.receivedTime), 'Time Received 24hr', '(HH:MM)')}
@@ -3736,7 +4067,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         <div class="form-field" style="margin-bottom:16px;">
           <label for="sc-${r.fileId}-notes">Notes</label>
-          <input type="text" id="sc-${r.fileId}-notes" value="${String(r.notes||'').replace(/"/g,'&quot;')}"
+          <input type="text" id="sc-${r.fileId}-notes"
+            value="${String(r.notes||'').replace(/"/g,'&quot;')}"
             autocomplete="new-password" data-form-type="other" data-lpignore="true"
             style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
         </div>
@@ -3774,28 +4106,36 @@ document.addEventListener('DOMContentLoaded', function() {
     const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox]:checked`);
     const tests   = Array.from(testEls).map(el => el.value);
     const hasRadon = tests.includes('Radon Water');
+    const wqReject = tests.includes('WQ - Reject');
+    const rwReject = tests.includes('RW - Reject');
 
     // ── REQUIRED FIELD VALIDATION ─────────────────────────────────────────
     const missing = [];
-    if (!g('customer'))      missing.push('Customer / Company');
-    if (!g('dateDrawn'))     missing.push('Date Sampled');
-    if (!g('timeDrawn'))     missing.push('Time Sampled (HH:MM)');
-    if (!g('receivedDate'))  missing.push('Date Received');
-    if (!g('receivedTime'))  missing.push('Time Received (HH:MM)');
-    if (!g('location'))      missing.push('Street Address');
-    if (!g('city'))          missing.push('City');
-    if (!g('state'))         missing.push('State');
-    if (!g('zip'))           missing.push('Zip Code');
-    if (!tests.length)       missing.push('At least one test');
+    const isMissingInfo = tests.some(t => t === 'Rejected - Missing Information');
+    const isPartialReject = wqReject || rwReject; // WQ/RW reject still need basic info
 
-    // Require email for public/unmatched clients
-    const isPublicApprove = !_ALL_CLIENTS.some(c => c.toLowerCase() === g('customer').toLowerCase());
-    if (isPublicApprove && !g('email')) missing.push('Email Address (required for clients not on the client list)');
-
-    // Validate time format HH:MM
-    const timeRe = /^\d{2}:\d{2}$/;
-    if (g('timeDrawn') && !timeRe.test(g('timeDrawn'))) missing.push('Time Sampled must be HH:MM (e.g. 14:30)');
-    if (g('receivedTime') && !timeRe.test(g('receivedTime'))) missing.push('Time Received must be HH:MM (e.g. 12:49)');
+    if (!isMissingInfo) {
+      // Full validation — skip for Missing Information rejections
+      if (!g('customer'))      missing.push('Customer / Company');
+      if (!g('dateDrawn'))     missing.push('Date Sampled');
+      if (!g('timeDrawn'))     missing.push('Time Sampled (HH:MM)');
+      if (!g('receivedDate'))  missing.push('Date Received');
+      if (!g('receivedTime'))  missing.push('Time Received (HH:MM)');
+      if (!g('location'))      missing.push('Street Address');
+      if (!g('city'))          missing.push('City');
+      if (!g('state'))         missing.push('State');
+      const zipVal = g('zip');
+      if (!zipVal)                          missing.push('Zip Code');
+      else if (!/^\d{5}$/.test(zipVal))     missing.push('Zip Code must be 5 digits');
+      // Require email for public/unmatched clients
+      const isPublicApprove = !_ALL_CLIENTS.some(c => c.toLowerCase() === g('customer').toLowerCase());
+      if (isPublicApprove && !g('email')) missing.push('Email Address (required for clients not on the client list)');
+      // Validate time format HH:MM
+      const timeRe = /^\d{2}:\d{2}$/;
+      if (g('timeDrawn') && !timeRe.test(g('timeDrawn'))) missing.push('Time Sampled must be HH:MM (e.g. 14:30)');
+      if (g('receivedTime') && !timeRe.test(g('receivedTime'))) missing.push('Time Received must be HH:MM (e.g. 14:30)');
+    }
+    if (!tests.length) missing.push('At least one test');
 
     if (missing.length) {
       statusEl.style.color = 'var(--error)';
@@ -3807,17 +4147,6 @@ document.addEventListener('DOMContentLoaded', function() {
       const btn = document.getElementById(`approve-btn-${fileId}`);
       if (btn) { btn.disabled = false; btn.textContent = '✅ Approve — Generate Lab ID & Write to Sheets'; }
       return;
-    }
-
-    // ── AUTO-APPEND TIMEOUT NOTES ─────────────────────────────────────────
-    const timeoutCheck = checkSampleTimeout(tests, g('dateDrawn'), g('timeDrawn'), g('receivedDate'), g('receivedTime'));
-    if (timeoutCheck?.notes?.length) {
-      const notesEl = document.getElementById(`sc-${fileId}-notes`);
-      if (notesEl) {
-        const existing = notesEl.value.trim();
-        const toAdd = timeoutCheck.notes.join(' | ');
-        notesEl.value = existing ? `${existing} | ${toAdd}` : toAdd;
-      }
     }
 
     statusEl.textContent = '⏳ Generating Lab ID and writing to sheets...';
@@ -3838,6 +4167,8 @@ document.addEventListener('DOMContentLoaded', function() {
           reviewQueueRow: rowIndex,
           reviewedBy:   getAdminName(),
           customer:     g('customer'),
+          // If nothing was selected from the dropdown, the client was typed manually → treat as public
+          isPublicOverride: !document.getElementById(`sc-${fileId}-customer-select`)?.value,
           dateDrawn:    g('dateDrawn'),
           timeDrawn:    g('timeDrawn'),
           receivedDate: g('receivedDate'),
@@ -3849,6 +4180,8 @@ document.addEventListener('DOMContentLoaded', function() {
           email:        g('email'),
           tests,
           hasRadon,
+          wqReject,
+          rwReject,
           notes:        g('notes'),
         }),
       });
@@ -3873,6 +4206,44 @@ document.addEventListener('DOMContentLoaded', function() {
           statusEl.style.color = 'var(--warning)';
           statusEl.textContent += ` ⚠️ ${data.warning}`;
         }
+      }
+
+      // Write lab IDs to control sheet from browser (avoids Netlify function timeout)
+      if (data.labIds?.length) {
+        (async () => {
+          const CS_URL = '/api/control-sheet';
+          const CS_HDR = { 'Content-Type': 'application/json' };
+          const post = (body, signal) => fetch(CS_URL, { method:'POST', headers:CS_HDR, body:JSON.stringify(body), signal });
+
+          try {
+            // Step 1: Try to write — if file exists this is all we need (20s timeout)
+            const ctrl1   = new AbortController();
+            const timer1  = setTimeout(() => ctrl1.abort(), 24000);
+            const addRes  = await post({ action:'addLabIds', labIds:data.labIds }, ctrl1.signal).catch(e=>({ ok:false, status:0, json:()=>({ success:false, error:e.name==='AbortError'?'timeout':e.message }) }));
+            clearTimeout(timer1);
+            const addData = await Promise.resolve(addRes.json ? addRes.json() : addRes).catch(()=>({ success:false, error:'parse error' }));
+            console.log('[control-sheet] addLabIds:', addRes.status, addData.success ? `✅ wrote ${addData.written} IDs to row ${addData.startRow}` : addData.error);
+
+            if (addData.success) return; // Done
+
+            // Step 2: File missing — auto-create from template
+            console.log('[control-sheet] Creating control sheet...');
+            const createRes  = await post({ action:'create' });
+            const createData = await createRes.json().catch(()=>({}));
+            console.log('[control-sheet] create:', createRes.status, createData.message || createData.error);
+
+            if (!createData.success && !createData.alreadyExists) return;
+
+            // Step 3: Wait for SharePoint to finish copying (async operation)
+            await new Promise(r => setTimeout(r, 10000));
+
+            // Step 4: Retry writing
+            const retryRes  = await post({ action:'addLabIds', labIds:data.labIds });
+            const retryData = await retryRes.json().catch(()=>({}));
+            console.log('[control-sheet] retry:', retryRes.status, retryData.success ? `✅ wrote ${retryData.written} IDs to row ${retryData.startRow}` : retryData.error);
+
+          } catch(e) { console.warn('[control-sheet] error:', e.message); }
+        })();
       }
       showToast(`✅ ${labIdStr} written to sheets`);
 
@@ -4737,13 +5108,77 @@ document.addEventListener('DOMContentLoaded', function() {
       statusEl.style.color = 'var(--slate)';
       document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-      // ── Step 2: Results come from Results Cache (written by Power Automate) ──
-      if (data.log?.some(l => l.includes('Results Cache hit'))) {
-        statusEl.textContent = `✅ Report ready for ${labId}.`;
+      // ── Step 2: Trigger background SP fetch and poll for result ──────────
+      statusEl.textContent = `✅ Report loaded — fetching lab results (this may take up to 60s)...`;
+      statusEl.style.color = 'var(--slate)';
+
+      try {
+        // Fire background function (returns 202 immediately)
+        await fetch('/api/generate-report-sp-background', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ labId }),
+        });
+
+        // Poll get-sp-cache every 3 seconds for up to 90 seconds
+        let attempts = 0;
+        const maxAttempts = 30;
+        const poll = async () => {
+          if (attempts++ >= maxAttempts) {
+            statusEl.textContent = `✅ Report loaded — SP results taking too long. Try again shortly.`;
+            statusEl.style.color = 'var(--warning)';
+            return;
+          }
+          try {
+            const cacheRes = await fetch(`/api/get-sp-cache?labId=${encodeURIComponent(labId)}`);
+            const cacheData = await cacheRes.json();
+            if (cacheData.status === 'pending') {
+              setTimeout(poll, 3000);
+              return;
+            }
+            if (cacheData.status === 'ready') {
+              const spData = cacheData.data;
+              console.log('[SP cache]', cacheData.log?.join(' | '));
+              const { phResult: spPh, ctrlData: spCtrl, icpmsResult: spIcpms, acidPrepDT: spAcid } = spData;
+              if (spPh || spCtrl || spIcpms) {
+                const icpmsAnalDT = spIcpms?.acqTime || '';
+                currentReportData.activeParams.forEach(p => {
+                  let rawVal = '', analDT = '', prepDT = '';
+                  switch (p.source) {
+                    case 'gallery': { const gd = spCtrl?.gallery?.[p.name]||{}; rawVal=gd.value||''; analDT=gd.analDT||''; break; }
+                    case 'icpms': { const v=spIcpms?.elements?.[p.icpmsCol]; rawVal=v!==undefined?String(v):''; analDT=icpmsAnalDT; prepDT=spAcid||''; break; }
+                    case 'ph': { rawVal=spPh?.value||''; analDT=spPh?.analDT||''; break; }
+                    case 'control': {
+                      rawVal = p.name==='Total Coliform' ? spCtrl?.coliformMPN||'' : p.name==='E. Coli' ? spCtrl?.ecoliMPN||'' : '';
+                      prepDT=spCtrl?.coliformPrepDT||''; analDT=spCtrl?.coliformAnalDT||''; break;
+                    }
+                    case 'calc': {
+                      const ca=parseFloat(spIcpms?.elements?.['Ca 43 (mg/L)']??'');
+                      const mg=parseFloat(spIcpms?.elements?.['Mg 24 (mg/L)']??'');
+                      if(!isNaN(ca)&&!isNaN(mg)) rawVal=(Math.round((ca*2.497+mg*4.118)*100)/100).toString();
+                      analDT=icpmsAnalDT; prepDT=spAcid||''; break;
+                    }
+                  }
+                  if (rawVal||analDT||prepDT) {
+                    const ex = currentReportData.resultsMap[p.name]||{};
+                    currentReportData.resultsMap[p.name] = {...ex, value:rawVal||ex.value||'', prepDT:prepDT||ex.prepDT||'', time:analDT||ex.time||'', analDT:analDT||ex.analDT||''};
+                  }
+                });
+                renderEditableReport(currentReportData);
+                statusEl.textContent = `✅ Report ready for ${labId}.`;
+                statusEl.style.color = 'var(--success)';
+              } else {
+                statusEl.textContent = `✅ Report loaded — SP results not yet in control sheet.`;
+                statusEl.style.color = 'var(--success)';
+              }
+            }
+          } catch { setTimeout(poll, 3000); }
+        };
+        setTimeout(poll, 3000); // first poll after 3 seconds
+      } catch(spErr) {
+        statusEl.textContent = `✅ Report loaded for ${labId} — click any value to edit.`;
         statusEl.style.color = 'var(--success)';
-      } else {
-        statusEl.textContent = `✅ Report loaded — results not in cache yet. Run Power Automate flow after instruments finish.`;
-        statusEl.style.color = 'var(--warning)';
+        console.warn('SP BG failed:', spErr.message);
       }
 
     } catch (err) {
@@ -4981,7 +5416,7 @@ document.addEventListener('DOMContentLoaded', function() {
     statusEl.style.color = 'var(--slate)';
 
     try {
-      // ── Generate PDF from Google Sheets templates ─────────────────────────
+      // ── Generate PDF via Azure render-report-pdf function ─────────────────
       const pdfRes = await fetch('/api/render-report-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5058,12 +5493,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch(e) {
           console.warn('mark-reported failed:', e.message);
         }
-        // Delete Results Cache row after report is sent (keeps cache lean)
-        fetch('/api/cache-results', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'delete', labId: reportedBaseId }),
-        }).catch(() => {});
         // Always refresh dropdown — with small delay to let Sheets API settle
         setTimeout(() => {
           loadPendingLabIds();
