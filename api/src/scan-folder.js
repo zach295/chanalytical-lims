@@ -184,11 +184,33 @@ async function writeToReviewQueue(fields, token) {
   return res.json();
 }
 
+// ── Hard-coded alias fallbacks (v352) ────────────────────────────────────────
+const SCAN_HARD_ALIASES = {
+  'maine radon water treatment':             'Maine Radon & Environmental, LLC',
+  'ward water':                              'Critical Plumbing Inc. a/k/a Ward Water',
+  'critical plumbing':                       'Critical Plumbing Inc. a/k/a Ward Water',
+  'critical plumbing inc.a/k/a ward water': 'Critical Plumbing Inc. a/k/a Ward Water',
+  'critical plumbing inc a/k/a ward water': 'Critical Plumbing Inc. a/k/a Ward Water',
+  'all in one':                              'All In One Home Inspections, LLC',
+  'all in one home inspections':             'All In One Home Inspections, LLC',
+  'lusser team':                             'Downeast Home Inspections, LLC',
+  'lussier team':                            'Downeast Home Inspections, LLC',
+  'pillar to post':                          'Downeast Home Inspections, LLC',
+};
+
 // ── Client matching ───────────────────────────────────────────────────────────
 function matchClient(name, clients) {
   if (!name || !clients.length) return null;
   const s = name.toLowerCase().trim();
   if (s.length < 3) return null;
+
+  // Hard-coded alias fallback
+  const hardMatch = SCAN_HARD_ALIASES[s];
+  if (hardMatch) {
+    const found = clients.find(c => c.clientName.toLowerCase() === hardMatch.toLowerCase());
+    if (found) return found;
+  }
+
   return (
     clients.find(c => c.clientName.toLowerCase() === s) ||
     clients.find(c => c.aliases.split(',').map(a => a.trim().toLowerCase())
@@ -378,6 +400,20 @@ app.http('scan-folder', {
               if (middleSection.length) azureText += '=== MIDDLE OF FORM (Well Owner Address, Date/Time Sampled) ===\n'          + middleSection.join('\n') + '\n\n';
               if (bottomSection.length) azureText += '=== BOTTOM OF FORM (Test Type Checkboxes, Individual Elements) ===\n'      + bottomSection.join('\n') + '\n\n';
 
+              // Detect upside-down forms — if CUSTOMER section is in BOTTOM, form is reversed
+              const customerInBottom = bottomSection.some(l => l.includes('CUSTOMER') || l.includes('REPORT TO BE SENT TO'));
+              const customerInTop    = topSection.some(l => l.includes('CUSTOMER') || l.includes('REPORT TO BE SENT TO'));
+              if (customerInBottom && !customerInTop) {
+                const tmp = [...topSection];
+                topSection.length = 0; bottomSection.forEach(l => topSection.push(l));
+                bottomSection.length = 0; tmp.forEach(l => bottomSection.push(l));
+                azureText = '';
+                if (topSection.length)    azureText += '=== TOP OF FORM (Lab Use Only, Report To, Header) ===\n'              + topSection.join('\n')    + '\n\n';
+                if (middleSection.length) azureText += '=== MIDDLE OF FORM (Well Owner Address, Date/Time Sampled) ===\n'     + middleSection.join('\n') + '\n\n';
+                if (bottomSection.length) azureText += '=== BOTTOM OF FORM (Test Type Checkboxes, Individual Elements) ===\n' + bottomSection.join('\n') + '\n\n';
+                context.log('[scan] Upside-down form detected — sections reordered');
+              }
+
               const kvPairs = (azureResult.analyzeResult?.keyValuePairs || [])
                 .filter(kv => !isBackPage(kv.key?.content || ''));
               if (kvPairs.length) {
@@ -402,10 +438,10 @@ app.http('scan-folder', {
                 },
                 body: JSON.stringify({
                   model:      'claude-sonnet-4-6',
-                  max_tokens: 600,
-                  system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation.',
+                  max_tokens: 1000,
+                  system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation, no preamble.',
                   messages: [{ role: 'user', content:
-`Extract structured data from this A-Z Water Systems Chain of Custody form.
+`Extract structured data from this water testing Chain of Custody form.
 Azure Document Intelligence has already read the text. [CHECKED] = checked box. [unchecked] = unchecked.
 
 FORM TEXT:
