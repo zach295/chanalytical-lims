@@ -104,7 +104,7 @@
     if (pw !== confirm) { showErr(errEl, 'Passwords do not match.'); return; }
     btn.textContent = 'Saving...'; btn.disabled = true;
     try {
-      const res = await fetch('/.netlify/functions/users-manage', {
+      const res = await fetch('/api/users-manage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'setpw', email, newPassword: pw }),
