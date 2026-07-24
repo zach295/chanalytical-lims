@@ -190,7 +190,7 @@ let mySubmissions = [];
 
 async function loadMySubmissions() {
   try {
-    const res = await fetch(`/.netlify/functions/client-submissions?email=${encodeURIComponent(session.email)}`);
+    const res = await fetch(`/api/client-submissions?email=${encodeURIComponent(session.email)}`);
     if (!res.ok) throw new Error();
     const d = await res.json();
     mySubmissions = d.submissions || [];
@@ -313,7 +313,7 @@ async function sendFeedback() {
   const msgEl = document.getElementById('fb-msg');
   if (!text) { showMsg(msgEl,'er','Please enter a message.'); return; }
   try {
-    const res = await fetch('/.netlify/functions/submit-feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:session.email,name:session.name||session.email,company:companyName||'Public',message:text})});
+    const res = await fetch('/api/submit-feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:session.email,name:session.name||session.email,company:companyName||'Public',message:text})});
     if (!res.ok) throw new Error();
     closeFeedback(); toast('✅ Feedback sent — thank you!');
   } catch { showMsg(msgEl,'er','Failed to send. Please try again.'); }
