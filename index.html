@@ -979,7 +979,7 @@ if (!_session) window.location.href = '/login.html';
 
 // Google Sheets config
 // Credentials are stored securely in Netlify environment variables
-// and accessed via the /.netlify/functions/sync-to-sheets serverless function
+// and accessed via the /api/sync-to-sheets serverless function
 
 // Pricing tiers: 'wq' = WQ Pricing, 'inspector' = Inspector Pricing, 'public' = Public Pricing
 const PRICING = {
@@ -1378,7 +1378,7 @@ async function updateClientInventory(submission) {
   // Directly updates Sheet2 (inventory) + Sheet4 (activity log) server-side
   // so this works regardless of which device the admin checks later
   try {
-    await fetch('/.netlify/functions/update-inventory', {
+    await fetch('/api/update-inventory', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1416,7 +1416,7 @@ function registerBackgroundSync() {
 
 async function syncToSheets(submission) {
   try {
-    const res = await fetch('/.netlify/functions/sync-to-sheets', {
+    const res = await fetch('/api/sync-to-sheets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(submission),
@@ -1455,7 +1455,7 @@ async function attemptSync() {
   let count = 0;
   for (const s of unsynced) {
     try {
-      const res = await fetch('/.netlify/functions/sync-to-sheets', {
+      const res = await fetch('/api/sync-to-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(s),
