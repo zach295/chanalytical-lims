@@ -15,3 +15,4 @@ require('./admin');
 require('./setup-lists');
 require('./scan-folder');
 require('./generate-report');
+require('./control-sheet');
