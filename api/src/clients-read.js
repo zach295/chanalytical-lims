@@ -9,10 +9,10 @@ app.http('clients-read', {
       const items = await listItems(LISTS.CLIENTS, { top: 500 });
       const clients = items.map(r => ({
         _id:        r._id,
-        clientName: r.ClientName  || r.Title || '',
-        clientCode: r.ClientCode  || '',
+        clientName: r.Customer || r.ClientName || r.Title || '',
+        clientCode: r.Client_Acct_ || r.ClientCode || '',
         abbrev:     r.Abbrev      || '',
-        email:      r.Email       || '',
+        email: r.Report_Email_Address || r.Email || '',
         aliases:    r.Aliases     || '',
         phone:      r.Phone       || '',
         active:     r.Active !== false && r.Active !== 'FALSE',
