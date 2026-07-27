@@ -1,8 +1,5 @@
 const { app } = require('@azure/functions');
-const { listItems } = require('../shared/graph');
-
-const INV_LIST = 'Client Inventory';
-const ACT_LIST = 'Activity Log';
+const { listItems, LISTS } = require('../shared/graph');
 
 app.http('admin-read', {
   methods: ['GET'],
@@ -10,8 +7,8 @@ app.http('admin-read', {
   handler: async (request, context) => {
     try {
       const [invItems, actItems] = await Promise.all([
-        listItems(INV_LIST).catch(() => []),
-        listItems(ACT_LIST, { top: 150 }).catch(() => []),
+        listItems(LISTS.INVENTORY).catch(() => []),
+        listItems(LISTS.ACTIVITY_LOG, { top: 150 }).catch(() => []),
       ]);
       const inventory = {};
       invItems.forEach(r => {
