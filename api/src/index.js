@@ -6,4 +6,3 @@ require('./users-manage');
 require('./reject-sample');
 require('./get-rejections');
 require('./lookup-labid');
-require('./cache-results');
