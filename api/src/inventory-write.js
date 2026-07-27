@@ -19,7 +19,7 @@ app.http('inventory-write', {
           Time:         entry.time   || '',
           Client:       entry.client || '',
           ActivityType: entry.type   || '',
-          Qty:          String(entry.qty || 0),
+          Qty:          parseInt(entry.qty || 0) || 0,
           Notes:        entry.notes  || '',
           By:           entry.by     || '',
         });
@@ -33,7 +33,7 @@ app.http('inventory-write', {
       if (action === 'write_inventory') {
         const { inventory } = body;
         for (const [key, data] of Object.entries(inventory || {})) {
-          const existing = await findItem(LISTS.INVENTORY, 'ClientKey', key).catch(() => null);
+          const existing = await findItem(LISTS.INVENTORY, 'Title', key).catch(() => null);
           const fields = {
             Title:         key,
             ClientKey:     key,
@@ -56,11 +56,11 @@ app.http('inventory-write', {
       if (action === 'write_bottles') {
         const { bottles } = body;
         for (const [key, data] of Object.entries(bottles || {})) {
-          const existing = await findItem(BOTTLE_LIST, 'BottleKey', key).catch(() => null);
+          const existing = await findItem(BOTTLE_LIST, 'Title', key).catch(() => null);
           const fields = {
             Title:     key,
             BottleKey: key,
-            Count:     data.count || 0,
+            Count:     parseInt(data.count || 0) || 0,
             Label:     data.label || key,
           };
           if (existing) await updateItem(BOTTLE_LIST, existing._id, fields);
