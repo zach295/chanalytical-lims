@@ -1,2 +1,3 @@
 require('./clients-read');
-require('./admin');
+require('./admin-read');
+require('./admin-write');
