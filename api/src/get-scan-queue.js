@@ -7,13 +7,12 @@ app.http('get-scan-queue', {
   handler: async (request, context) => {
     try {
       // ── Pending scans from Review Queue ──────────────────────────────────────
-      const queueItems = await listItems(LISTS.REVIEW_QUEUE, {
-        filter: "fields/ReviewStatus ne 'Approved' and fields/ReviewStatus ne 'Discarded'",
-        orderby: 'fields/ProcessedDate desc',
-        top: 100,
-      });
+      const queueItems = await listItems(LISTS.REVIEW_QUEUE, { top: 100 });
 
-      const pending = queueItems.map(r => ({
+      const filtered = queueItems.filter(r => 
+  r.ReviewStatus !== 'Approved' && r.ReviewStatus !== 'Discarded'
+);
+const pending = filtered.map(r => ({
         fileId:         r.FileId         || '',
         barcodeId:      r.BarcodeId      || '',
         customer:       r.ClientName     || '',
@@ -35,10 +34,7 @@ app.http('get-scan-queue', {
       }));
 
       // ── Recently approved (last 5 kits from Archived Intake) ─────────────────
-      const archivedItems = await listItems(LISTS.ARCHIVED_INTAKE, {
-        orderby: 'fields/Created desc',
-        top: 50,
-      });
+      const archivedItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 50 });
 
       // Group by timestamp to combine kits approved together
       const groupedByTs = {};
