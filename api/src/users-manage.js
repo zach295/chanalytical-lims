@@ -26,6 +26,25 @@ app.http('users-manage', {
       const body = await request.json();
       const { action } = body;
 
+      if (action === 'list') {
+  const items = await listItems(LISTS.USERS, { top: 200 });
+  const users = items.map(r => ({
+    _id:       r._id,
+    email:     r.Email     || '',
+    name:      r.Name      || '',
+    role:      r.Role      || 'lab',
+    clientKey: r.ClientKey || '',
+    createdBy: r.CreatedBy || '',
+    createdAt: r.CreatedAt || '',
+    mustReset: r.MustReset === true || r.MustReset === 'true',
+    active:    r.Active !== 'FALSE' && r.Active !== false,
+  }));
+  return {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ users }),
+  };
+}
       if (action === 'create') {
         const { email, name, role, clientKey, createdBy } = body;
         const existing = await findItem(LISTS.USERS, 'Email', email);
