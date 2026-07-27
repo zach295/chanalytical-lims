@@ -16,7 +16,7 @@ app.http('inventory-read', {
 
       const inventory = {};
       invItems.forEach(r => {
-        context.log('[inv raw]', JSON.stringify(r));
+        context.log('[inventory raw]', JSON.stringify(r));
         const key = r.ClientKey || r.Title || '';
         if (key) {
           inventory[key] = {
