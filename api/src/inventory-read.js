@@ -1,15 +1,19 @@
 const { app } = require('@azure/functions');
 const { listItems, LISTS } = require('../shared/graph');
 
+const BOTTLE_LIST = 'Bottle Inventory';
+
 app.http('inventory-read', {
   methods: ['GET'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const [invItems, actItems] = await Promise.all([
+      const [invItems, actItems, bottleItems] = await Promise.all([
         listItems(LISTS.INVENTORY).catch(() => []),
         listItems(LISTS.ACTIVITY_LOG, { top: 150 }).catch(() => []),
+        listItems(BOTTLE_LIST).catch(() => []),
       ]);
+
       const inventory = {};
       invItems.forEach(r => {
         const key = r.ClientKey || r.Title || '';
@@ -23,6 +27,7 @@ app.http('inventory-read', {
           };
         }
       });
+
       const activityLog = actItems.map(r => ({
         date:   r.Date         || '',
         time:   r.Time         || '',
@@ -32,10 +37,22 @@ app.http('inventory-read', {
         notes:  r.Notes        || '',
         by:     r.By           || '',
       }));
+
+      const bottles = {};
+      bottleItems.forEach(r => {
+        const key = r.BottleKey || r.Title || '';
+        if (key) {
+          bottles[key] = {
+            count: parseInt(r.Count || '0') || 0,
+            label: r.Label || key,
+          };
+        }
+      });
+
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ inventory, activityLog }),
+        body: JSON.stringify({ inventory, activityLog, bottles }),
       };
     } catch(e) {
       context.log('[inventory-read] Error:', e.message);
