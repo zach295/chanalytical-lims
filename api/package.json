@@ -8,8 +8,9 @@
     "build": "echo 'No build step'"
   },
   "dependencies": {
-  "@azure/functions": "^4.5.0",
-  "xlsx": "^0.18.5",
-  "pdf-lib": "^1.17.1"
-}
+    "@azure/functions": "^4.5.0",
+    "nodemailer": "^6.9.0",
+    "xlsx": "^0.18.5",
+    "pdf-lib": "^1.17.1"
+  }
 }
