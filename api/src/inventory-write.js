@@ -1,6 +1,8 @@
 const { app } = require('@azure/functions');
 const { listItems, createItem, updateItem, findItem, LISTS } = require('../shared/graph');
 
+const BOTTLE_LIST = 'Bottle Inventory';
+
 app.http('inventory-write', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -17,7 +19,7 @@ app.http('inventory-write', {
           Time:         entry.time   || '',
           Client:       entry.client || '',
           ActivityType: entry.type   || '',
-          Qty:          entry.qty    || 0,
+          Qty:          String(entry.qty || 0),
           Notes:        entry.notes  || '',
           By:           entry.by     || '',
         });
@@ -51,7 +53,28 @@ app.http('inventory-write', {
         };
       }
 
-      return { status: 400, body: JSON.stringify({ error: 'Unknown action' }) };
+      if (action === 'write_bottles') {
+        const { bottles } = body;
+        for (const [key, data] of Object.entries(bottles || {})) {
+          const existing = await findItem(BOTTLE_LIST, 'BottleKey', key).catch(() => null);
+          const fields = {
+            Title:     key,
+            BottleKey: key,
+            Count:     data.count || 0,
+            Label:     data.label || key,
+          };
+          if (existing) await updateItem(BOTTLE_LIST, existing._id, fields);
+          else          await createItem(BOTTLE_LIST, fields);
+        }
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: true }),
+        };
+      }
+
+      return { status: 400, body: JSON.stringify({ error: 'Unknown action: ' + action }) };
+
     } catch(e) {
       context.log('[inventory-write] Error:', e.message);
       return { status: 500, body: JSON.stringify({ error: e.message }) };
