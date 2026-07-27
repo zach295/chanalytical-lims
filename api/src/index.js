@@ -16,7 +16,3 @@ require('./scan-folder');
 require('./generate-report');
 require('./control-sheet');
 require('./update-sample');
-require('./send-report');
-require('./render-report-pdf');
-require('./update-inventory');
-require('./sync-to-sheets');
