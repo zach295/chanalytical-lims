@@ -19,10 +19,10 @@ app.http('inventory-read', {
         const key = r.ClientKey || r.Title || '';
         if (key) {
           inventory[key] = {
-            inStock:       parseInt(r.InStock       || '0') || 0,
-            sampled:       parseInt(r.Sampled       || '0') || 0,
-            totalSent:     parseInt(r.TotalSent     || '0') || 0,
-            totalReceived: parseInt(r.TotalReceived || '0') || 0,
+            inStock:       parseInt(r.InStock       || r.InStock0       || '0') || 0,
+            sampled:       parseInt(r.Sampled       || r.Sampled0       || '0') || 0,
+            totalSent:     parseInt(r.TotalSent     || r.TotalSent0     || '0') || 0,
+            totalReceived: parseInt(r.TotalReceived || r.TotalReceived0 || '0') || 0,
             lastActivity:  r.LastActivity || '',
           };
         }
@@ -33,7 +33,7 @@ app.http('inventory-read', {
         time:   r.Time         || '',
         client: r.Client       || '',
         type:   r.ActivityType || '',
-        qty:    r.Qty          || 0,
+        qty:    parseInt(r.Qty || r.Qty0 || '0') || 0,
         notes:  r.Notes        || '',
         by:     r.By           || '',
       }));
@@ -43,7 +43,7 @@ app.http('inventory-read', {
         const key = r.BottleKey || r.Title || '';
         if (key) {
           bottles[key] = {
-            count: parseInt(r.Count || '0') || 0,
+            count: parseInt(r.Count || r.Count0 || r.count || '0') || 0,
             label: r.Label || key,
           };
         }
