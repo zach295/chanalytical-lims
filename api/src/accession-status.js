@@ -9,7 +9,6 @@ app.http('accession-status', {
       // ── GET — list pending and sent lab IDs ─────────────────────────────────
       if (request.method === 'GET') {
         const items = await listItems(LISTS.ARCHIVED_INTAKE, {
-          orderby: 'fields/Created asc',
           top: 500,
         });
 
