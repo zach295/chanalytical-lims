@@ -1,4 +1,3 @@
-// Register all Azure Functions
 require('./clients-read');
 require('./get-scan-queue');
 require('./accession-status');
@@ -16,8 +15,3 @@ require('./setup-lists');
 require('./scan-folder');
 require('./generate-report');
 require('./control-sheet');
-require('./update-sample');
-require('./send-report');
-require('./render-report-pdf');
-require('./update-inventory');
-require('./sync-to-sheets');
