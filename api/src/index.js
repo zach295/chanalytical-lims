@@ -1,5 +1,5 @@
 // Register all Azure Functions
 require('./clients-read');
 require('./accession-status');
-require('./lab-admin-read');
-require('./lab-admin-write');
+require('./admin-read');
+require('./admin-write');
