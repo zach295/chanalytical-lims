@@ -9,4 +9,3 @@ require('./lookup-labid');
 require('./cache-results');
 require('./approve-scan');
 require('./mark-scan-processed');
-require('./test-types');
