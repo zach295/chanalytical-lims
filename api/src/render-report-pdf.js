@@ -1,229 +1,228 @@
 /**
- * render-report-pdf.js — Azure version
- * Builds COA/RW report PDF using pdf-lib.
- * No Google Sheets dependency — renders directly from report data.
+ * render-report-pdf.js — Azure version (Excel template approach)
+ * 1. Downloads Report Templates.xlsx from SharePoint
+ * 2. Copies the workbook to a temp file
+ * 3. Writes sample data into specific cells via Graph API Excel endpoints
+ * 4. Exports as PDF via Graph (/content?format=pdf)
+ * 5. Deletes the temp workbook
+ * 6. Returns base64 PDF
  *
- * POST { reportData, authorizedBy, reviewDate }
- * Returns { success, pdfPages: [base64], pageCount }
+ * Cell map (Lab Report - Template):
+ *   B7=customer  B8=billing address  B9=email
+ *   H7=Lab ID    H8=date collected   I8=time collected
+ *                H9=date received    I9=time received
+ *   B11=street   H10=date reported
+ *   B12=city/state/zip
+ *   D17:D43 = results, I=prep DT, J=analysis DT
+ *   D55=authorized by   I56=review date
+ *
+ * Radon Lab Report - Template: same header, result D18, analysis J18
+ * FHA Lab Report - Template: same layout as Lab Report
  */
 const { app }    = require('@azure/functions');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const { getToken } = require('../shared/graph');
 
-// ── Color helpers ──────────────────────────────────────────────────────────────
-const COLORS = {
-  green: rgb(0,    0.73, 0.26),
-  blue:  rgb(0.13, 0.47, 0.71),
-  red:   rgb(0.90, 0.22, 0.21),
-  navy:  rgb(0,    0.227,0.361),
-  white: rgb(1,    1,    1),
-  black: rgb(0,    0,    0),
-  light: rgb(0.95, 0.95, 0.95),
-  grey:  rgb(0.4,  0.4,  0.4),
-  border:rgb(0.8,  0.8,  0.8),
+const GRAPH   = 'https://graph.microsoft.com/v1.0';
+const SITE_ID = process.env.SP_SITE_ID;
+
+const TEMPLATE_PATH = process.env.SP_REPORT_TEMPLATES ||
+  '/sites/Laboratory/Shared Documents/Documents/Report Templates.xlsx';
+
+const PARAM_ROWS = {
+  'Chloride, Total':17,'Fluoride':18,'Nitrite-Nitrogen, Total':19,'Nitrite':19,
+  'Nitrate-Nitrogen, Total':20,'Nitrate':20,'Arsenic, Total':21,'Lead, Total':22,
+  'Uranium, Total':23,'Copper, Total':24,'Iron, Total':25,'Manganese, Total':26,
+  'Sodium, Total':27,'Hardness by calculation':28,'Total Hardness':28,
+  'Calcium, Total':29,'Magnesium, Total':30,'Antimony, Total':31,'Antimony':31,
+  'Cadmium, Total':32,'Chromium, Total':33,'Chromium':33,'Cobalt':34,
+  'pH Electrometric':35,'pH':35,'Alkalinity':36,'Sulfate':37,'Tannins':38,
+  'Total Dissolved Solids (TDS)':39,'Bromide':40,'Total Coliform':42,'E. Coli':43,
 };
 
-// ── Column letter helper ───────────────────────────────────────────────────────
-function col(idx) {
-  let s = ''; idx++;
-  while (idx > 0) { s = String.fromCharCode(64 + (idx - 1) % 26 + 1) + s; idx = Math.floor((idx - 1) / 26); }
+async function gGet(path, token) {
+  const res = await fetch(`${GRAPH}${path}`, { headers:{ Authorization:`Bearer ${token}` } });
+  if (!res.ok) throw new Error(`GET ${path.slice(0,80)} → ${res.status}`);
+  return res.json();
+}
+
+async function gPost(path, body, token) {
+  const res = await fetch(`${GRAPH}${path}`, {
+    method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json().catch(()=>({}));
+}
+
+async function gPatch(path, body, token) {
+  const res = await fetch(`${GRAPH}${path}`, {
+    method:'PATCH', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${path.slice(0,80)} → ${res.status}: ${(await res.text()).slice(0,100)}`);
+  return res.json().catch(()=>({}));
+}
+
+async function gDelete(path, token) {
+  await fetch(`${GRAPH}${path}`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } });
+}
+
+function toDrivePath(p) {
+  const i = p.indexOf('Shared Documents/');
+  return i>=0 ? p.slice(i+17) : p.replace(/^\/+/,'');
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const s = String(d).trim();
+  if (/^\d{2}-\d{2}-\d{2}$/.test(s)) return s.replace(/-/g,'/');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,dd]=s.split('-'); return `${m}/${dd}/${y.slice(-2)}`; }
   return s;
 }
 
-// ── Build a single COA/RW page ─────────────────────────────────────────────────
-async function buildPage(doc, fonts, data, paramRows, isRadon, pageType) {
-  const page   = doc.addPage([612, 792]); // portrait letter
-  const { width, height } = page.getSize();
-  const { bold, regular } = fonts;
+async function getItemId(drivePath, token) {
+  const d = await gGet(`/sites/${SITE_ID}/drive/root:/${drivePath}?$select=id`, token);
+  return d.id;
+}
 
-  let y = height - 30;
-  const LEFT  = 36;
-  const RIGHT = width - 36;
-  const COL_W = width - 72;
-
-  // ── Header ──────────────────────────────────────────────────────────────────
-  page.drawRectangle({ x:LEFT, y:y-42, width:COL_W, height:44, color:COLORS.navy });
-  page.drawText('Chanalytical Laboratories, Inc.', { x:LEFT+8, y:y-16, size:13, font:bold, color:COLORS.white });
-  page.drawText('347 Main St., Unit 1B  ·  Gorham, ME 04038  ·  207-747-1815  ·  Labs@chanalytical.com',
-    { x:LEFT+8, y:y-30, size:7, font:regular, color:rgb(0.8,0.9,1) });
-  y -= 56;
-
-  // ── Title ───────────────────────────────────────────────────────────────────
-  const title = isRadon ? 'Certificate of Analysis — Radon Water' :
-                pageType === 'FHA' ? 'Certificate of Analysis — FHA' :
-                'Certificate of Analysis';
-  page.drawText(title, { x:LEFT, y, size:14, font:bold, color:COLORS.navy });
-  y -= 18;
-
-  // ── Sample info grid ─────────────────────────────────────────────────────────
-  const meta = data.meta || {};
-  const drawInfo = (label, value, x, w, yPos) => {
-    page.drawText(label + ':', { x, y:yPos+2, size:7, font:regular, color:COLORS.grey });
-    page.drawText(String(value||''), { x:x+2, y:yPos-9, size:9, font:bold, color:COLORS.black });
-    page.drawLine({ start:{x,y:yPos-12}, end:{x:x+w,y:yPos-12}, thickness:0.3, color:COLORS.border });
-  };
-
-  const halfW = (COL_W - 8) / 2;
-  drawInfo('Attention / Client',   meta.customer    || '', LEFT,        halfW, y); y -= 28;
-  drawInfo('Lab ID Number',        meta.labId       || '', LEFT,        halfW, y);
-  drawInfo('Date Reported',        data.today       || '', LEFT+halfW+8,halfW, y); y -= 28;
-  drawInfo('Date/Time Collected',  meta.dtCollected || '', LEFT,        halfW, y);
-  drawInfo('Date/Time Received',   meta.dtReceived  || '', LEFT+halfW+8,halfW, y); y -= 28;
-  drawInfo('Sample Location',      [meta.location, meta.city, meta.state, meta.zip].filter(Boolean).join(', '),
-    LEFT, COL_W, y); y -= 28;
-  drawInfo('Authorized By',        data.authorizedBy|| '', LEFT,        halfW, y);
-  drawInfo('Review Date',          data.reviewDate  || '', LEFT+halfW+8,halfW, y); y -= 20;
-
-  // ── Legend ──────────────────────────────────────────────────────────────────
-  const legendY = y;
-  const boxes = isRadon
-    ? [['At/below Maine MEG (4,000 pCi/L)', COLORS.green], ['Above Maine MEG', COLORS.blue]]
-    : [['Meets EPA Limits', COLORS.green], ['See Notation', COLORS.blue], ['Exceeds EPA Limits', COLORS.red]];
-  let lx = LEFT;
-  boxes.forEach(([label, color]) => {
-    page.drawRectangle({ x:lx, y:legendY-10, width:14, height:10, color });
-    page.drawText(label, { x:lx+17, y:legendY-9, size:7, font:regular, color:COLORS.black });
-    lx += label.length * 4.5 + 26;
-  });
-  y -= 20;
-
-  // ── Parameter table ──────────────────────────────────────────────────────────
-  const ROW_H     = 14;
-  const COL_WIDTHS = [170, 58, 52, 38, 70, 70, 72]; // param, result, epa, unit, method, prep, anal
-  const HEADERS    = ['Parameter', 'Your Result', 'EPA Limit', 'Unit', 'Method', 'Prep Date/Time', 'Analysis Date/Time'];
-  const col_x      = [LEFT];
-  COL_WIDTHS.forEach((w,i) => col_x.push(col_x[i]+w));
-
-  // Table header
-  page.drawRectangle({ x:LEFT, y:y-ROW_H, width:COL_W, height:ROW_H, color:COLORS.navy });
-  HEADERS.forEach((h,i) => {
-    page.drawText(h, { x:col_x[i]+2, y:y-ROW_H+4, size:6.5, font:bold, color:COLORS.white });
-  });
-  y -= ROW_H;
-
-  // Table rows
-  if (isRadon) {
-    const radonRes = (data.resultsMap || {})['Radon Water'] || {};
-    const rawVal   = parseFloat(radonRes.value) || 0;
-    const display  = !radonRes.value ? '' : rawVal < 100 ? '<100' : String(Math.round(rawVal/100)*100);
-    const bg       = rawVal > 4000 ? COLORS.blue : COLORS.green;
-
-    page.drawRectangle({ x:LEFT, y:y-ROW_H, width:COL_W, height:ROW_H, color:COLORS.light });
-    page.drawLine({ start:{x:LEFT,y:y-ROW_H}, end:{x:RIGHT,y:y-ROW_H}, thickness:0.3, color:COLORS.border });
-    page.drawText('Radon Water', { x:col_x[0]+2, y:y-ROW_H+4, size:7, font:regular });
-    page.drawRectangle({ x:col_x[1], y:y-ROW_H+1, width:COL_WIDTHS[1]-2, height:ROW_H-2, color:bg });
-    page.drawText(display, { x:col_x[1]+2, y:y-ROW_H+4, size:7, font:bold, color:COLORS.white });
-    page.drawText('4,000',   { x:col_x[2]+2, y:y-ROW_H+4, size:7, font:regular });
-    page.drawText('pCi/l',   { x:col_x[3]+2, y:y-ROW_H+4, size:7, font:regular });
-    page.drawText(radonRes.time||'', { x:col_x[6]+2, y:y-ROW_H+4, size:6, font:regular });
-    y -= ROW_H;
-  } else {
-    paramRows.forEach((p, idx) => {
-      if (y < 80) return; // page overflow guard
-      const bg = idx % 2 === 0 ? COLORS.light : rgb(1,1,1);
-      page.drawRectangle({ x:LEFT, y:y-ROW_H, width:COL_W, height:ROW_H, color:bg });
-      page.drawLine({ start:{x:LEFT,y:y-ROW_H}, end:{x:RIGHT,y:y-ROW_H}, thickness:0.3, color:COLORS.border });
-
-      page.drawText(p.name  ||'', { x:col_x[0]+2, y:y-ROW_H+4, size:7, font:regular, maxWidth:COL_WIDTHS[0]-4 });
-      // Result cell with color
-      if (p.value) {
-        const resultBg = COLORS[p.color] || null;
-        if (resultBg) page.drawRectangle({ x:col_x[1], y:y-ROW_H+1, width:COL_WIDTHS[1]-2, height:ROW_H-2, color:resultBg });
-        const textColor = (p.color === 'blue' || p.color === 'red') ? COLORS.white : COLORS.black;
-        page.drawText(String(p.value), { x:col_x[1]+2, y:y-ROW_H+4, size:7, font:bold, color:textColor });
-      }
-      page.drawText(String(p.epa    ||''), { x:col_x[2]+2, y:y-ROW_H+4, size:7, font:regular });
-      page.drawText(String(p.unit   ||''), { x:col_x[3]+2, y:y-ROW_H+4, size:7, font:regular });
-      page.drawText(String(p.method ||''), { x:col_x[4]+2, y:y-ROW_H+4, size:6, font:regular });
-      page.drawText(String(p.prepDT ||''), { x:col_x[5]+2, y:y-ROW_H+4, size:6, font:regular });
-      page.drawText(String(p.analDT||p.time||''), { x:col_x[6]+2, y:y-ROW_H+4, size:6, font:regular });
-      y -= ROW_H;
-    });
+async function copyToTemp(srcId, tempName, token) {
+  const root = await gGet(`/sites/${SITE_ID}/drive/root?$select=id`, token);
+  await gPost(`/sites/${SITE_ID}/drive/items/${srcId}/copy`,
+    { parentReference:{ id:root.id }, name:tempName }, token);
+  await new Promise(r=>setTimeout(r,3000));
+  for (let i=0;i<10;i++) {
+    try {
+      const f = await gGet(`/sites/${SITE_ID}/drive/root:/${encodeURIComponent(tempName)}?$select=id`, token);
+      if (f.id) return f.id;
+    } catch {}
+    await new Promise(r=>setTimeout(r,2000));
   }
+  throw new Error('Temp workbook copy timed out');
+}
 
-  // Column borders
-  COL_WIDTHS.forEach((_,i) => {
-    if (i === 0) return;
-    page.drawLine({ start:{x:col_x[i],y:legendY-20}, end:{x:col_x[i],y:y}, thickness:0.3, color:COLORS.border });
-  });
+async function writeCell(fileId, sheet, addr, value, token) {
+  const s = encodeURIComponent(sheet);
+  await gPatch(`/sites/${SITE_ID}/drive/items/${fileId}/workbook/worksheets/${s}/range(address='${addr}')`,
+    { values:[[value??'']] }, token);
+}
 
-  // ── Comments ──────────────────────────────────────────────────────────────────
-  y -= 12;
-  if (data._comments) {
-    page.drawText('Comments:', { x:LEFT, y, size:8, font:bold });
-    y -= 12;
-    page.drawText(String(data._comments), { x:LEFT, y, size:8, font:regular, maxWidth:COL_W });
-    y -= 16;
-  }
-
-  // ── Notations ────────────────────────────────────────────────────────────────
-  y -= 8;
-  const notations = isRadon ? [
-    'Maine\'s current Maximum Exposure Guideline (MEG) for radon in well water is 4,000 pCi/L.',
-    'Radon in water can be reduced by aeration or carbon filtration. Work should be done by a mitigation contractor registered with the State of Maine.',
-    'Maine Disclose: This lab meets EPA requirements for radon testing. The State of Maine Radon Registration Act requires this laboratory to report test results, zip codes and street addresses.',
-  ] : [
-    'Notation 1: The Maximum Contaminant Level (MCL) is a health-based guideline set by the Maine Center for Disease Control and Prevention (MECDCP).',
-    'Notation 2: The Secondary Maximum Contaminant Level (SMCL) is set by the USEPA through the National Secondary Drinking Water Regulations.',
-    'Notation 3: Total coliform bacteria are used as indicator organisms for the presence of pathogens.',
-    'This report shall not be reproduced, except in full, without written permission from Chanalytical Laboratories Inc.',
-    'If you have any questions regarding your report please call 207-747-1815.',
-  ];
-
-  if (y > 60) {
-    page.drawLine({ start:{x:LEFT,y}, end:{x:RIGHT,y}, thickness:0.5, color:COLORS.border });
-    y -= 10;
-    notations.forEach(note => {
-      if (y < 36) return;
-      page.drawText(note, { x:LEFT, y, size:6.5, font:regular, maxWidth:COL_W, color:COLORS.grey });
-      y -= 10;
-    });
+async function writeCells(fileId, sheet, cells, token) {
+  for (let i=0;i<cells.length;i+=4) {
+    await Promise.all(cells.slice(i,i+4).map(({address,value}) =>
+      writeCell(fileId,sheet,address,value,token).catch(e=>console.warn(`writeCell ${address}:`,e.message))
+    ));
   }
 }
 
-// ── Main handler ───────────────────────────────────────────────────────────────
+async function exportPDF(fileId, token) {
+  const res = await fetch(`${GRAPH}/sites/${SITE_ID}/drive/items/${fileId}/content?format=pdf`,
+    { headers:{ Authorization:`Bearer ${token}` } });
+  if (!res.ok) throw new Error(`PDF export → ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function buildReport(templateId, sheetName, meta, paramList, resultsMap, authorizedBy, reviewDate, today, token) {
+  const tempName = `_rpt_${Date.now()}_${Math.random().toString(36).slice(2)}.xlsx`;
+  const tempId   = await copyToTemp(templateId, tempName, token);
+  try {
+    const cells = [
+      { address:'B7',  value: meta.customer    ||'' },
+      { address:'B8',  value: [meta.location,meta.city,meta.state,meta.zip].filter(Boolean).join(', ') },
+      { address:'B9',  value: meta.email       ||'' },
+      { address:'H7',  value: meta.labId       ||'' },
+      { address:'B11', value: meta.location    ||'' },
+      { address:'B12', value: [meta.city,meta.state,meta.zip].filter(Boolean).join(', ') },
+      { address:'H10', value: fmtDate(today)       },
+      { address:'D55', value: authorizedBy     ||'' },
+      { address:'I56', value: fmtDate(reviewDate||today) },
+    ];
+    if (meta.dateDrawn)    { cells.push({address:'H8',value:fmtDate(meta.dateDrawn)}); cells.push({address:'I8',value:meta.timeDrawn||''}); }
+    if (meta.dateReceived) { cells.push({address:'H9',value:fmtDate(meta.dateReceived)}); cells.push({address:'I9',value:meta.timeReceived||''}); }
+
+    for (const p of paramList) {
+      const row = PARAM_ROWS[p.name];
+      if (!row) continue;
+      const res = resultsMap[p.name]||p;
+      if (res.value!==undefined&&res.value!=='') cells.push({address:`D${row}`,value:String(res.value)});
+      if (res.prepDT)            cells.push({address:`I${row}`,value:String(res.prepDT)});
+      if (res.analDT||res.time)  cells.push({address:`J${row}`,value:String(res.analDT||res.time)});
+    }
+
+    await writeCells(tempId, sheetName, cells, token);
+    const pdf = await exportPDF(tempId, token);
+    return pdf;
+  } finally {
+    await gDelete(`/sites/${SITE_ID}/drive/items/${tempId}`, token).catch(()=>{});
+  }
+}
+
 app.http('render-report-pdf', {
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { reportData, authorizedBy, reviewDate } = await request.json().catch(() => ({}));
-      if (!reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
+      const { reportData, authorizedBy, reviewDate } = await request.json().catch(()=>({}));
+      if (!reportData) return { status:400, jsonBody:{ error:'reportData required' } };
 
-      reportData.authorizedBy = authorizedBy || '';
-      reportData.reviewDate   = reviewDate   || '';
-
-      const doc   = await PDFDocument.create();
-      const bold  = await doc.embedFont(StandardFonts.HelveticaBold);
-      const regular = await doc.embedFont(StandardFonts.Helvetica);
-      const fonts = { bold, regular };
-
-      // Build results map from paramRows
+      const token      = await getToken();
+      const meta       = reportData.meta       || {};
+      const paramRows  = reportData.paramRows  || [];
+      const fhaRows    = reportData.fhaRows    || [];
       const resultsMap = reportData.resultsMap || {};
-      if (!Object.keys(resultsMap).length) {
-        (reportData.paramRows || []).forEach(p => { resultsMap[p.name] = p; });
-        (reportData.fhaRows   || []).forEach(p => { if (!resultsMap[p.name]) resultsMap[p.name] = p; });
-        reportData.resultsMap = resultsMap;
+      const isRadon    = reportData.isRadon    || false;
+      const needsFHA   = reportData.needsFHA   || false;
+      const today      = reportData.today      || new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
+
+      const templateDrivePath = toDrivePath(TEMPLATE_PATH);
+      const templateId        = await getItemId(templateDrivePath, token);
+      context.log(`[render] Template ID: ${templateId}`);
+
+      const pdfPages = [];
+
+      if (isRadon) {
+        // Radon report — single row D18/J18
+        const tempName = `_rpt_${Date.now()}.xlsx`;
+        const tempId   = await copyToTemp(templateId, tempName, token);
+        try {
+          const radonRes = resultsMap['Radon Water']||{};
+          const rawVal   = parseFloat(radonRes.value)||0;
+          const display  = !radonRes.value?'':rawVal<100?'<100':String(Math.round(rawVal/100)*100);
+          const cells = [
+            {address:'B7', value:meta.customer||''},{address:'B8',value:[meta.location,meta.city,meta.state,meta.zip].filter(Boolean).join(', ')},
+            {address:'B9',value:meta.email||''},{address:'H7',value:meta.labId||''},
+            {address:'B11',value:meta.location||''},{address:'B12',value:[meta.city,meta.state,meta.zip].filter(Boolean).join(', ')},
+            {address:'H10',value:fmtDate(today)},{address:'D55',value:authorizedBy||''},{address:'I56',value:fmtDate(reviewDate||today)},
+            {address:'D18',value:display},{address:'J18',value:radonRes.analDT||radonRes.time||''},
+          ];
+          if (meta.dateDrawn)    { cells.push({address:'H8',value:fmtDate(meta.dateDrawn)});    cells.push({address:'I8',value:meta.timeDrawn||''}); }
+          if (meta.dateReceived) { cells.push({address:'H9',value:fmtDate(meta.dateReceived)}); cells.push({address:'I9',value:meta.timeReceived||''}); }
+          await writeCells(tempId,'Radon Lab Report - Template',cells,token);
+          const pdf = await exportPDF(tempId,token);
+          pdfPages.push(pdf.toString('base64'));
+          context.log(`[render] Radon PDF: ${pdf.length} bytes`);
+        } finally {
+          await gDelete(`/sites/${SITE_ID}/drive/items/${tempId}`,token).catch(()=>{});
+        }
+      } else {
+        // COA report
+        const pdf = await buildReport(templateId,'Lab Report - Template',meta,paramRows,resultsMap,authorizedBy,reviewDate,today,token);
+        pdfPages.push(pdf.toString('base64'));
+        context.log(`[render] COA PDF: ${pdf.length} bytes`);
+
+        // FHA page if needed
+        if (needsFHA && fhaRows.length) {
+          try {
+            const fhaPdf = await buildReport(templateId,'FHA Lab Report - Template',meta,fhaRows,resultsMap,authorizedBy,reviewDate,today,token);
+            pdfPages.push(fhaPdf.toString('base64'));
+            context.log(`[render] FHA PDF: ${fhaPdf.length} bytes`);
+          } catch(e) { context.log('[render] FHA failed (non-fatal):',e.message); }
+        }
       }
 
-      // Main COA/RW page
-      await buildPage(doc, fonts, reportData, reportData.paramRows || [], reportData.isRadon, 'main');
-
-      // FHA page if needed
-      if (reportData.needsFHA && (reportData.fhaRows||[]).length) {
-        await buildPage(doc, fonts, reportData, reportData.fhaRows, false, 'FHA');
-      }
-
-      const pdfBytes = await doc.save();
-      const b64      = Buffer.from(pdfBytes).toString('base64');
-
-      return {
-        status:   200,
-        jsonBody: { success: true, pdfPages: [b64], pageCount: doc.getPageCount() },
-      };
+      return { status:200, jsonBody:{ success:true, pdfPages, pageCount:pdfPages.length } };
 
     } catch (err) {
       context.log('[render-report-pdf] Error:', err.message);
-      return { status: 500, jsonBody: { error: err.message } };
+      return { status:500, jsonBody:{ error:err.message } };
     }
   },
 });
