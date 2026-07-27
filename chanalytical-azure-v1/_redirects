@@ -1,2 +1,0 @@
-# Ensure root serves index.html (important for PWA start_url matching)
-/     /index.html   200
