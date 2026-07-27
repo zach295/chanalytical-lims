@@ -5,22 +5,6 @@
   "main": "src/index.js",
   "scripts": {
     "start": "func start",
-    "build": "echo 'No build step'"
-  },
-  "dependencies": {
-    "@azure/functions": "^4.5.0",
-    "nodemailer": "^6.9.15",
-    "xlsx": "^0.18.5",
-    "pdf-lib": "^1.17.1"
-  }
-}
-{
-  "name": "chanalytical-api",
-  "version": "1.0.1",
-  "description": "Chanalytical LIMS Azure Functions API",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "func start",
     "build": "npm install --production"
   },
   "dependencies": {
