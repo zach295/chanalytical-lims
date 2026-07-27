@@ -6,7 +6,7 @@ app.http('get-rejections', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const items = await listItems(LISTS.REJECTED, { orderby: 'fields/Created desc', top: 100 });
+      const items = await listItems(LISTS.REJECTED, { top: 100 });
       const rows = items.map(r => [
         r.Timestamp || '',
         r.LabId     || '',
