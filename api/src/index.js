@@ -2,4 +2,4 @@
 require('./clients-read');
 require('./accession-status');
 require('./lab-admin-read');
-require('./admin-write');
+require('./lab-admin-write');
