@@ -6,7 +6,7 @@ app.http('clients-read', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const items = await listItems(LISTS.CLIENTS, { orderby: 'fields/ClientName asc' });
+      const items = await listItems(LISTS.CLIENTS, { orderby: 'fields/Title asc' });
       const clients = items.map(r => ({
         _id:        r._id,
         clientName: r.ClientName  || r.Title || '',
