@@ -1281,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _loading = true;
     showLoadingOverlay(true);
     try {
-      const res = await fetch('/api/lab-admin-read');
+      const res = await fetch('/api/inventory-read');
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(`Load failed (${res.status}): ${errText.slice(0,300)}`);
@@ -1345,7 +1345,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function writeInventory() {
     try {
-      await fetch('/api/lab-admin-write', {
+      await fetch('/api/inventory-write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'write_inventory', payload: { inventory } }),
@@ -1356,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', function() {
   async function writeBottles() {
     try {
       const allBottles = { ...bottles, ...kitBoxes };
-      await fetch('/api/lab-admin-write', {
+      await fetch('/api/inventory-write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'write_bottles', payload: { bottles: allBottles } }),
@@ -1372,15 +1372,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!entry.time) entry.time = timeNow();
     activityLog.unshift(entry);
     try {
-      const res = await fetch('/api/lab-admin-write', {
+      const res = await fetch('/api/inventory-write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'log_activity', payload: { entry } }),
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        console.error(`[logActivity] admin-write returned ${res.status}: ${txt.slice(0,100)}`);
-        throw new Error(`admin-write ${res.status}`);
+        console.error(`[logActivity] inventory-write returned ${res.status}: ${txt.slice(0,100)}`);
+        throw new Error(`inventory-write ${res.status}`);
       }
     } catch(err) {
       console.error('[logActivity] Failed:', err.message);
@@ -4778,7 +4778,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     } catch (e) {}
 
-    // Load any existing manual results from Sheets (via admin-read or direct fetch)
+    // Load any existing manual results from SharePoint (via inventory-read)
     // For now, show the param entry grid
     const grid = document.getElementById('manual-params-grid');
     grid.innerHTML = MANUAL_PARAMS.map(p => `
