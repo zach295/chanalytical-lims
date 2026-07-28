@@ -73,6 +73,23 @@ app.http('users-manage', {
         };
       }
 
+      if (action === 'edit') {
+        const { email, name, role, clientKey, regCode } = body;
+        const user = await findItem(LISTS.USERS, 'Email', email);
+        if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
+        await updateItem(LISTS.USERS, user._id, {
+          Name:      name      || '',
+          Role:      role      || 'lab',
+          ClientKey: clientKey || '',
+          RegCode:   regCode   || '',
+        });
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: true }),
+        };
+      }
+
       if (action === 'setrole') {
         const { email, role } = body;
         const user = await findItem(LISTS.USERS, 'Email', email);
