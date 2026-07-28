@@ -1,25 +1,34 @@
 const { app } = require('@azure/functions');
-const { listItems, createItem, updateItem, findItem, LISTS } = require('../shared/graph');
+const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
+
+// Helper: find user by email without relying on indexed filter
+async function findUserByEmail(email) {
+  const emailLower = (email || '').toLowerCase().trim();
+  const items = await listItems(LISTS.USERS, { top: 200 });
+  return items.find(r => {
+    const e = (r.Email || r.Title || '').toLowerCase().trim();
+    return e === emailLower;
+  }) || null;
+}
+
+const mapUser = r => ({
+  _id:       r._id,
+  email:     r.Email     || r.Title || '',
+  name:      r.Name      || r.name  || '',
+  role:      r.Role      || r.role  || 'lab',
+  clientKey: r.ClientKey || '',
+  regCode:   r.RegCode   || '',
+  createdBy: r.CreatedBy || '',
+  createdAt: r.CreatedAt || '',
+  mustReset: r.MustReset === true || r.MustReset === 'true' || r.MustReset === 'TRUE',
+  active:    r.Active !== false && r.Active !== 'FALSE',
+});
 
 app.http('users-manage', {
   methods: ['GET', 'POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-
-      const mapUser = r => ({
-        _id:       r._id,
-        email:     r.Email     || r.Title || '',
-        name:      r.Name      || r.name  || '',
-        role:      r.Role      || r.role  || 'lab',
-        clientKey: r.ClientKey || '',
-        regCode:   r.RegCode   || '',
-        createdBy: r.CreatedBy || '',
-        createdAt: r.CreatedAt || '',
-        mustReset: r.MustReset === true || r.MustReset === 'true' || r.MustReset === 'TRUE',
-        active:    r.Active !== false && r.Active !== 'FALSE' && r.Active !== false,
-      });
-
       if (request.method === 'GET') {
         const items = await listItems(LISTS.USERS);
         return {
@@ -43,7 +52,7 @@ app.http('users-manage', {
 
       if (action === 'create') {
         const { email, name, role, clientKey, createdBy, regCode } = body;
-        const existing = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
+        const existing = await findUserByEmail(email);
         if (existing) return { status: 409, body: JSON.stringify({ error: 'User already exists' }) };
         await createItem(LISTS.USERS, {
           Title:     email,
@@ -66,7 +75,7 @@ app.http('users-manage', {
 
       if (action === 'edit') {
         const { email, name, role, clientKey, regCode } = body;
-        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
+        const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, {
           Name:      name      || '',
@@ -83,7 +92,7 @@ app.http('users-manage', {
 
       if (action === 'setrole') {
         const { email, role } = body;
-        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
+        const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { Role: role });
         return {
@@ -95,7 +104,7 @@ app.http('users-manage', {
 
       if (action === 'deactivate') {
         const { email } = body;
-        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
+        const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { Role: 'deactivated', Active: 'FALSE' });
         return {
@@ -106,21 +115,39 @@ app.http('users-manage', {
       }
 
       if (action === 'checklogin') {
-        const { email } = body;
-        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
+        const { email, regCode } = body;
+        const user = await findUserByEmail(email);
         if (!user) return {
           status: 200,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ found: false }),
         };
+        const role = user.Role || user.role || 'lab';
+        const active = user.Active !== 'FALSE' && user.Active !== false;
+        const mustReset = user.MustReset === true || user.MustReset === 'true' || user.MustReset === 'TRUE';
+
+        // If regCode provided, validate it
+        if (regCode) {
+          const storedCode = (user.RegCode || '').trim();
+          if (!storedCode || storedCode !== regCode.trim()) {
+            return {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ found: true, valid: false, error: 'Invalid registration code' }),
+            };
+          }
+        }
+
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             found:     true,
-            role:      user.Role      || user.role || 'lab',
-            mustReset: user.MustReset === true || user.MustReset === 'true' || user.MustReset === 'TRUE',
-            active:    user.Active !== 'FALSE' && user.Active !== false,
+            valid:     true,
+            role,
+            name:      user.Name || user.name || email.split('@')[0],
+            mustReset,
+            active,
           }),
         };
       }
