@@ -24,8 +24,8 @@ app.http('inventory-read', {
         }
       });
       const activityLog = actItems.map(r => ({
-        date:   r.ActivityDate          || '',
-        time:   r.ActivityTime          || '',
+        date:   r.LogDate           || '',
+        time:   r.LogTime           || '',
         client: r.Client       || '',
         type:   r.ActivityType || '',
         qty:    parseInt(r.Qty || '0') || 0,
