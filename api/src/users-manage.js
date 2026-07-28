@@ -1,31 +1,32 @@
 const { app } = require('@azure/functions');
 const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
 
+// SharePoint internal field name mapping (discovered via debug)
+// field_1=name, field_2=role, field_4=regCode, field_5=createdBy,
+// field_6=createdAt, field_7=mustReset, field_9=active
+// Title=email, field_3=clientKey (assumed)
+
 async function findUserByEmail(email) {
   const emailLower = (email || '').toLowerCase().trim();
   const items = await listItems(LISTS.USERS, { top: 200 });
   return items.find(r => {
-    const e = (r.email || r.Email || r.Title || '').toLowerCase().trim();
+    const e = (r.Title || '').toLowerCase().trim();
     return e === emailLower;
   }) || null;
 }
 
-// Try every possible field name variation SharePoint might use
-const mapUser = r => {
-  // Dump all keys to find what Graph actually returns
-  const role = r.role || r.Role || r.role0 || r.Role0 || 'lab';
-  const name = r.name || r.Name || r.name0 || r.LinkTitle || '';
-  const email = r.email || r.Email || r.Title || '';
-  const clientKey = r.clientKey || r.ClientKey || r.clientKey0 || '';
-  const regCode = r.regCode || r.RegCode || r.regCode0 || '';
-  const createdBy = r.createdBy || r.CreatedBy || r.createdBy0 || '';
-  const createdAt = r.createdAt || r.CreatedAt || r.createdAt0 || '';
-  const mustReset = r.mustReset === true || r.mustReset === 'true' ||
-                    r.MustReset === true || r.MustReset === 'true';
-  const active = r.active !== false && r.active !== 'FALSE' &&
-                 r.Active !== false && r.Active !== 'FALSE';
-  return { _id: r._id, email, name, role, clientKey, regCode, createdBy, createdAt, mustReset, active, _raw: r };
-};
+const mapUser = r => ({
+  _id:       r._id,
+  email:     r.Title      || '',
+  name:      r.field_1    || '',
+  role:      r.field_2    || 'lab',
+  clientKey: r.field_3    || '',
+  regCode:   r.field_4    || '',
+  createdBy: r.field_5    || '',
+  createdAt: r.field_6    || '',
+  mustReset: r.field_7 === true || r.field_7 === 'true',
+  active:    r.field_9 !== false && r.field_9 !== 'FALSE',
+});
 
 app.http('users-manage', {
   methods: ['GET', 'POST'],
@@ -34,12 +35,10 @@ app.http('users-manage', {
     try {
       if (request.method === 'GET') {
         const items = await listItems(LISTS.USERS);
-        const mapped = items.map(mapUser);
-        // Include raw data so we can see what Graph returns
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ users: mapped }),
+          body: JSON.stringify({ users: items.map(mapUser) }),
         };
       }
 
@@ -55,25 +54,20 @@ app.http('users-manage', {
         };
       }
 
-      if (action === 'debug') {
-        // Returns raw Graph fields for one user so we can fix the mapping
-        const items = await listItems(LISTS.USERS, { top: 5 });
-        return {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ raw: items }),
-        };
-      }
-
       if (action === 'create') {
         const { email, name, role, clientKey, createdBy, regCode } = body;
         const existing = await findUserByEmail(email);
         if (existing) return { status: 409, body: JSON.stringify({ error: 'User already exists' }) };
         await createItem(LISTS.USERS, {
-          Title: email, email, name: name || '', role: role || 'lab',
-          clientKey: clientKey || '', regCode: regCode || '',
-          createdBy: createdBy || '', createdAt: new Date().toISOString(),
-          mustReset: true, active: true,
+          Title:   email,
+          field_1: name      || '',
+          field_2: role      || 'lab',
+          field_3: clientKey || '',
+          field_4: regCode   || '',
+          field_5: createdBy || '',
+          field_6: new Date().toISOString(),
+          field_7: true,
+          field_9: true,
         });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
@@ -82,10 +76,11 @@ app.http('users-manage', {
         const { email, name, role, clientKey, regCode } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        // Write with lowercase field names matching SP column names
         await updateItem(LISTS.USERS, user._id, {
-          name: name || '', role: role || 'lab',
-          clientKey: clientKey || '', regCode: regCode || '',
+          field_1: name      || '',
+          field_2: role      || 'lab',
+          field_3: clientKey || '',
+          field_4: regCode   || '',
         });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
@@ -94,7 +89,7 @@ app.http('users-manage', {
         const { email, role } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, { role });
+        await updateItem(LISTS.USERS, user._id, { field_2: role });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -102,7 +97,7 @@ app.http('users-manage', {
         const { email } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, { role: 'deactivated', active: false });
+        await updateItem(LISTS.USERS, user._id, { field_2: 'deactivated', field_9: false });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
