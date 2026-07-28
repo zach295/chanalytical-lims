@@ -1,27 +1,26 @@
 const { app } = require('@azure/functions');
 const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
 
-// Helper: find user by email without relying on indexed filter
 async function findUserByEmail(email) {
   const emailLower = (email || '').toLowerCase().trim();
   const items = await listItems(LISTS.USERS, { top: 200 });
   return items.find(r => {
-    const e = (r.Email || r.Title || '').toLowerCase().trim();
+    const e = (r.email || r.Email || r.Title || '').toLowerCase().trim();
     return e === emailLower;
   }) || null;
 }
 
 const mapUser = r => ({
   _id:       r._id,
-  email:     r.Email     || r.Title || '',
-  name:      r.Name      || r.name  || '',
-  role:      r.Role      || r.role  || 'lab',
-  clientKey: r.ClientKey || '',
-  regCode:   r.RegCode   || '',
-  createdBy: r.CreatedBy || '',
-  createdAt: r.CreatedAt || '',
-  mustReset: r.MustReset === true || r.MustReset === 'true' || r.MustReset === 'TRUE',
-  active:    r.Active !== false && r.Active !== 'FALSE',
+  email:     r.email     || r.Email     || r.Title || '',
+  name:      r.name      || r.Name      || '',
+  role:      r.role      || r.Role      || 'lab',
+  clientKey: r.clientKey || r.ClientKey || '',
+  regCode:   r.regCode   || r.RegCode   || '',
+  createdBy: r.createdBy || r.CreatedBy || '',
+  createdAt: r.createdAt || r.CreatedAt || '',
+  mustReset: r.mustReset === true || r.mustReset === 'true' || r.MustReset === true || r.MustReset === 'true',
+  active:    r.active !== false && r.active !== 'FALSE' && r.Active !== false && r.Active !== 'FALSE',
 });
 
 app.http('users-manage', {
@@ -56,15 +55,15 @@ app.http('users-manage', {
         if (existing) return { status: 409, body: JSON.stringify({ error: 'User already exists' }) };
         await createItem(LISTS.USERS, {
           Title:     email,
-          Email:     email,
-          Name:      name      || '',
-          Role:      role      || 'lab',
-          ClientKey: clientKey || '',
-          RegCode:   regCode   || '',
-          CreatedBy: createdBy || '',
-          CreatedAt: new Date().toISOString(),
-          MustReset: true,
-          Active:    'TRUE',
+          email:     email,
+          name:      name      || '',
+          role:      role      || 'lab',
+          clientKey: clientKey || '',
+          regCode:   regCode   || '',
+          createdBy: createdBy || '',
+          createdAt: new Date().toISOString(),
+          mustReset: true,
+          active:    true,
         });
         return {
           status: 200,
@@ -78,10 +77,10 @@ app.http('users-manage', {
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, {
-          Name:      name      || '',
-          Role:      role      || 'lab',
-          ClientKey: clientKey || '',
-          RegCode:   regCode   || '',
+          name:      name      || '',
+          role:      role      || 'lab',
+          clientKey: clientKey || '',
+          regCode:   regCode   || '',
         });
         return {
           status: 200,
@@ -94,7 +93,7 @@ app.http('users-manage', {
         const { email, role } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, { Role: role });
+        await updateItem(LISTS.USERS, user._id, { role });
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -106,7 +105,7 @@ app.http('users-manage', {
         const { email } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, { Role: 'deactivated', Active: 'FALSE' });
+        await updateItem(LISTS.USERS, user._id, { role: 'deactivated', active: false });
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -115,40 +114,30 @@ app.http('users-manage', {
       }
 
       if (action === 'checklogin') {
-        const { email, regCode } = body;
+        const { email } = body;
         const user = await findUserByEmail(email);
         if (!user) return {
           status: 200,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ found: false }),
         };
-        const role = user.Role || user.role || 'lab';
-        const active = user.Active !== 'FALSE' && user.Active !== false;
-        const mustReset = user.MustReset === true || user.MustReset === 'true' || user.MustReset === 'TRUE';
+        const role     = user.role || user.Role || 'lab';
+        const active   = user.active !== false && user.active !== 'FALSE' && user.Active !== false && user.Active !== 'FALSE';
+        const mustReset = user.mustReset === true || user.mustReset === 'true' || user.MustReset === true;
+        const name     = user.name || user.Name || email.split('@')[0];
 
-        // If regCode provided, validate it
-        if (regCode) {
-          const storedCode = (user.RegCode || '').trim();
-          if (!storedCode || storedCode !== regCode.trim()) {
-            return {
-              status: 200,
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ found: true, valid: false, error: 'Invalid registration code' }),
-            };
-          }
+        if (!active || role === 'deactivated') {
+          return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ found: true, valid: false, error: 'Account is deactivated' }),
+          };
         }
 
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            found:     true,
-            valid:     true,
-            role,
-            name:      user.Name || user.name || email.split('@')[0],
-            mustReset,
-            active,
-          }),
+          body: JSON.stringify({ found: true, valid: true, role, name, mustReset, active }),
         };
       }
 
