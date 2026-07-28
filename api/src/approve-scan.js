@@ -119,6 +119,31 @@ const TEST_NORMALIZE = {
 
 function normalizeTest(t) { return TEST_NORMALIZE[t.toLowerCase().trim()] || t; }
 
+// ── Excel serial date/time converters ─────────────────────────────────────────
+// Archived Intake stores dates as Excel serial numbers and times as day fractions
+function toExcelSerial(dateStr) {
+  if (!dateStr) return null;
+  let isoStr;
+  // MM-DD-YY format
+  const mmddyy = String(dateStr).match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (mmddyy) isoStr = `20${mmddyy[3]}-${mmddyy[1]}-${mmddyy[2]}T00:00:00Z`;
+  // YYYY-MM-DD format
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) isoStr = `${dateStr}T00:00:00Z`;
+  else return null;
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return null;
+  const excelEpoch = Date.UTC(1899, 11, 30);
+  return Math.round((d.getTime() - excelEpoch) / 86400000);
+}
+function toExcelTime(timeStr) {
+  if (!timeStr) return null;
+  const m = String(timeStr).match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1]), min = parseInt(m[2]);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return (h * 60 + min) / 1440;
+}
+
 // ── Hard-coded alias fallbacks ─────────────────────────────────────────────────
 const HARD_ALIASES = {
   'maine radon water treatment':             'Maine Radon & Environmental, LLC',
@@ -346,43 +371,51 @@ app.http('approve-scan', {
       const abbrev       = clientInfo.abbrev || (isPublicClient ? 'PUBLIC' : getAbbrev(formalName));
 
       // ── Write Accession Log ──────────────────────────────────────────────────
+      // Field mapping (Excel-imported): Title=timestamp, field_1=baseId,
+      // field_2=fullId, field_3=coaTest, field_4=suffix
       for (const item of labItems) {
         await createItem(LISTS.ACCESSION_LOG, {
-          Title:     item.fullId,
-          BaseId:    item.baseId,
-          FullId:    item.fullId,
-          CoaTest:   item.coaTest,
-          Suffix:    item.suffix,
-          Customer:  customer || '',
-          ClientCode: clientCode || '',
-          ReportDate: reportDateStr,
-          Timestamp: ts,
-          ReportStatus: 'Pending',
+          Title:   ts,
+          field_1: item.baseId,
+          field_2: item.fullId,
+          field_3: item.coaTest,
+          field_4: item.suffix,
         }).catch(e => context.log('[AccessionLog]', e.message));
       }
 
       // ── Write Archived Intake ────────────────────────────────────────────────
+      // Field mapping (Excel-imported): Title=timestamp, field_1=fullId,
+      // field_2=coaTest, field_3=clientName, field_4=dateDrawn (Excel serial),
+      // field_5=timeDrawn (day fraction), field_6=receivedDate, field_7=receivedTime,
+      // field_8=address, field_9=city, field_10=state, field_11=zip (number),
+      // field_12=approvedBy, field_13=notes, field_14=status
       for (const item of labItems) {
-        await createItem(LISTS.ARCHIVED_INTAKE, {
-          Title:        item.fullId,
-          Timestamp:    ts,
-          FullId:       item.fullId,
-          CoaTest:      item.coaTest,
-          ClientName:   formalName || customer || '',
-          ClientCode:   clientCode || '',
-          DateDrawn:    fmt(dateDrawn) || '',
-          TimeDrawn:    to24h(timeDrawn) || '',
-          ReceivedDate: fmt(receivedDate) || tdStr,
-          ReceivedTime: to24h(receivedTime) || tmStr,
-          Address:      location || '',
-          City:         city    || '',
-          State:        state   || 'ME',
-          Zip:          zip     ? String(zip).padStart(5,'0') : '',
-          ReviewedBy:   reviewedBy || 'Lab Staff',
-          Notes:        notes   || '',
-          ReportStatus: 'Pending',
-          ReportDate:   reportDateStr,
-        }).catch(e => context.log('[ArchivedIntake]', e.message));
+        const intakeFields = {
+          Title:    ts,
+          field_1:  item.fullId,
+          field_2:  item.coaTest,
+          field_3:  formalName || customer || '',
+          field_8:  location   || '',
+          field_9:  city       || '',
+          field_10: state      || 'ME',
+          field_12: reviewedBy || 'Lab Staff',
+          field_13: notes      || '',
+          field_14: 'Pending',
+        };
+        // Date/time fields stored as Excel serial numbers
+        const drawnSerial = toExcelSerial(fmt(dateDrawn));
+        const drawnTimeFrac = toExcelTime(to24h(timeDrawn));
+        const recvSerial = toExcelSerial(fmt(receivedDate) || tdStr);
+        const recvTimeFrac = toExcelTime(to24h(receivedTime) || tmStr);
+        if (drawnSerial  !== null) intakeFields.field_4 = drawnSerial;
+        if (drawnTimeFrac !== null) intakeFields.field_5 = drawnTimeFrac;
+        if (recvSerial   !== null) intakeFields.field_6 = recvSerial;
+        if (recvTimeFrac !== null) intakeFields.field_7 = recvTimeFrac;
+        // Zip as number
+        const zipNum = zip ? parseInt(String(zip).replace(/\D/g,'')) : null;
+        if (zipNum) intakeFields.field_11 = zipNum;
+        await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
+          .catch(e => context.log('[ArchivedIntake]', e.message));
       }
 
       // ── Write Rejected items ─────────────────────────────────────────────────
@@ -398,6 +431,13 @@ app.http('approve-scan', {
           RejectedBy:    reviewedBy || 'Lab Staff',
           Timestamp:     ts,
         }).catch(e => context.log('[Rejected]', e.message));
+      }
+
+      // ── Write Results Cache ──────────────────────────────────────────────────
+      for (const item of labItems) {
+        await createItem('Results Cache', {
+          Title:  item.fullId,
+        }).catch(e => context.log('[ResultsCache]', e.message));
       }
 
       // ── Auto-add new client if not in Clients list ───────────────────────────
