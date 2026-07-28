@@ -440,11 +440,48 @@ app.http('approve-scan', {
         await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
       }
 
-      // ── Move scan file to Archive in SharePoint ───────────────────────────────
-      const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
-      if (fileId) {
-        await moveSpFile(fileId, SCAN_ARCHIVE, token).catch(e => context.log('[Archive]', e.message));
-      }
+      // ── Rename and move scan file to Archive ──────────────────────────────────────
+const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
+if (fileId) {
+  // Build filename from first lab item
+  const primaryItem = labItems[0];
+  const sanitize = s => String(s||'').replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim().slice(0,60);
+  const addrPart  = sanitize(location || '');
+  const abbrevPart = sanitize(abbrev || clientInfo.abbrev || 'UNK');
+  const newFilenames = labItems.map(item => {
+    const prefix = item.isRadon ? `${item.baseId} RW` : item.fullId;
+    return `${sanitize(prefix)}_${abbrevPart}_${addrPart}.pdf`;
+  });
+  const newName = newFilenames[0];
+
+  // Move to Archive
+  await moveSpFile(fileId, SCAN_ARCHIVE, token).catch(e => context.log('[Archive]', e.message));
+
+  // Rename the file
+  try {
+    const siteId = process.env.SP_SITE_ID;
+    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${fileId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    });
+    context.log(`[Archive] Renamed to ${newName}`);
+  } catch(e) { context.log('[Archive] Rename failed:', e.message); }
+}
+
+// ── Write to Results Cache ────────────────────────────────────────────────────
+for (const item of labItems) {
+  await createItem('Results Cache', {
+    Title:      item.fullId,
+    LabId:      item.fullId,
+    BaseId:     item.baseId,
+    CoaTest:    item.coaTest,
+    ClientName: formalName || customer || '',
+    ClientCode: clientCode || '',
+    Status:     'Pending',
+    Timestamp:  ts,
+  }).catch(e => context.log('[ResultsCache]', e.message));
+}
 
       // ── Call control-sheet function to add Lab IDs ────────────────────────────
       const allBaseIds = [...new Set(labItems.map(l => l.baseId))];
