@@ -28,7 +28,7 @@ app.http('inventory-read', {
         time:   r.LogTime           || '',
         client: r.Client       || '',
         type:   r.ActivityType || '',
-        Quantity: Number(entry.qty) || 0,
+        qty: parseInt(r.Quantity || '0') || 0,
         notes:  r.Notes        || '',
         by:     r.By           || '',
       }));
