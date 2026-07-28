@@ -222,3 +222,106 @@ const Auth = {
     return s;
   },
 };
+
+// ── MICROSOFT OAUTH2 (PKCE) ───────────────────────────────────────────────────
+// Staff sign in with their Microsoft accounts. No passwords to manage.
+// Works on any device, survives version changes and service worker resets.
+
+const MS_CLIENT_ID  = 'c31d824c-e8d2-4557-8198-bfcaba46b338';
+const MS_TENANT_ID  = 'organizations'; // allows any Microsoft work/school account
+const MS_REDIRECT   = window.location.origin + '/login.html';
+const MS_SCOPES     = 'openid profile email';
+
+const MsAuth = {
+
+  // Generate a cryptographically random string for PKCE
+  _randomString(len) {
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  },
+
+  // SHA-256 hash → base64url (for PKCE code challenge)
+  async _sha256(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  },
+
+  // Step 1: Redirect to Microsoft login
+  async login() {
+    const verifier  = this._randomString(64);
+    const challenge = await this._sha256(verifier);
+    const state     = this._randomString(16);
+    sessionStorage.setItem('ms_verifier', verifier);
+    sessionStorage.setItem('ms_state',    state);
+
+    const params = new URLSearchParams({
+      client_id:             MS_CLIENT_ID,
+      response_type:         'code',
+      redirect_uri:          MS_REDIRECT,
+      scope:                 MS_SCOPES,
+      code_challenge:        challenge,
+      code_challenge_method: 'S256',
+      state,
+      prompt:                'select_account',
+    });
+    window.location.href = `https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+  },
+
+  // Step 2: Handle redirect back from Microsoft (call on login.html load)
+  async handleCallback() {
+    const params   = new URLSearchParams(window.location.search);
+    const code     = params.get('code');
+    const state    = params.get('state');
+    const error    = params.get('error');
+
+    if (error) return { success: false, error: params.get('error_description') || error };
+    if (!code)  return null; // not a Microsoft callback
+
+    // Verify state
+    const savedState = sessionStorage.getItem('ms_state');
+    if (state !== savedState) return { success: false, error: 'Invalid state — possible CSRF. Please try again.' };
+
+    const verifier = sessionStorage.getItem('ms_verifier');
+    sessionStorage.removeItem('ms_verifier');
+    sessionStorage.removeItem('ms_state');
+
+    // Exchange code for tokens
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     MS_CLIENT_ID,
+        code,
+        redirect_uri:  MS_REDIRECT,
+        grant_type:    'authorization_code',
+        code_verifier: verifier,
+        scope:         MS_SCOPES,
+      }),
+    });
+    if (!tokenRes.ok) return { success: false, error: 'Failed to exchange code for token.' };
+    const tokens = await tokenRes.json();
+
+    // Decode id_token to get user info
+    const payload = JSON.parse(atob(tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    const email   = payload.email || payload.preferred_username || '';
+    const name    = payload.name  || email.split('@')[0];
+
+    // Look up role from server
+    const roleRes = await fetch('/api/auth-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const roleData = await roleRes.json();
+    if (!roleData.success) return { success: false, error: roleData.error };
+
+    // Create session
+    const user = { email: roleData.email, name: roleData.name || name, role: roleData.role, clientKey: roleData.clientKey, loginMethod: 'microsoft' };
+    Auth.createSession(user);
+
+    // Clean up URL
+    window.history.replaceState({}, '', '/login.html');
+    return { success: true, user };
+  },
+};
