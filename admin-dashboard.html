@@ -126,7 +126,6 @@
     .msg-inline.ok{background:var(--success-light);color:var(--success);display:block;}
     .msg-inline.err{background:var(--error-light);color:var(--error);display:block;}
     @media(max-width:700px){#sidebar{display:none;}}
-
     .admin-only { display: none !important; }
     .admin-visible .admin-only { display: flex !important; }
 
@@ -190,18 +189,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
-    <button class="sb-btn" onclick="showSection('coc',this)" class="sb-btn admin-only">📋 COC Batch Generator</button>
+    <button class="sb-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
 
     <div class="sb-label">Inventory</div>
-    <button class="sb-btn" onclick="showSection('kits',this)" class="sb-btn admin-only">📦 Kit Inventory</button>
-    <button class="sb-btn" onclick="showSection('bottles',this)" class="sb-btn admin-only">🧪 Bottle Inventory</button>
-    <button class="sb-btn" onclick="showSection('kitstk',this)" class="sb-btn admin-only">🗃️ Lab Kit Stock</button>
-    <button class="sb-btn" onclick="showSection('log',this)" class="sb-btn admin-only">📋 Activity Log</button>
+    <button class="sb-btn" onclick="showSection('kits',this)">📦 Kit Inventory</button>
+    <button class="sb-btn" onclick="showSection('bottles',this)">🧪 Bottle Inventory</button>
+    <button class="sb-btn" onclick="showSection('kitstk',this)">🗃️ Lab Kit Stock</button>
+    <button class="sb-btn" onclick="showSection('log',this)">📋 Activity Log</button>
 
     <div class="sb-label">Actions</div>
-    <button class="sb-btn" onclick="openModal('send')" class="sb-btn admin-only">📤 Send Kits</button>
-    <button class="sb-btn" onclick="openModal('initial')" class="sb-btn admin-only">➕ Set Stock</button>
-    <button class="sb-btn" onclick="window.open('/index.html','_blank')" class="sb-btn admin-only">🧪 Field App</button>
+    <button class="sb-btn" onclick="openModal('send')">📤 Send Kits</button>
+    <button class="sb-btn" onclick="openModal('initial')">➕ Set Stock</button>
+    <button class="sb-btn" onclick="window.open('/index.html','_blank')">🧪 Field App</button>
 
     <div class="sb-label" id="sb-admin-label" style="display:none;">Clients</div>
     <button class="sb-btn" id="sb-clients-btn" onclick="showSection('clients',this)" style="display:none;">👥 Clients &amp; Codes</button>
@@ -935,7 +934,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="card" style="max-width:700px;">
       <div class="card-header"><div class="card-title">✏️ Sample Correction</div></div>
       <div style="padding:20px;">
-        <p style="margin:0 0 16px;color:var(--slate);font-size:14px;">Look up a Lab ID and edit sample information. Changes will update Archived Intake in SharePoint.</p>
+        <p style="margin:0 0 16px;color:var(--slate);font-size:14px;">Look up a Lab ID and edit sample information. Changes will update Archived Intake, COA Master, and RW Master sheets.</p>
 
         <div style="display:flex;gap:10px;margin-bottom:20px;">
           <input type="text" id="sc-lookup-id" placeholder="Lab ID (e.g. 072126-003)"
@@ -948,6 +947,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
         <div id="sc-edit-form" style="display:none;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div class="form-field" style="grid-column:1/-1;">
+              <label>Test Type <span style="font-size:11px;color:var(--slate);">(updates suffix &amp; full lab ID everywhere)</span></label>
+              <input type="text" id="sc-edit-coaTest" placeholder="e.g. WW - Expanded Safety, Arsenic, Total"
+                style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
             <div class="form-field" style="grid-column:1/-1;">
               <label>Customer / Company</label>
               <input type="text" id="sc-edit-customer" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
@@ -1337,15 +1341,31 @@ document.addEventListener('DOMContentLoaded', function() {
         <strong>Checklist:</strong><br>
         • SharePoint Lists created (run /api/setup-lists if not done)<br>
         • Azure env vars set: <code>MS_TENANT_ID</code>, <code>MS_CLIENT_ID</code>, <code>MS_CLIENT_SECRET</code>, <code>SP_SITE_ID</code><br>
-        • Admin consent granted for <code>Sites.FullControl.All</code> in App registrations<br><br>
+        • Admin consent granted for <code>Sites.FullControl.All</code> in App registrations<br>
+        <br><br>
         <button onclick="loadFromSheets().then(render)" style="padding:8px 16px;background:#C0392B;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">↺ Retry</button>
+        &nbsp;
+        <button  style="padding:8px 16px;background:#003A5C;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 Run Diagnostic</button>
       `;
     }
     _loading = false;
     showLoadingOverlay(false);
   }
 
-  
+  async function runConnectionDiag() {
+    const banner = document.getElementById('sp-error-banner');
+    if (banner) banner.innerHTML += '<br>🔍 Running diagnostic...';
+    try {
+      const res = await fetch('/api/inventory-read');
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch(e) {}
+      const detail = parsed ? JSON.stringify(parsed, null, 2).slice(0, 500) : text.slice(0, 500);
+      if (banner) banner.innerHTML += `<br><pre style="font-size:10px;background:#fff;padding:8px;border-radius:4px;overflow:auto;max-height:200px;">${detail}</pre>`;
+    } catch(err) {
+      if (banner) banner.innerHTML += `<br>❌ Fetch failed entirely: ${err.message}`;
+    }
+  }
 
   async function writeInventory() {
     try {
@@ -1359,6 +1379,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function writeBottles() {
     try {
+      // Write both bottles and kitBoxes to Sheet3
       const allBottles = { ...bottles, ...kitBoxes };
       await fetch('/api/inventory-write', {
         method: 'POST',
@@ -1383,8 +1404,8 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        console.error(`[logActivity] inventory-write returned ${res.status}: ${txt.slice(0,100)}`);
-        throw new Error(`inventory-write ${res.status}`);
+        console.error(`[logActivity] admin-write returned ${res.status}: ${txt.slice(0,100)}`);
+        throw new Error(`admin-write ${res.status}`);
       }
     } catch(err) {
       console.error('[logActivity] Failed:', err.message);
@@ -1398,7 +1419,7 @@ document.addEventListener('DOMContentLoaded', function() {
       el = document.createElement('div');
       el.id = 'loading-overlay';
       el.style.cssText = 'position:fixed;inset:0;background:rgba(0,58,92,0.5);z-index:999;display:flex;align-items:center;justify-content:center;';
-      el.innerHTML = '<div style="background:white;border-radius:10px;padding:28px 40px;text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⏳</div><div style="font-weight:600;color:#003A5C;">Loading from SharePoint...</div></div>';
+      el.innerHTML = '<div style="background:white;border-radius:10px;padding:28px 40px;text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⏳</div><div style="font-weight:600;color:#003A5C;">Loading from Sheets...</div></div>';
       document.body.appendChild(el);
     }
     el.style.display = show ? 'flex' : 'none';
@@ -1425,12 +1446,6 @@ document.addEventListener('DOMContentLoaded', function() {
   populateSelects();
   setDates();
   // Show Admin section for admin role only
-
-  // Show admin-only elements if user is admin
-  if (_session && _session.role === 'admin') {
-    document.getElementById('sidebar').classList.add('admin-visible');
-  }
-
   if (_session && _session.role === 'admin') {
     const adminLabel = document.getElementById('sb-admin-label');
     if (adminLabel) adminLabel.style.display = 'block';
@@ -2436,6 +2451,7 @@ document.addEventListener('DOMContentLoaded', function() {
       _scCurrentData = { ...found, baseId };
 
       // Populate fields
+      document.getElementById('sc-edit-coaTest').value      = found.tests?.join(', ') || '';
       document.getElementById('sc-edit-customer').value     = found.customer     || '';
       document.getElementById('sc-edit-dateDrawn').value    = found.dateDrawn    || '';
       document.getElementById('sc-edit-timeDrawn').value    = found.timeDrawn    || '';
@@ -2464,6 +2480,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const g = id => document.getElementById(id).value.trim();
     const updates = {
+      coaTest:      g('sc-edit-coaTest'),
       customer:     g('sc-edit-customer'),
       dateDrawn:    g('sc-edit-dateDrawn'),
       timeDrawn:    g('sc-edit-timeDrawn'),
@@ -2489,7 +2506,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
 
-      statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s) in SharePoint.`;
+      statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s) across Archived Intake, COA, and RW sheets.`;
       statusEl.style.color = 'var(--success)';
       showToast(`✅ Sample ${_scCurrentData.baseId} updated successfully`);
     } catch(e) {
@@ -3334,6 +3351,9 @@ document.addEventListener('DOMContentLoaded', function() {
         clearInterval(poll); resetBtn();
         const n = countNow - countBefore;
         showToast(`✅ ${n} new scan${n > 1 ? 's' : ''} ready for review`);
+        // Switch to Review Queue tab automatically
+        const reviewBtn = document.querySelector('.sb-btn[onclick*="review"]');
+        if (reviewBtn) showSection('review', reviewBtn);
       } else if (elapsed >= MAX_MS) {
         clearInterval(poll); resetBtn();
         showToast("📭 No new scans found — folder may be empty", 4000);
@@ -3686,7 +3706,10 @@ document.addEventListener('DOMContentLoaded', function() {
           if (!pendingIds.has(el.dataset.fileid)) el.closest('.scan-card, [id^="sc-"]')?.remove();
         });
       } else {
-        container.innerHTML = pending.map(r => buildScanCard(r)).join('');
+        container.innerHTML = pending.map(r => {
+          try { return buildScanCard(r); }
+          catch(e) { console.error('[buildScanCard] Error for', r.fileId, e); return `<div class="card" style="padding:16px;color:var(--error);">⚠️ Error rendering scan card for ${r.fileId}: ${e.message}</div>`; }
+        }).join('');
       }
       // Initialize Rejected - Timeout exclusion for any pre-checked cards
       container.querySelectorAll('[data-rejected="true"]').forEach(div => {
@@ -3869,15 +3892,57 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>`;
     }
 
+    const STOP_WORDS = new Set(['water','home','inspection','inspections','inc','llc','ltd',
+      'corp','co','systems','services','plumbing','well','environmental','testing',
+      'labs','laboratory','laboratories','and','the','of','for']);
+    const customerLower = (r.customer||'').toLowerCase().trim();
+    const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
+      const cl = c.toLowerCase();
+      // Exact match
+      if (cl === customerLower) return true;
+      // One fully contains the other (handles abbreviations like "FPI" in "FPI / ChanCorp")
+      if (cl.includes(customerLower) || customerLower.includes(cl)) return true;
+      // Significant word match — only non-stop words of 4+ chars
+      const sigWords = cl.split(/[\s,./]+/).filter(w => w.length >= 4 && !STOP_WORDS.has(w));
+      if (!sigWords.length) return false;
+      // ALL significant words must appear in customer (not just one)
+      return sigWords.length >= 2
+        ? sigWords.filter(w => customerLower.includes(w)).length >= 2
+        : sigWords.every(w => customerLower.includes(w));
+    }) : null;
+    const isPublicClient = !matchedClient;
+
+    // Client-specific flag banner — must be after matchedClient is declared
+    const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
+    const flagBanner = clientFlag
+      ? `<div style="background:#fff8e6;border-left:4px solid #f59e0b;padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;font-weight:600;">
+          ⚠️ ${clientFlag}
+        </div>`
+      : '';
+
+
+    // Client-specific test restrictions
+    const _CLIENT_TEST_RULES = {
+      'Critical Plumbing Inc. a/k/a Ward Water': {
+        disable: ['Expanded Safety (Mortgage Test)'],
+        note: 'Ward Water uses WW - Expanded Safety',
+      },
+    };
+    const clientTestRule = matchedClient ? _CLIENT_TEST_RULES[matchedClient] : null;
+    const clientOptions = ['<option value="">— Select or type below —</option>',
+      ..._ALL_CLIENTS.map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
+    ].join('');
+
     const testCheckboxes =
       '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Packages <span style="font-weight:400;color:var(--slate);text-transform:none;">(max one)</span></div>' +
-      PACKAGE_TESTS_LIST.map(t =>
-        `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
-          <input type="checkbox" value="${t}" aria-label="${t}" ${displayTests.includes(t) ? 'checked' : ''}
+      PACKAGE_TESTS_LIST.map(t => {
+        const isDisabled = clientTestRule?.disable?.includes(t);
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;${isDisabled?'cursor:not-allowed;opacity:0.35;':'cursor:pointer;'}margin-bottom:4px;" title="${isDisabled?clientTestRule.note:''}">
+          <input type="checkbox" value="${t}" aria-label="${t}" ${displayTests.includes(t) ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}
             onchange="enforceOnePackage(this,'${r.fileId}')"
-            style="width:16px;height:16px;cursor:pointer;" />${t}
-        </label>`
-      ).join('') +
+            style="width:16px;height:16px;${isDisabled?'cursor:not-allowed;':'cursor:pointer;'}" />${t}${isDisabled?` <span style="font-size:10px;color:var(--error);">(not available for this client)</span>`:''}
+        </label>`;
+      }).join('') +
       // AIO section — always show if AIO client, otherwise show dimmed
       `<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:#8b5cf6;text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;padding-top:8px;border-top:1px solid var(--border);">AIO Only${!isAIOClient?' <span style="font-weight:400;font-size:10px;opacity:0.6;">(All In One clients only)</span>':''}</div>` +
       AIO_TESTS_LIST.map(t =>
@@ -3924,36 +3989,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Customer dropdown — with the OCR value pre-selected if it matches, otherwise blank
     // Check if OCR customer matches any known client
     // Use strict matching — avoid common words that cause false positives
-    const STOP_WORDS = new Set(['water','home','inspection','inspections','inc','llc','ltd',
-      'corp','co','systems','services','plumbing','well','environmental','testing',
-      'labs','laboratory','laboratories','and','the','of','for']);
-    const customerLower = (r.customer||'').toLowerCase().trim();
-    const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
-      const cl = c.toLowerCase();
-      // Exact match
-      if (cl === customerLower) return true;
-      // One fully contains the other (handles abbreviations like "FPI" in "FPI / ChanCorp")
-      if (cl.includes(customerLower) || customerLower.includes(cl)) return true;
-      // Significant word match — only non-stop words of 4+ chars
-      const sigWords = cl.split(/[\s,./]+/).filter(w => w.length >= 4 && !STOP_WORDS.has(w));
-      if (!sigWords.length) return false;
-      // ALL significant words must appear in customer (not just one)
-      return sigWords.length >= 2
-        ? sigWords.filter(w => customerLower.includes(w)).length >= 2
-        : sigWords.every(w => customerLower.includes(w));
-    }) : null;
-    const isPublicClient = !matchedClient;
-
-    // Client-specific flag banner — must be after matchedClient is declared
-    const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
-    const flagBanner = clientFlag
-      ? `<div style="background:#fff8e6;border-left:4px solid #f59e0b;padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;font-weight:600;">
-          ⚠️ ${clientFlag}
-        </div>`
-      : '';
-    const clientOptions = ['<option value="">— Select or type below —</option>',
-      ..._ALL_CLIENTS.map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
-    ].join('');
 
     // Email field — always shown, auto-filled from Clients sheet if client is known
     const clientEmail = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
@@ -4260,7 +4295,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Add to in-memory recently approved cache so it shows in Recently Approved table
       recentlyApprovedCache.push({
         labId:       data.labIds.join(', '),
-        customer:    g('customer'),
+        customer:    data.formalName || g('customer'),
         tests,
         scannedBy:   '',
         approvedBy:  getAdminName(),
@@ -4788,7 +4823,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     } catch (e) {}
 
-    // Load any existing manual results from SharePoint (via inventory-read)
+    // Load any existing manual results from Sheets (via admin-read or direct fetch)
     // For now, show the param entry grid
     const grid = document.getElementById('manual-params-grid');
     grid.innerHTML = MANUAL_PARAMS.map(p => `
