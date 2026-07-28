@@ -1,14 +1,13 @@
 /**
  * auth-role.js — Azure version
  * Returns a user's role based on their email address.
- * Called after Microsoft OAuth2 completes — email is verified by Microsoft,
- * we just need to return the role from the SharePoint Users list.
+ * Fetches all users and filters in JS to avoid SharePoint index limitations.
  *
  * POST { email }
  * Returns { success, role, name, email } or { success:false, error }
  */
-const { app }    = require('@azure/functions');
-const { findItem, LISTS } = require('../shared/graph');
+const { app }       = require('@azure/functions');
+const { listItems, LISTS } = require('../shared/graph');
 
 app.http('auth-role', {
   methods: ['POST'],
@@ -23,12 +22,16 @@ app.http('auth-role', {
 
       const emailLower = email.toLowerCase().trim();
 
-      // Look up user in SharePoint Users list by Title (which stores email)
-      const user = await findItem(LISTS.USERS, 'Title', emailLower).catch(() => null);
+      // Fetch all users and match by email in JS
+      const items = await listItems(LISTS.USERS, { top: 200 });
+      const user  = items.find(r => {
+        const e = (r.Email || r.Title || '').toLowerCase().trim();
+        return e === emailLower;
+      });
 
       if (user) {
         const active = user.Active !== 'FALSE' && user.Active !== false;
-        const role   = (user.Role || 'lab').toLowerCase();
+        const role   = (user.Role || user.role || 'lab').toLowerCase();
         if (!active || role === 'deactivated') {
           return {
             status: 200,
@@ -40,7 +43,7 @@ app.http('auth-role', {
           jsonBody: {
             success:   true,
             email:     emailLower,
-            name:      user.Name || email.split('@')[0],
+            name:      user.Name || user.name || email.split('@')[0],
             role,
             clientKey: user.ClientKey || null,
           },
