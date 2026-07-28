@@ -13,8 +13,8 @@ app.http('inventory-write', {
         const entry = body.payload?.entry || body.entry || body.payload || body;
         await createItem(LISTS.ACTIVITY_LOG, {
           Title:        `${entry.date || ''} ${entry.client || ''}`.trim(),
-          ActivityDate:         entry.date   || '',
-          ActivityTime:         entry.time   || '',
+          LogDate:         entry.date   || '',
+          LogTime:         entry.time   || '',
           Client:       entry.client || '',
           ActivityType: entry.type   || '',
           Qty: Number(entry.qty) || 0,
