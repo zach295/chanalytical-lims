@@ -17,7 +17,7 @@ app.http('inventory-write', {
           Time:         entry.time   || '',
           Client:       entry.client || '',
           ActivityType: entry.type   || '',
-          Qty:          parseInt(entry.qty || 0) || 0,
+          Qty: Number(entry.qty) || 0,
           Notes:        entry.notes  || '',
           By:           entry.by     || '',
         });
