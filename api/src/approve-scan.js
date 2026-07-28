@@ -317,11 +317,13 @@ app.http('approve-scan', {
       const reportDateStr = nextWorkdayET(n);
 
       // Get next sequence number from Accession Log
-      const todayItems = await listItems(LISTS.ACCESSION_LOG, {
-        filter: `fields/BaseId ge '${mmddyy}-001' and fields/BaseId le '${mmddyy}-999'`,
-        top: 500,
-      }).catch(() => []);
-      const used = new Set(todayItems.map(r => r.BaseId).filter(Boolean));
+      // field_1 = baseId in the Excel-imported Accession Log list
+      const todayItems = await listItems(LISTS.ACCESSION_LOG, { top: 500 }).catch(() => []);
+      const used = new Set(
+        todayItems
+          .map(r => r.field_1 || '')
+          .filter(id => id.startsWith(mmddyy + '-'))
+      );
       let seq = 1;
       while (used.has(`${mmddyy}-${String(seq).padStart(3,'0')}`)) seq++;
 
