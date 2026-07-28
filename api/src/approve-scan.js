@@ -485,16 +485,42 @@ app.http('approve-scan', {
           const abbrevPart = sanitize(abbrev || getAbbrev(formalName || customer || '') || 'UNK');
           // Format: [baseId]_[abbrev]_[address].pdf (spaces kept in address)
           // For radon: [baseId] RW_[abbrev]_[address].pdf
-          const primaryItem = labItems[0];
+          const siteId     = process.env.SP_SITE_ID;
+          const nonRadon   = labItems.find(l => !l.isRadon && !l.isRejection);
+          const radonItem  = labItems.find(l => l.isRadon && !l.isRejected);
+          const primaryItem = nonRadon || labItems[0];
           const prefix = primaryItem.isRadon ? `${primaryItem.baseId} RW` : primaryItem.baseId;
           const newName = `${prefix}_${abbrevPart}_${addrPart}.pdf`;
-          const siteId  = process.env.SP_SITE_ID;
+
+          // Rename original PDF
           await fetch(`${GRAPH}/sites/${siteId}/drive/items/${fileId}`, {
             method:  'PATCH',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body:    JSON.stringify({ name: newName }),
           });
           context.log(`[Archive] Renamed to ${newName}`);
+
+          // If both radon and non-radon — copy PDF for the radon item too
+          if (radonItem && nonRadon) {
+            try {
+              const rwName = `${radonItem.baseId} RW_${abbrevPart}_${addrPart}.pdf`;
+              const marker = 'Shared Documents/';
+              const idx    = SCAN_ARCHIVE.indexOf(marker);
+              const rel    = idx >= 0 ? SCAN_ARCHIVE.slice(idx + marker.length) : SCAN_ARCHIVE.replace(/^\/+/,'');
+              const dp     = rel.split('/').map(s => encodeURIComponent(s)).join('/');
+              const fRes   = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+                { headers: { Authorization: `Bearer ${token}` } });
+              if (fRes.ok) {
+                const destId = (await fRes.json()).id;
+                await fetch(`${GRAPH}/sites/${siteId}/drive/items/${fileId}/copy`, {
+                  method:  'POST',
+                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body:    JSON.stringify({ parentReference: { id: destId }, name: rwName }),
+                });
+                context.log(`[Archive] Copied RW PDF: ${rwName}`);
+              }
+            } catch(copyErr) { context.log('[Archive RW copy]', copyErr.message); }
+          }
         } catch(e) { context.log('[Archive rename]', e.message); }
       }
 
