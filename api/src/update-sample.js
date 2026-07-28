@@ -1,13 +1,33 @@
 /**
- * update-sample.js — Azure version
- * Updates sample information in SharePoint Archived Intake and Accession Log lists.
- * Replaces Google Sheets updates across Archived Intake, COA Master, and RW Master.
- *
- * POST { baseId, updates: { customer, dateDrawn, timeDrawn, receivedDate,
- *         receivedTime, location, city, state, zip, notes }, updatedBy }
+ * update-sample.js — Azure version (v361)
+ * Updates sample information in SharePoint Archived Intake and Accession Log.
+ * v361 adds: test type update with suffix recalculation.
  */
-const { app } = require('@azure/functions');
+const { app }   = require('@azure/functions');
 const { listItems, updateItem, LISTS } = require('../shared/graph');
+
+const SUFFIX_MAP = {
+  'Basic Safety (FHA)':'BS','Basic Safety':'BS','Standard Safety':'SS',
+  'Expanded Safety (Mortgage Test)':'EXP','WW - Expanded Safety':'WW',
+  'Comprehensive':'COMP','Pro Plus':'PP','Radon Water':'RW',
+  'AIO FHA':'AIOFHA','AIO Portability':'PORT',
+  'Alkalinity':'ALK','Arsenic, Total':'AS','Arsenic, Speciation':'AS-SPEC',
+  'Bacteria':'BAC','Cadmium, Total':'CD','Calcium, Total':'CA',
+  'Chloride, Total':'CL','Copper, Total':'CU','Fluoride':'FL',
+  'Iron, Total':'FE','Lead, Total':'PB','Magnesium, Total':'MG',
+  'Manganese, Total':'MN','Nitrate':'NO3','Nitrite':'NO2',
+  'pH':'PH','Sodium, Total':'NA','Sulfate':'SO4','Tannins':'TAN',
+  'Total Dissolved Solids (TDS)':'TDS','Total Hardness':'HRD','Uranium, Total':'U',
+  'Rejected - Timeout':'REJ','Rejected - Missing Information':'REJ',
+  'Rejected - Chlorine':'REJ','Rejected - Other':'REJ',
+};
+
+function getSuffix(testName) {
+  if (!testName) return '';
+  const parts = testName.split(' | ').map(t => t.trim()).filter(Boolean);
+  const suffixes = parts.map(t => SUFFIX_MAP[t] || t.substring(0,3).toUpperCase());
+  return suffixes.join(', ');
+}
 
 function to24h(t) {
   if (!t) return '';
@@ -42,13 +62,13 @@ app.http('update-sample', {
       const log = [];
       let rowsUpdated = 0;
 
-      // ── Update Archived Intake ───────────────────────────────────────────────
-      // Find all items where FullId starts with baseId
+      // ── Find all Archived Intake items for this baseId ────────────────────────
       const archivedItems = await listItems(LISTS.ARCHIVED_INTAKE, {
         filter: `startswith(fields/FullId,'${baseId}')`,
         top: 20,
       }).catch(() => []);
 
+      // ── Update standard fields ────────────────────────────────────────────────
       for (const item of archivedItems) {
         const fields = {};
         if (updates.customer     !== undefined) fields.ClientName   = updates.customer;
@@ -67,10 +87,34 @@ app.http('update-sample', {
           rowsUpdated++;
         }
       }
-      log.push(`Archived Intake: ${archivedItems.length} row(s) updated`);
+      log.push(`Archived Intake: ${archivedItems.length} row(s) found`);
 
-      // ── Update Accession Log ─────────────────────────────────────────────────
-      // Update customer name if changed
+      // ── Update test type ──────────────────────────────────────────────────────
+      if (updates.coaTest) {
+        const newTest   = updates.coaTest.trim();
+        const newSuffix = getSuffix(newTest);
+
+        try {
+          for (const item of archivedItems) {
+            const currentFullId = item.FullId || '';
+            const rowBase = currentFullId.match(/(\d{6}-\d{3})/)?.[1] || '';
+            if (rowBase !== baseId) continue;
+            const newFullId = `${rowBase} ${newSuffix}`;
+            await updateItem(LISTS.ARCHIVED_INTAKE, item._id, {
+              FullId:  newFullId,
+              CoaTest: newTest,
+              Title:   newFullId,
+            });
+            rowsUpdated++;
+          }
+          log.push(`Test type updated to ${newTest} (${newSuffix})`);
+          log.push(`Note: update control sheet lab ID manually if suffix changed`);
+        } catch(testErr) {
+          log.push(`Test update failed: ${testErr.message}`);
+        }
+      }
+
+      // ── Update customer name in Accession Log ─────────────────────────────────
       if (updates.customer !== undefined) {
         const accItems = await listItems(LISTS.ACCESSION_LOG, {
           filter: `startswith(fields/BaseId,'${baseId}')`,
