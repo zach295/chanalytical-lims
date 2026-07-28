@@ -51,6 +51,16 @@ app.http('test-types-write', {
       const body = await request.json();
       const { action, rowNum } = body;
 
+      if (action === 'debug') {
+        const ttItems = await listItems(LISTS.TEST_TYPES, { top: 1 });
+        const elItems = await listItems(LISTS.ELEMENTS, { top: 1 });
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ttRaw: ttItems[0], elRaw: elItems[0] }),
+        };
+      }
+
       if (action === 'saveTestType') {
         const { name, category, price, suffix, includes } = body;
         if (!name) return { status: 400, body: JSON.stringify({ error: 'Name required' }) };
