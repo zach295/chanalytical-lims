@@ -667,10 +667,11 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
           context.log(`[scan] ✓ ${file.name} | ${client?.clientName || ocr.customer} | ${tests.join(',')} | ${ocr.confidence}%`);
 
         } catch (err) {
-          context.log(`[scan] ✗ ${file.name}: ${err.message}`);
-          // Move back to INCOMING on failure so it can be retried
-          await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
-        }
+  context.log(`[scan] ✗ ${file.name}: ${err.message}`);
+  results.push({ fileName: file.name, error: err.message });
+  // Move back to INCOMING on failure so it can be retried
+  await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
+}
       }
 
       return {
