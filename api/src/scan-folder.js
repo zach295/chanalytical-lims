@@ -606,6 +606,17 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
             });
           }
 
+          // ── Ward Water test conversion ────────────────────────────────────────
+          // Ward Water uses WW - Expanded Safety instead of Expanded Safety (Mortgage Test)
+          const isWardWater = clientName.toLowerCase().includes('ward water') || clientName.toLowerCase().includes('critical plumbing');
+          if (isWardWater) {
+            ocr.tests = (ocr.tests || []).map(t => {
+              if (/expanded safety/i.test(t)) return 'WW - Expanded Safety';
+              return t;
+            });
+            context.log(`[scan] Ward Water client — converted Expanded Safety to WW - Expanded Safety`);
+          }
+
           const pkgTests    = ocr.tests || [];
           const indElements = ocr.individualElements || [];
           const radonTests  = ocr.hasRadon ? ['Radon Water'] : [];
