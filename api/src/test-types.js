@@ -1,6 +1,9 @@
 const { app } = require('@azure/functions');
 const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
 
+// SharePoint internal field mapping (Test Types):
+// Title=name, field_1=category, field_2=price, field_3=suffix, field_4=includes, field_5=active
+
 // ── READ ──────────────────────────────────────────────────────────────────────
 app.http('test-types-read', {
   methods: ['GET'],
@@ -14,20 +17,20 @@ app.http('test-types-read', {
 
       const testTypes = ttItems.map(r => ({
         _row:     r._id,
-        name:     r.Name     || r.Title || '',
-        category: r.Category || r.TestCategory || 'Package',
-        price:    r.Price    !== undefined && r.Price !== null ? r.Price : '',
-        suffix:   r.Suffix   || '',
-        includes: r.Includes || '',
-        active:   r.Active !== false && r.Active !== 'FALSE',
+        name:     r.Title    || '',
+        category: r.field_1  || 'Package',
+        price:    r.field_2  !== undefined && r.field_2 !== null ? r.field_2 : '',
+        suffix:   r.field_3  || '',
+        includes: r.field_4  || '',
+        active:   r.field_5  !== false,
       }));
 
       const elements = elItems.map(r => ({
         _row:   r._id,
-        name:   r.Name   || r.Title || '',
-        abbrev: r.Abbrev || '',
-        price:  r.Price  !== undefined && r.Price !== null ? r.Price : '',
-        active: r.Active !== false && r.Active !== 'FALSE',
+        name:   r.Title   || '',
+        abbrev: r.field_1 || '',
+        price:  r.field_2 !== undefined && r.field_2 !== null ? r.field_2 : '',
+        active: r.field_3 !== false,
       }));
 
       return {
@@ -51,36 +54,25 @@ app.http('test-types-write', {
       const body = await request.json();
       const { action, rowNum } = body;
 
-      if (action === 'debug') {
-        const ttItems = await listItems(LISTS.TEST_TYPES, { top: 1 });
-        const elItems = await listItems(LISTS.ELEMENTS, { top: 1 });
-        return {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ ttRaw: ttItems[0], elRaw: elItems[0] }),
-        };
-      }
-
       if (action === 'saveTestType') {
         const { name, category, price, suffix, includes } = body;
         if (!name) return { status: 400, body: JSON.stringify({ error: 'Name required' }) };
         const fields = {
-          Title:    name,
-          Name:     name,
-          Category: category || 'Package',
-          Price:    parseFloat(price) || 0,
-          Suffix:   suffix   || '',
-          Includes: includes || '',
+          Title:   name,
+          field_1: category || 'Package',
+          field_2: parseFloat(price) || 0,
+          field_3: suffix   || '',
+          field_4: includes || '',
         };
         if (rowNum) await updateItem(LISTS.TEST_TYPES, rowNum, fields);
-        else        await createItem(LISTS.TEST_TYPES, { ...fields, Active: true });
+        else        await createItem(LISTS.TEST_TYPES, { ...fields, field_5: true });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
       if (action === 'deleteTestType') {
         const { active } = body;
         const isActive = active === 'TRUE' || active === true;
-        await updateItem(LISTS.TEST_TYPES, rowNum, { Active: isActive });
+        await updateItem(LISTS.TEST_TYPES, rowNum, { field_5: isActive });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -88,20 +80,19 @@ app.http('test-types-write', {
         const { name, abbrev, price } = body;
         if (!name) return { status: 400, body: JSON.stringify({ error: 'Name required' }) };
         const fields = {
-          Title:  name,
-          Name:   name,
-          Abbrev: abbrev || '',
-          Price:  parseFloat(price) || 0,
+          Title:   name,
+          field_1: abbrev || '',
+          field_2: parseFloat(price) || 0,
         };
         if (rowNum) await updateItem(LISTS.ELEMENTS, rowNum, fields);
-        else        await createItem(LISTS.ELEMENTS, { ...fields, Active: true });
+        else        await createItem(LISTS.ELEMENTS, { ...fields, field_3: true });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
       if (action === 'deleteElement') {
         const { active } = body;
         const isActive = active === 'TRUE' || active === true;
-        await updateItem(LISTS.ELEMENTS, rowNum, { Active: isActive });
+        await updateItem(LISTS.ELEMENTS, rowNum, { field_3: isActive });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
