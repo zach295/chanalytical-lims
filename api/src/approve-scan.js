@@ -386,38 +386,32 @@ app.http('approve-scan', {
       }
 
       // ── Write Archived Intake ────────────────────────────────────────────────
-      // Field mapping (Excel-imported): Title=timestamp, field_1=fullId,
-      // field_2=coaTest, field_3=clientName, field_4=dateDrawn (Excel serial),
-      // field_5=timeDrawn (day fraction), field_6=receivedDate, field_7=receivedTime,
-      // field_8=address, field_9=city, field_10=state, field_11=zip (number),
-      // field_12=approvedBy, field_13=notes, field_14=status
+      // Field mapping: Title=timestamp, field_1=fullId, field_2=coaTest,
+      // field_3=clientName, field_4=dateDrawn, field_5=timeDrawn,
+      // field_6=receivedDate, field_7=receivedTime, field_8=address,
+      // field_9=city, field_10=state, field_11=zip, field_12=approvedBy,
+      // field_13=notes, field_14=status
       for (const item of labItems) {
         const intakeFields = {
           Title:    ts,
           field_1:  item.fullId,
           field_2:  item.coaTest,
           field_3:  formalName || customer || '',
+          field_4:  fmt(dateDrawn) || '',
+          field_5:  to24h(timeDrawn) || '',
+          field_6:  fmt(receivedDate) || tdStr,
+          field_7:  to24h(receivedTime) || tmStr,
           field_8:  location   || '',
           field_9:  city       || '',
           field_10: state      || 'ME',
+          field_11: zip        ? String(zip).padStart(5,'0') : '',
           field_12: reviewedBy || 'Lab Staff',
-          field_13: notes      || '',
           field_14: 'Pending',
         };
-        // Date/time fields stored as Excel serial numbers
-        const drawnSerial = toExcelSerial(fmt(dateDrawn));
-        const drawnTimeFrac = toExcelTime(to24h(timeDrawn));
-        const recvSerial = toExcelSerial(fmt(receivedDate) || tdStr);
-        const recvTimeFrac = toExcelTime(to24h(receivedTime) || tmStr);
-        if (drawnSerial  !== null) intakeFields.field_4 = drawnSerial;
-        if (drawnTimeFrac !== null) intakeFields.field_5 = drawnTimeFrac;
-        if (recvSerial   !== null) intakeFields.field_6 = recvSerial;
-        if (recvTimeFrac !== null) intakeFields.field_7 = recvTimeFrac;
-        // Zip as number
-        const zipNum = zip ? parseInt(String(zip).replace(/\D/g,'')) : null;
-        if (zipNum) intakeFields.field_11 = zipNum;
-        await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
-          .catch(e => context.log('[ArchivedIntake]', e.message));
+        if (notes && notes.trim()) intakeFields.field_13 = notes;
+        const intakeResult = await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
+          .catch(e => { context.log('[ArchivedIntake] Error:', e.message); return null; });
+        if (intakeResult) context.log('[ArchivedIntake] ✓', item.fullId);
       }
 
       // ── Write Rejected items ─────────────────────────────────────────────────
