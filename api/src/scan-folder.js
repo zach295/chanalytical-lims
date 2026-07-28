@@ -631,28 +631,27 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
           // ── Write to SharePoint Review Queue list ─────────────────────────────
           // Field names match the SharePoint list columns from setup-lists.js
           await writeToReviewQueue({
-            Title:           ocrStatus,                                      // OCR Status
-            ReviewStatus:    reviewStatus,
-            LabID:           '',                                             // assigned at approval
-            ClientName:      client ? client.clientName : (ocr.customer || ''),
-            Address:         locationWithType,
-            City:            ocr.city        || '',
-            State:           ocr.state       || 'ME',
-            Zip:             ocr.zip ? String(ocr.zip).padStart(5, '0') : '',
-            Email:           client ? client.email : (ocr.email || ''),
-            SampleDate:      ocr.dateDrawn   || '',
-            SampleTime:      ocr.timeDrawn   || '',
-            ReceivedDate:    ocr.receivedDate || '',
-            ReceivedTime:    ocr.receivedTime || '',
-            TestSelections:  tests.join(', '),
-            ValidationErrors: valError       || '',
-            OCRConfidence:   ocr.confidence  || 0,
-            FileID:          file.id,
-            ProcessedDate:   stamp,
-            BarcodeID:       ocr.barcodeId   || '',
-            ScannedBy:       scannedByName,
-            ApprovedBy:      '',
-            WaterType:       ocr.waterType   || '',
+            Title:            reviewStatus,
+            LabID:            '',
+            ClientName:       client ? client.clientName : (ocr.customer || ''),
+            Address:          locationWithType,
+            City:             ocr.city         || '',
+            State:            ocr.state        || 'ME',
+            Zip:              ocr.zip ? String(ocr.zip).padStart(5, '0') : '',
+            Email:            client ? client.email : (ocr.email || ''),
+            SampleDate:       ocr.dateDrawn    || '',
+            SampleTime:       ocr.timeDrawn    || '',
+            ReceivedDate:     ocr.receivedDate || '',
+            ReceivedTime:     ocr.receivedTime || '',
+            TestSelections:   tests.join(', '),
+            ValidationErrors: valError         || '',
+            OCRConfidence:    ocr.confidence   || 0,
+            FileID:           file.id,
+            ProcessedDate:    stamp,
+            BarcodeID:        ocr.barcodeId    || '',
+            ScannedBy:        scannedByName,
+            ApprovedBy:       '',
+            WaterType:        ocr.waterType    || '',
           }, token);
 
           results.push({
@@ -667,11 +666,10 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
           context.log(`[scan] ✓ ${file.name} | ${client?.clientName || ocr.customer} | ${tests.join(',')} | ${ocr.confidence}%`);
 
         } catch (err) {
-  context.log(`[scan] ✗ ${file.name}: ${err.message}`);
-  results.push({ fileName: file.name, error: err.message });
-  // Move back to INCOMING on failure so it can be retried
-  await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
-}
+          context.log(`[scan] ✗ ${file.name}: ${err.message}`);
+          // Move back to INCOMING on failure so it can be retried
+          await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
+        }
       }
 
       return {
