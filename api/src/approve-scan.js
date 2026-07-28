@@ -475,10 +475,30 @@ app.http('approve-scan', {
         await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
       }
 
-      // ── Move scan file to Archive in SharePoint ───────────────────────────────
+      // ── Move and rename scan file to Archive ─────────────────────────────────
       const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
       if (fileId) {
-        await moveSpFile(fileId, SCAN_ARCHIVE, token).catch(e => context.log('[Archive]', e.message));
+        // Move to Archive first
+        await moveSpFile(fileId, SCAN_ARCHIVE, token).catch(e => context.log('[Archive move]', e.message));
+
+        // Rename PDF to [LabID]_[ClientAbbrev]_[Address].pdf
+        // For radon: [LabID] RW_[ClientAbbrev]_[Address].pdf
+        try {
+          const sanitize = s => String(s||'').replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim().slice(0,50);
+          const addrPart   = sanitize(location || '');
+          const abbrevPart = sanitize(abbrev || getAbbrev(formalName || customer || '') || 'UNK');
+          // Use first lab item for the filename
+          const primaryItem = labItems[0];
+          const prefix = primaryItem.isRadon ? `${primaryItem.baseId} RW` : primaryItem.fullId;
+          const newName = `${sanitize(prefix)}_${abbrevPart}_${addrPart}.pdf`.replace(/\s+/g,'_');
+          const siteId  = process.env.SP_SITE_ID;
+          await fetch(`${GRAPH}/sites/${siteId}/drive/items/${fileId}`, {
+            method:  'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ name: newName }),
+          });
+          context.log(`[Archive] Renamed to ${newName}`);
+        } catch(e) { context.log('[Archive rename]', e.message); }
       }
 
       // ── Call control-sheet function to add Lab IDs ────────────────────────────
