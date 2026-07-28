@@ -28,7 +28,7 @@ const pending = filtered.map(r => ({
         tests:          r.TestSelections ? r.TestSelections.split(',').map(t => t.trim()).filter(Boolean) : [],
         confidence:     r.OcrConfidence  || 0,
         processedDate:  r.ProcessedDate  || '',
-        reviewStatus:   r.ReviewStatus   || 'Pending',
+        reviewStatus:   r.Title || r.ReviewStatus || 'Pending',
         validationErrors: r.ValidationErrors || '',
         _rowIndex:      r._id,
       }));
