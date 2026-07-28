@@ -146,6 +146,10 @@ app.http('control-sheet', {
       if (action === 'addLabIds') {
         if (!labIds?.length) return { status:400, jsonBody:{ error:'labIds required' } };
 
+        // Clear stale cache entries from previous days
+        const cacheKeys = Object.keys(_fileCache);
+        cacheKeys.forEach(k => { if (k !== fileName) delete _fileCache[k]; });
+
         let fileId, wsId;
         try {
           ({ fileId, wsId } = await getSheetIds(token, destFilePath, fileName));
