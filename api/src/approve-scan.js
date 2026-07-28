@@ -370,7 +370,7 @@ app.http('approve-scan', {
       const clientCode   = clientInfo.clientCode;
       const formalName   = clientInfo.formalName || customer;
       const isPublicClient = formalName.startsWith('Public-');
-      const abbrev       = clientInfo.abbrev || (isPublicClient ? 'PUBLIC' : getAbbrev(formalName));
+      const abbrev       = (isPublicOverride || isPublicClient) ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
 
       // ── Write Accession Log ──────────────────────────────────────────────────
       // Field mapping (Excel-imported): Title=timestamp, field_1=baseId,
