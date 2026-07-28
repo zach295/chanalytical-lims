@@ -6,13 +6,14 @@ app.http('mark-scan-processed', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { fileId, outcome, reviewQueueRow } = await request.json();
-      if (!fileId) return { status: 400, body: JSON.stringify({ error: 'fileId required' }) };
+      const { fileId, outcome, reviewQueueRow, rowIndex } = await request.json();
+      const row = reviewQueueRow || rowIndex;
+      if (!row) return { status: 400, body: JSON.stringify({ error: 'rowIndex required' }) };
 
-      if (outcome === 'discarded' && reviewQueueRow) {
-        await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
-      } else if (reviewQueueRow) {
-        await updateItem(LISTS.REVIEW_QUEUE, reviewQueueRow, { Title: 'Processed' }).catch(() => {});
+      if (outcome === 'discarded') {
+        await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
+      } else {
+        await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' }).catch(() => {});
       }
 
       return {
