@@ -15,19 +15,19 @@ app.http('test-types-read', {
       const testTypes = ttItems.map(r => ({
         _row:     r._id,
         name:     r.Name     || r.Title || '',
-        category: r.Category || 'Package',
-        price:    r.Price    || '',
+        category: r.Category || r.TestCategory || 'Package',
+        price:    r.Price    !== undefined && r.Price !== null ? r.Price : '',
         suffix:   r.Suffix   || '',
         includes: r.Includes || '',
-        active:   r.Active !== 'FALSE',
+        active:   r.Active !== false && r.Active !== 'FALSE',
       }));
 
       const elements = elItems.map(r => ({
         _row:   r._id,
         name:   r.Name   || r.Title || '',
         abbrev: r.Abbrev || '',
-        price:  r.Price  || '',
-        active: r.Active !== 'FALSE',
+        price:  r.Price  !== undefined && r.Price !== null ? r.Price : '',
+        active: r.Active !== false && r.Active !== 'FALSE',
       }));
 
       return {
@@ -37,7 +37,7 @@ app.http('test-types-read', {
       };
     } catch(e) {
       context.log('[test-types-read] Error:', e.message);
-      return { status:500, body: JSON.stringify({ error: e.message }) };
+      return { status: 500, body: JSON.stringify({ error: e.message }) };
     }
   }
 });
@@ -53,38 +53,52 @@ app.http('test-types-write', {
 
       if (action === 'saveTestType') {
         const { name, category, price, suffix, includes } = body;
-        if (!name) return { status:400, body: JSON.stringify({ error:'Name required' }) };
-        const fields = { Title:name, Name:name, Category:category||'Package', Price:price||'', Suffix:suffix||'', Includes:includes||'' };
+        if (!name) return { status: 400, body: JSON.stringify({ error: 'Name required' }) };
+        const fields = {
+          Title:    name,
+          Name:     name,
+          Category: category || 'Package',
+          Price:    parseFloat(price) || 0,
+          Suffix:   suffix   || '',
+          Includes: includes || '',
+        };
         if (rowNum) await updateItem(LISTS.TEST_TYPES, rowNum, fields);
-        else        await createItem(LISTS.TEST_TYPES, { ...fields, Active:'TRUE' });
-        return { status:200, headers:{'content-type':'application/json'}, body: JSON.stringify({ success:true }) };
+        else        await createItem(LISTS.TEST_TYPES, { ...fields, Active: true });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
       if (action === 'deleteTestType') {
         const { active } = body;
-        await updateItem(LISTS.TEST_TYPES, rowNum, { Active: active || 'FALSE' });
-        return { status:200, headers:{'content-type':'application/json'}, body: JSON.stringify({ success:true }) };
+        const isActive = active === 'TRUE' || active === true;
+        await updateItem(LISTS.TEST_TYPES, rowNum, { Active: isActive });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
       if (action === 'saveElement') {
         const { name, abbrev, price } = body;
-        if (!name) return { status:400, body: JSON.stringify({ error:'Name required' }) };
-        const fields = { Title:name, Name:name, Abbrev:abbrev||'', Price:price||'' };
+        if (!name) return { status: 400, body: JSON.stringify({ error: 'Name required' }) };
+        const fields = {
+          Title:  name,
+          Name:   name,
+          Abbrev: abbrev || '',
+          Price:  parseFloat(price) || 0,
+        };
         if (rowNum) await updateItem(LISTS.ELEMENTS, rowNum, fields);
-        else        await createItem(LISTS.ELEMENTS, { ...fields, Active:'TRUE' });
-        return { status:200, headers:{'content-type':'application/json'}, body: JSON.stringify({ success:true }) };
+        else        await createItem(LISTS.ELEMENTS, { ...fields, Active: true });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
       if (action === 'deleteElement') {
         const { active } = body;
-        await updateItem(LISTS.ELEMENTS, rowNum, { Active: active || 'FALSE' });
-        return { status:200, headers:{'content-type':'application/json'}, body: JSON.stringify({ success:true }) };
+        const isActive = active === 'TRUE' || active === true;
+        await updateItem(LISTS.ELEMENTS, rowNum, { Active: isActive });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
-      return { status:400, body: JSON.stringify({ error:'Unknown action' }) };
+      return { status: 400, body: JSON.stringify({ error: 'Unknown action' }) };
     } catch(e) {
       context.log('[test-types-write] Error:', e.message);
-      return { status:500, body: JSON.stringify({ error: e.message }) };
+      return { status: 500, body: JSON.stringify({ error: e.message }) };
     }
   }
 });
