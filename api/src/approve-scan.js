@@ -484,13 +484,14 @@ app.http('approve-scan', {
         // Rename PDF to [LabID]_[ClientAbbrev]_[Address].pdf
         // For radon: [LabID] RW_[ClientAbbrev]_[Address].pdf
         try {
-          const sanitize = s => String(s||'').replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim().slice(0,50);
+          const sanitize = s => String(s||'').replace(/[\/\\:*?"<>|]/g,'').trim().slice(0,60);
           const addrPart   = sanitize(location || '');
           const abbrevPart = sanitize(abbrev || getAbbrev(formalName || customer || '') || 'UNK');
-          // Use first lab item for the filename
+          // Format: [baseId]_[abbrev]_[address].pdf (spaces kept in address)
+          // For radon: [baseId] RW_[abbrev]_[address].pdf
           const primaryItem = labItems[0];
-          const prefix = primaryItem.isRadon ? `${primaryItem.baseId} RW` : primaryItem.fullId;
-          const newName = `${sanitize(prefix)}_${abbrevPart}_${addrPart}.pdf`.replace(/\s+/g,'_');
+          const prefix = primaryItem.isRadon ? `${primaryItem.baseId} RW` : primaryItem.baseId;
+          const newName = `${prefix}_${abbrevPart}_${addrPart}.pdf`;
           const siteId  = process.env.SP_SITE_ID;
           await fetch(`${GRAPH}/sites/${siteId}/drive/items/${fileId}`, {
             method:  'PATCH',
