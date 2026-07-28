@@ -45,10 +45,21 @@
     </div>
 
     <div id="login-form">
+      <!-- Microsoft Sign In (primary method) -->
+      <button class="btn" id="ms-login-btn" onclick="doMsLogin()"
+        style="background:#0078d4;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;">
+        <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+        Sign in with Microsoft
+      </button>
+
+      <div style="display:flex;align-items:center;gap:10px;margin:16px 0;color:#999;font-size:13px;">
+        <hr style="flex:1;border:none;border-top:1px solid #ddd;"> or sign in with password <hr style="flex:1;border:none;border-top:1px solid #ddd;">
+      </div>
+
       <div class="err" id="login-err"></div>
       <div class="field"><label>Email Address</label><input type="text" id="l-email" placeholder="you@example.com" autocomplete="off" inputmode="email" spellcheck="false"/></div>
       <div class="field"><label>Password</label><input type="password" id="l-pw" placeholder="Your password" autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()"/></div>
-      <button class="btn" id="login-panel" onclick="doLogin()">Sign In →</button>
+      <button class="btn" id="login-panel" onclick="doLogin()" style="background:#666;">Sign In →</button>
     </div>
 
     <div id="reset-form" style="display:none;">
@@ -141,6 +152,25 @@
     document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
     document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
   }
+
+  // ── Microsoft sign-in ──────────────────────────────────────────────────────
+  async function doMsLogin() {
+    const btn = document.getElementById('ms-login-btn');
+    btn.disabled = true; btn.textContent = '⏳ Redirecting to Microsoft...';
+    await MsAuth.login(); // redirects away — this line rarely reached
+  }
+
+  // Handle Microsoft OAuth2 redirect callback on page load
+  (async () => {
+    const result = await MsAuth.handleCallback();
+    if (!result) return; // not a Microsoft callback
+    if (result.success) {
+      redirect(result.user.role);
+    } else {
+      const errEl = document.getElementById('login-err');
+      if (errEl) { errEl.textContent = result.error; errEl.style.display = 'block'; }
+    }
+  })();
 
   async function doLogin() {
     const email = document.getElementById('l-email').value;
