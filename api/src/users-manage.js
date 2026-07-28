@@ -6,24 +6,26 @@ app.http('users-manage', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
+
+      const mapUser = r => ({
+        _id:       r._id,
+        email:     r.Email     || r.Title || '',
+        name:      r.Name      || r.name  || '',
+        role:      r.Role      || r.role  || 'lab',
+        clientKey: r.ClientKey || '',
+        regCode:   r.RegCode   || '',
+        createdBy: r.CreatedBy || '',
+        createdAt: r.CreatedAt || '',
+        mustReset: r.MustReset === true || r.MustReset === 'true' || r.MustReset === 'TRUE',
+        active:    r.Active !== false && r.Active !== 'FALSE' && r.Active !== false,
+      });
+
       if (request.method === 'GET') {
         const items = await listItems(LISTS.USERS);
-        const users = items.map(r => ({
-          _id:       r._id,
-          email:     r.Email     || r.Title || '',
-          name:      r.Name      || '',
-          role:      r.Role      || 'lab',
-          clientKey: r.ClientKey || '',
-          regCode:   r.RegCode   || '',
-          createdBy: r.CreatedBy || '',
-          createdAt: r.CreatedAt || '',
-          mustReset: r.MustReset === true || r.MustReset === 'true',
-          active:    r.Active !== false && r.Active !== 'FALSE',
-        }));
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ users }),
+          body: JSON.stringify({ users: items.map(mapUser) }),
         };
       }
 
@@ -32,35 +34,24 @@ app.http('users-manage', {
 
       if (action === 'list') {
         const items = await listItems(LISTS.USERS, { top: 200 });
-        const users = items.map(r => ({
-          _id:       r._id,
-          email:     r.Email     || r.Title || '',
-          name:      r.Name      || '',
-          role:      r.Role      || 'lab',
-          clientKey: r.ClientKey || '',
-          regCode:   r.RegCode   || '',
-          createdBy: r.CreatedBy || '',
-          createdAt: r.CreatedAt || '',
-          mustReset: r.MustReset === true || r.MustReset === 'true',
-          active:    r.Active !== false && r.Active !== 'FALSE',
-        }));
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ users }),
+          body: JSON.stringify({ users: items.map(mapUser) }),
         };
       }
 
       if (action === 'create') {
-        const { email, name, role, clientKey, createdBy } = body;
-        const existing = await findItem(LISTS.USERS, 'Email', email);
+        const { email, name, role, clientKey, createdBy, regCode } = body;
+        const existing = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
         if (existing) return { status: 409, body: JSON.stringify({ error: 'User already exists' }) };
         await createItem(LISTS.USERS, {
           Title:     email,
           Email:     email,
-          Name:      name,
+          Name:      name      || '',
           Role:      role      || 'lab',
           ClientKey: clientKey || '',
+          RegCode:   regCode   || '',
           CreatedBy: createdBy || '',
           CreatedAt: new Date().toISOString(),
           MustReset: true,
@@ -75,7 +66,7 @@ app.http('users-manage', {
 
       if (action === 'edit') {
         const { email, name, role, clientKey, regCode } = body;
-        const user = await findItem(LISTS.USERS, 'Email', email);
+        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, {
           Name:      name      || '',
@@ -92,7 +83,7 @@ app.http('users-manage', {
 
       if (action === 'setrole') {
         const { email, role } = body;
-        const user = await findItem(LISTS.USERS, 'Email', email);
+        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { Role: role });
         return {
@@ -104,7 +95,7 @@ app.http('users-manage', {
 
       if (action === 'deactivate') {
         const { email } = body;
-        const user = await findItem(LISTS.USERS, 'Email', email);
+        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { Role: 'deactivated', Active: 'FALSE' });
         return {
@@ -116,7 +107,7 @@ app.http('users-manage', {
 
       if (action === 'checklogin') {
         const { email } = body;
-        const user = await findItem(LISTS.USERS, 'Email', email);
+        const user = await findItem(LISTS.USERS, 'Title', email).catch(() => null);
         if (!user) return {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -127,9 +118,9 @@ app.http('users-manage', {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             found:     true,
-            role:      user.Role,
-            mustReset: user.MustReset,
-            active:    user.Active !== 'FALSE',
+            role:      user.Role      || user.role || 'lab',
+            mustReset: user.MustReset === true || user.MustReset === 'true' || user.MustReset === 'TRUE',
+            active:    user.Active !== 'FALSE' && user.Active !== false,
           }),
         };
       }
