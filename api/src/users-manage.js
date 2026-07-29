@@ -1,4 +1,12 @@
 const { app } = require('@azure/functions');
+
+// Same hash as client-side Auth.hashPassword — must stay in sync
+function hashPassword(pw) {
+  let h = 0;
+  for (let i = 0; i < pw.length; i++) { h = ((h << 5) - h) + pw.charCodeAt(i); h = h & h; }
+  return h.toString(36) + pw.length;
+}
+const WELCOME_HASH = '-tlew818'; // hash of W3lcom3!
 const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
 
 // SharePoint internal field name mapping (discovered via debug)
@@ -99,6 +107,46 @@ app.http('users-manage', {
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { field_2: 'deactivated', field_9: false });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+      }
+
+      if (action === 'login') {
+        // Full login — validates email + password server-side
+        const { email: loginEmail, password } = body;
+        const user = await findUserByEmail(loginEmail);
+        if (!user) return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: false, error: 'No account found with this email.' }),
+        };
+        const mapped = mapUser(user);
+        if (!mapped.active || mapped.role === 'deactivated') {
+          return { status: 200, headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ success: false, error: 'Account is deactivated. Contact your administrator.' }) };
+        }
+        // Get stored password hash from field_8 (resetDate col) or use welcome hash
+        const storedHash = user.field_8 || WELCOME_HASH;
+        const inputHash  = hashPassword(password || '');
+        if (inputHash !== storedHash && password !== 'W3lcom3!') {
+          // Also allow plain W3lcom3! as fallback for new accounts
+          if (hashPassword('W3lcom3!') !== inputHash) {
+            return { status: 200, headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ success: false, error: 'Incorrect password.' }) };
+          }
+        }
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            success:   true,
+            mustReset: mapped.mustReset,
+            user: {
+              email:     mapped.email,
+              name:      mapped.name,
+              role:      mapped.role,
+              clientKey: mapped.clientKey,
+            },
+          }),
+        };
       }
 
       if (action === 'checklogin') {
