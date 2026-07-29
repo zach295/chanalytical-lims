@@ -126,9 +126,6 @@
     .msg-inline.ok{background:var(--success-light);color:var(--success);display:block;}
     .msg-inline.err{background:var(--error-light);color:var(--error);display:block;}
     @media(max-width:700px){#sidebar{display:none;}}
-    .admin-only { display: none !important; }
-    .admin-visible .admin-only { display: flex !important; }
-
     #sidebar.collapsed{width:0!important;min-width:0!important;overflow:hidden;}
     #sidebar.collapsed #sb-brand,#sidebar.collapsed .sb-label,#sidebar.collapsed .sb-btn span:not(#review-badge),#sidebar.collapsed #sb-username{display:none;}
     #sb-expand{display:none;position:fixed;top:12px;left:8px;z-index:100;background:var(--navy);border:none;color:white;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:14px;}
@@ -1292,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/inventory-read');
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Load failed (${res.status}): ${errText.slice(0,300)}`);
+        throw new Error(`Sheets read failed (${res.status}): ${errText.slice(0,300)}`);
       }
       const data = await res.json();
 
@@ -1320,32 +1317,32 @@ document.addEventListener('DOMContentLoaded', function() {
         activityLog = data.activityLog.reverse();
       }
 
-      const errBanner = document.getElementById('sp-error-banner');
+      const errBanner = document.getElementById('sheets-error-banner');
       if (errBanner) errBanner.style.display = 'none';
 
     } catch(err) {
       console.error('Load failed:', err);
       ensureInventoryKeys();
-      let errBanner = document.getElementById('sp-error-banner');
+      let errBanner = document.getElementById('sheets-error-banner');
       if (!errBanner) {
         errBanner = document.createElement('div');
-        errBanner.id = 'sp-error-banner';
+        errBanner.id = 'sheets-error-banner';
         errBanner.style.cssText = 'background:#fdf0ee;border:2px solid #C0392B;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#C0392B;';
         const mainEl = document.querySelector('main');
         if (mainEl) mainEl.prepend(errBanner);
       }
       errBanner.style.display = 'block';
       errBanner.innerHTML = `
-        <strong>⚠️ Could not connect to SharePoint</strong><br>
+        <strong>⚠️ Could not connect to Google Sheets</strong><br>
         <code style="font-size:11px;word-break:break-all;">${err.message}</code><br><br>
         <strong>Checklist:</strong><br>
-        • SharePoint Lists created (run /api/setup-lists if not done)<br>
-        • Azure env vars set: <code>MS_TENANT_ID</code>, <code>MS_CLIENT_ID</code>, <code>MS_CLIENT_SECRET</code>, <code>SP_SITE_ID</code><br>
-        • Admin consent granted for <code>Sites.FullControl.All</code> in App registrations<br>
-        <br><br>
+        • Sheet tabs named exactly: <code>Client Inventory</code>, <code>Bottle Inventory</code>, <code>Activity Log</code><br>
+        • Netlify env vars set: <code>SPREADSHEET_ID</code>, <code>GOOGLE_PRIVATE_KEY</code>, <code>GOOGLE_CLIENT_EMAIL</code>, <code>GOOGLE_PRIVATE_KEY_ID</code>, <code>GOOGLE_CLIENT_ID</code><br>
+        • Service account has Editor access to the Sheet<br>
+        • Netlify has been redeployed since last env var change<br><br>
         <button onclick="loadFromSheets().then(render)" style="padding:8px 16px;background:#C0392B;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">↺ Retry</button>
         &nbsp;
-        <button  style="padding:8px 16px;background:#003A5C;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 Run Diagnostic</button>
+        <button onclick="runConnectionDiag()" style="padding:8px 16px;background:#003A5C;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 Run Diagnostic</button>
       `;
     }
     _loading = false;
@@ -1353,7 +1350,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function runConnectionDiag() {
-    const banner = document.getElementById('sp-error-banner');
+    const banner = document.getElementById('sheets-error-banner');
     if (banner) banner.innerHTML += '<br>🔍 Running diagnostic...';
     try {
       const res = await fetch('/api/inventory-read');
@@ -3862,7 +3859,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Only remove standalone expired elements that aren't covered by the package
         displayTests = displayTests.filter(t => allPackages.includes(t) || !expiredElements.includes(t));
       } else {
-        // Standalone elements expired — reject them
+        // Standalone elements expired — reject them AND add note
+        timeoutNotes = rejectedFlags.map(f =>
+          `${f.element} over time limit (${f.hours||'?'} hrs old, limit ${f.limit||'?'} hrs)`
+        );
         displayTests = displayTests.filter(t =>
           !allPackages.includes(t) &&
           !expiredElements.includes(t)
@@ -4113,7 +4113,12 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="form-field" style="margin-bottom:16px;">
           <label for="sc-${r.fileId}-notes">Notes</label>
           <input type="text" id="sc-${r.fileId}-notes"
-            value="${String(r.notes||'').replace(/"/g,'&quot;')}"
+            value="${(() => {
+              const existingNotes = String(r.notes||'');
+              const timeoutNote = timeoutNotes.length ? timeoutNotes.join('; ') : '';
+              if (!timeoutNote) return existingNotes.replace(/"/g,'&quot;');
+              return (existingNotes ? existingNotes + '; ' + timeoutNote : timeoutNote).replace(/"/g,'&quot;');
+            })()}"
             autocomplete="new-password" data-form-type="other" data-lpignore="true"
             style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
         </div>
@@ -5461,7 +5466,7 @@ document.addEventListener('DOMContentLoaded', function() {
     statusEl.style.color = 'var(--slate)';
 
     try {
-      // ── Generate PDF via Azure render-report-pdf function ─────────────────
+      // ── Generate PDF from Google Sheets templates ─────────────────────────
       const pdfRes = await fetch('/api/render-report-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
