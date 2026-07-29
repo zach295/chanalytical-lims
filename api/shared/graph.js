@@ -40,7 +40,7 @@ async function getToken() {
 }
 
 // ── List ID cache ──────────────────────────────────────────────────────────────
-const _listIds = {}; // v2
+const _listIds = {}; // v3
 
 async function getListId(listName) {
   if (_listIds[listName]) return _listIds[listName];
