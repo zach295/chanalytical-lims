@@ -246,8 +246,10 @@ const MsAuth = {
     const verifier  = this._randomString(64);
     const challenge = await this._sha256(verifier);
     const state     = this._randomString(16);
-    sessionStorage.setItem('ms_verifier', verifier);
-    sessionStorage.setItem('ms_state',    state);
+    // Use localStorage (not sessionStorage) — survives iOS PWA redirects
+    localStorage.setItem('ms_pkce', JSON.stringify({
+      verifier, state, expires: Date.now() + 10 * 60 * 1000
+    }));
 
     const params = new URLSearchParams({
       client_id:             MS_CLIENT_ID,
@@ -264,67 +266,45 @@ const MsAuth = {
 
   // Step 2: Handle redirect back from Microsoft (call on login.html load)
   async handleCallback() {
-    const params   = new URLSearchParams(window.location.search);
-    const code     = params.get('code');
-    const state    = params.get('state');
-    const error    = params.get('error');
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get('code');
+    const state  = params.get('state');
+    const error  = params.get('error');
 
     if (error) return { success: false, error: params.get('error_description') || error };
     if (!code)  return null; // not a Microsoft callback
 
-    // Verify state
-    const savedState = sessionStorage.getItem('ms_state');
-    if (state !== savedState) return { success: false, error: 'Invalid state — possible CSRF. Please try again.' };
+    // Retrieve PKCE state from localStorage
+    let pkce;
+    try { pkce = JSON.parse(localStorage.getItem('ms_pkce') || 'null'); } catch {}
+    localStorage.removeItem('ms_pkce');
 
-    const verifier = sessionStorage.getItem('ms_verifier');
-    sessionStorage.removeItem('ms_verifier');
-    sessionStorage.removeItem('ms_state');
+    if (!pkce) return { success: false, error: 'Sign-in session expired or missing. Please try again.' };
+    if (Date.now() > pkce.expires) return { success: false, error: 'Sign-in session expired (>10 min). Please try again.' };
+    if (state !== pkce.state) return { success: false, error: 'Invalid state — possible CSRF. Please try again.' };
 
-    // Exchange code for tokens
-    const tokenRes = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id:     MS_CLIENT_ID,
-        code,
-        redirect_uri:  MS_REDIRECT,
-        grant_type:    'authorization_code',
-        code_verifier: verifier,
-        scope:         MS_SCOPES,
-      }),
-    });
-    if (!tokenRes.ok) {
-      const errBody = await tokenRes.text();
-      console.error('[MsAuth] Token exchange failed:', tokenRes.status, errBody);
-      return { success: false, error: `Token exchange failed (${tokenRes.status}): ${errBody.slice(0,200)}` };
-    }
-    const tokens = await tokenRes.json();
-    if (!tokens.id_token) return { success: false, error: 'Microsoft did not return an ID token. Make sure ID tokens are enabled in Azure for this app.' };
-
-    // Decode id_token to get user info
-    let payload;
-    try {
-      const b64 = tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
-      payload = JSON.parse(atob(b64));
-    } catch(decodeErr) {
-      return { success: false, error: 'Failed to decode Microsoft ID token: ' + decodeErr.message };
-    }
-    const email = (payload.email || payload.preferred_username || payload.upn || '').toLowerCase().trim();
-    const name  = payload.name || email.split('@')[0];
-    if (!email) return { success: false, error: 'Microsoft did not provide an email address. Make sure the "email" scope is granted.' };
-
-    // Look up role from server
-    const roleRes = await fetch('/api/auth-role', {
+    // Server-side token exchange (avoids browser CORS issues, gives server-side logs)
+    const exchangeRes = await fetch('/api/ms-token-exchange', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({
+        code,
+        verifier:    pkce.verifier,
+        redirectUri: MS_REDIRECT,
+      }),
     });
-    if (!roleRes.ok) return { success: false, error: `Role lookup failed (${roleRes.status})` };
-    const roleData = await roleRes.json();
-    if (!roleData.success) return { success: false, error: roleData.error };
+
+    const data = await exchangeRes.json().catch(() => ({ success: false, error: 'Server error during token exchange.' }));
+    if (!data.success) return { success: false, error: data.error || 'Microsoft login failed.' };
 
     // Create session
-    const user = { email: roleData.email, name: roleData.name || name, role: roleData.role, clientKey: roleData.clientKey, loginMethod: 'microsoft' };
+    const user = {
+      email:       data.email,
+      name:        data.name,
+      role:        data.role,
+      clientKey:   data.clientKey,
+      loginMethod: 'microsoft',
+    };
     Auth.createSession(user);
 
     // Clean up URL
