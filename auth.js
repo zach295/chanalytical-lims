@@ -127,7 +127,6 @@ const Auth = {
   // ── LOGIN ───────────────────────────────────────────────────────────────────
   async loginAsync(email, password) {
     // Always check server first for deactivation status
-    // (deactivated accounts must be blocked even if local copy exists)
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST',
@@ -136,19 +135,14 @@ const Auth = {
       });
       const data = await res.json();
 
-      // Server explicitly blocked this account (deactivated) — override everything
       if (!data.success && data.error?.includes('deactivated')) {
         return { success: false, error: data.error };
       }
-
-      // Server says mustReset — show password reset flow
       if (data.success && data.mustReset) {
         const user = { ...data.user, fromServer: true };
         this.createSession(user);
         return { success: true, user, mustReset: true };
       }
-
-      // Server login succeeded for a server-only account
       if (data.success && !data.mustReset) {
         const user = { ...data.user, fromServer: true };
         this.createSession(user);
@@ -299,13 +293,25 @@ const MsAuth = {
         scope:         MS_SCOPES,
       }),
     });
-    if (!tokenRes.ok) return { success: false, error: 'Failed to exchange code for token.' };
+    if (!tokenRes.ok) {
+      const errBody = await tokenRes.text();
+      console.error('[MsAuth] Token exchange failed:', tokenRes.status, errBody);
+      return { success: false, error: `Token exchange failed (${tokenRes.status}): ${errBody.slice(0,200)}` };
+    }
     const tokens = await tokenRes.json();
+    if (!tokens.id_token) return { success: false, error: 'Microsoft did not return an ID token. Make sure ID tokens are enabled in Azure for this app.' };
 
     // Decode id_token to get user info
-    const payload = JSON.parse(atob(tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-    const email   = payload.email || payload.preferred_username || '';
-    const name    = payload.name  || email.split('@')[0];
+    let payload;
+    try {
+      const b64 = tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+      payload = JSON.parse(atob(b64));
+    } catch(decodeErr) {
+      return { success: false, error: 'Failed to decode Microsoft ID token: ' + decodeErr.message };
+    }
+    const email = (payload.email || payload.preferred_username || payload.upn || '').toLowerCase().trim();
+    const name  = payload.name || email.split('@')[0];
+    if (!email) return { success: false, error: 'Microsoft did not provide an email address. Make sure the "email" scope is granted.' };
 
     // Look up role from server
     const roleRes = await fetch('/api/auth-role', {
@@ -313,6 +319,7 @@ const MsAuth = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
+    if (!roleRes.ok) return { success: false, error: `Role lookup failed (${roleRes.status})` };
     const roleData = await roleRes.json();
     if (!roleData.success) return { success: false, error: roleData.error };
 
