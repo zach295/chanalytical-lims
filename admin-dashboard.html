@@ -2348,9 +2348,10 @@ document.addEventListener('DOMContentLoaded', function() {
         resultEl.innerHTML = results.map(r =>
           `<div style="margin-bottom:4px;">✅ <strong>${r.labId}</strong> — ${r.customer||'Unknown'} | ${r.tests||''} <span style="font-size:11px;color:var(--slate);">(${r.source})</span></div>`
         ).join('');
-        if (results.length === 1) {
-          document.getElementById('rej-labid').value = results[0].labId;
-        }
+        // Only auto-fill the full Lab ID if user typed just a base ID
+if (results.length === 1 && !input.includes(' ')) {
+  document.getElementById('rej-labid').value = results[0].labId;
+}
       } else {
         resultEl.innerHTML = `<span style="color:var(--slate);">No match found. Enter the full Lab ID (e.g. 071526-001 EXP) and reject anyway.</span>`;
       }
