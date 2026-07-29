@@ -788,7 +788,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div id="modal-create-user" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
       <div style="background:white;border-radius:12px;padding:28px;width:420px;max-width:95vw;">
         <div style="font-size:18px;font-weight:700;margin-bottom:4px;">Create Account</div>
-        <div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Temp password will be: FirstName + today's date (e.g. Bob071526)</div>
+        <div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Temp password will be: <strong>W3lcom3!</strong></div>
         <div class="err" id="create-user-err" style="margin-bottom:12px;"></div>
         <div class="form-field"><label for="cu-name">Full Name</label><input type="text" id="cu-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
         <div class="form-field"><label for="cu-email">Email</label><input type="text" id="cu-email" inputmode="email" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
@@ -2229,7 +2229,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const today = new Date().toISOString();
     document.getElementById('cu-temp-preview').textContent = '(enter name to see)';
     document.getElementById('cu-name').addEventListener('input', function() {
-      document.getElementById('cu-temp-preview').textContent = calcTempPassword(this.value, today) || '—';
+      document.getElementById('cu-temp-preview').textContent = 'W3lcom3!';
     });
     document.getElementById('modal-create-user').style.display = 'flex';
   }
@@ -2248,7 +2248,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      const pw = data.tempPassword || calcTempPassword(name, new Date().toISOString());
+      const pw = data.tempPassword || 'W3lcom3!';
       showToast(`✅ Account created. Temp password: ${pw}`);
       document.getElementById('modal-create-user').style.display = 'none';
       loadUsersTab();
@@ -2291,7 +2291,7 @@ document.addEventListener('DOMContentLoaded', function() {
     _activeUserEmail = email;
     const user = _usersData.find(u => u.email === email);
     document.getElementById('resetpw-email-display').textContent = email;
-    const pw = calcTempPassword(user?.name || email.split('@')[0], new Date().toISOString());
+    const pw = 'W3lcom3!';
     document.getElementById('reset-pw-preview').textContent = pw;
     document.getElementById('modal-reset-pw').style.display = 'flex';
   }
@@ -2304,7 +2304,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      const pw = data.tempPassword || document.getElementById('reset-pw-preview').textContent;
+      const pw = data.tempPassword || 'W3lcom3!';
       showToast(`✅ Password reset. Temp: ${pw}`);
       document.getElementById('modal-reset-pw').style.display = 'none';
       loadUsersTab();
