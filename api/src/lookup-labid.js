@@ -8,32 +8,38 @@ app.http('lookup-labid', {
     const input = (request.query.get('labId') || request.query.get('baseId') || '').trim();
     if (!input) return { status: 400, body: JSON.stringify({ error: 'labId required' }) };
     try {
-      // Extract base ID (MMDDYY-NNN) — everything before the first space
-      const base = input.split(' ')[0].trim().toLowerCase();
       const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+
+      // Debug mode — show raw fields of first item
+      if (input === 'debug') {
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sample: items.slice(0, 2) }) };
+      }
+
+      const base = input.split(' ')[0].trim().toLowerCase();
       const seen  = new Set();
       const results = items
         .filter(r => {
-          const fullId  = (r.field_1 || '').toLowerCase();
-          const rowBase = fullId.split(' ')[0].trim(); // e.g. "072826-003"
-          // Must match EXACTLY on the base ID (MMDDYY-NNN), not just prefix
+          // Try both field_X and direct column names
+          const fullId = (r.field_1 || r['Lab ID'] || r.LabID || r.Title || '').toLowerCase();
+          const rowBase = fullId.split(' ')[0].trim();
           return rowBase === base || fullId === input.toLowerCase();
         })
         .map(r => ({
-          labId:        r.field_1  || '',
-          tests:        r.field_2  || '',
-          customer:     r.field_3  || '',
-          location:     r.field_8  || '',
-          city:         r.field_9  || '',
-          state:        r.field_10 || 'ME',
-          zip:          r.field_11 ? String(r.field_11).padStart(5,'0') : '',
-          dateDrawn:    r.field_4  || '',
-          timeDrawn:    r.field_5  || '',
-          receivedDate: r.field_6  || '',
-          receivedTime: r.field_7  || '',
-          approvedBy:   r.field_12 || '',
-          notes:        r.field_13 || '',
-          status:       r.field_14 || 'Pending',
+          labId:        r.field_1  || r['Lab ID'] || r.LabID || '',
+          tests:        r.field_2  || r.Test      || '',
+          customer:     r.field_3  || r.Client    || '',
+          location:     r.field_8  || r.Address   || '',
+          city:         r.field_9  || r.City      || '',
+          state:        r.field_10 || r.State     || 'ME',
+          zip:          r.field_11 || r.Zip       || '',
+          dateDrawn:    r.field_4  || r['Date collected']  || '',
+          timeDrawn:    r.field_5  || r['Time Collected']  || '',
+          receivedDate: r.field_6  || r['Date Recieved']   || '',
+          receivedTime: r.field_7  || r['Time Recieved']   || '',
+          approvedBy:   r.field_12 || r['Approved By']     || '',
+          notes:        r.field_13 || r.Notes     || '',
+          status:       r.field_14 || r.Status    || 'Pending',
           source: 'Archived Intake',
         }))
         .filter(r => {
@@ -42,11 +48,10 @@ app.http('lookup-labid', {
           return true;
         });
 
-      const found = results.length > 0;
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ found, results, record: results[0] || null }),
+        body: JSON.stringify({ found: results.length > 0, results, record: results[0] || null }),
       };
     } catch(e) {
       context.log('[lookup-labid] Error:', e.message);
