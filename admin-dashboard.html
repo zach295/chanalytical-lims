@@ -2341,17 +2341,16 @@ document.addEventListener('DOMContentLoaded', function() {
     resultEl.style.display = 'block';
     resultEl.innerHTML = '⏳ Looking up...';
     try {
-      const res = await fetch(`/api/lookup-labid?labId=${encodeURIComponent(input)}`);
+      const res = await fetch(`/api/labid-search?labId=${encodeURIComponent(input)}`);
       const data = await res.json();
       const results = data.results || [];
       if (results.length) {
         resultEl.innerHTML = results.map(r =>
           `<div style="margin-bottom:4px;">✅ <strong>${r.labId}</strong> — ${r.customer||'Unknown'} | ${r.tests||''} <span style="font-size:11px;color:var(--slate);">(${r.source})</span></div>`
         ).join('');
-        // Only auto-fill the full Lab ID if user typed just a base ID
-if (results.length === 1 && !input.includes(' ')) {
-  document.getElementById('rej-labid').value = results[0].labId;
-}
+        if (results.length === 1) {
+          document.getElementById('rej-labid').value = results[0].labId;
+        }
       } else {
         resultEl.innerHTML = `<span style="color:var(--slate);">No match found. Enter the full Lab ID (e.g. 071526-001 EXP) and reject anyway.</span>`;
       }
@@ -2435,7 +2434,7 @@ if (results.length === 1 && !input.includes(' ')) {
 
     try {
       // Search directly in Archived Intake — works for any date
-      const res = await fetch(`/api/lookup-labid?baseId=${encodeURIComponent(baseId)}`);
+      const res = await fetch(`/api/labid-search?baseId=${encodeURIComponent(baseId)}`);
       if (!res.ok) throw new Error('Could not search Archived Intake');
       const data = await res.json();
 
