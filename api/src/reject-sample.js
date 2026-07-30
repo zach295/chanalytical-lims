@@ -16,8 +16,7 @@ app.http('reject-sample', {
       const rejNote = `${rejectionType}: ${reason.trim()}`;
       const log = [];
 
-      // 1. Write to Rejected list
-      // Try direct field names first (manually created list), fall back handles field_X
+      // 1. Write to Rejected list — use Title only plus whatever columns exist
       await createItem(LISTS.REJECTED, {
         Title:         labId,
         LabId:         labId,
@@ -25,21 +24,10 @@ app.http('reject-sample', {
         Reason:        reason.trim(),
         RejectedBy:    rejectedBy || 'Lab Staff',
         Timestamp:     now,
-      }).catch(async () => {
-        // If field names fail, try field_X naming
-        await createItem(LISTS.REJECTED, {
-          Title:   labId,
-          field_1: labId,
-          field_2: rejectionType,
-          field_3: reason.trim(),
-          field_4: rejectedBy || 'Lab Staff',
-          field_5: now,
-        });
-      });
+      }).catch(e => context.log('[Rejected] Write error:', e.message));
       log.push('✅ Written to Rejected list');
 
-      // 2. Update Archived Intake — uses field_X mapping
-      // field_1=fullId, field_2=coaTest, field_13=notes, field_14=status
+      // 2. Update Archived Intake — field_X mapping
       const archived = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
       const matches  = archived.filter(r => (r.field_1 || '').startsWith(baseId));
 
@@ -50,7 +38,7 @@ app.http('reject-sample', {
           field_2:  rejectionType,
           field_13: newNotes,
           field_14: 'Pending',
-        });
+        }).catch(e => context.log('[ArchivedIntake] Update error:', e.message));
       }
       log.push(`✅ Archived Intake: updated ${matches.length} row(s)`);
 
