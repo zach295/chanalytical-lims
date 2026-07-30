@@ -461,6 +461,20 @@ function resultColor(paramName, displayVal, epa) {
   return n <= parseFloat(epa) ? 'green' : 'red';
 }
 
+// Format public client name: "Public-Chandler, Zach" → "Zach Chandler"
+function formatCustomerName(name) {
+  if (!name) return '';
+  if (!name.startsWith('Public-')) return name;
+  const inner = name.slice('Public-'.length).trim();
+  const commaIdx = inner.indexOf(',');
+  if (commaIdx > 0) {
+    const last  = inner.slice(0, commaIdx).trim();
+    const first = inner.slice(commaIdx + 1).trim();
+    return first ? `${first} ${last}` : last;
+  }
+  return inner;
+}
+
 // ── Main Azure Function handler ───────────────────────────────────────────────
 app.http('generate-report', {
   methods:   ['POST'],
@@ -658,7 +672,7 @@ app.http('generate-report', {
           today:      todayStr,
           log,
           meta: {
-            customer:     meta.customer     || '',
+            customer:     formatCustomerName(meta.customer || ''),
             email:        clientInfo.email,
             phone:        clientInfo.phone      || '',
             clientCode:   clientInfo.clientCode || '',
