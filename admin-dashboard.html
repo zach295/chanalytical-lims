@@ -616,6 +616,20 @@ document.addEventListener('DOMContentLoaded', function() {
       <div style="font-size:12px;color:var(--slate);">Generate, review, authorize and send reports to clients</div>
     </div>
 
+    <!-- Import buttons -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><div class="card-title">📥 Import Lab Results</div></div>
+      <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
+          ⚗️ Import ICP-MS Results
+        </button>
+        <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
+          📋 Import Control Sheet
+        </button>
+        <span id="import-status" style="font-size:13px;color:var(--slate);flex:1;"></span>
+      </div>
+    </div>
+
     <!-- Lab ID selector -->
     <div class="card" style="margin-bottom:16px;">
       <div style="padding:18px;">
@@ -5654,6 +5668,36 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (err) {
       resultEl.style.color = 'var(--error)';
       resultEl.textContent = '⚠️ Import failed: ' + err.message;
+    }
+  }
+
+  async function runImport(type, btn) {
+    const statusEl = document.getElementById('import-status');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Importing...';
+    statusEl.style.color = 'var(--slate)';
+    statusEl.textContent = `Running ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} import...`;
+    try {
+      const endpoint = type === 'icpms' ? '/api/import-icpms' : '/api/import-control';
+      const res  = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Import failed');
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = `✅ ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} imported — ${data.created} created, ${data.updated} updated, ${data.errors} errors (${data.fileName})`;
+      showToast(`✅ ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} import complete`);
+      // Refresh pending lab IDs
+      loadPendingLabIds();
+    } catch(e) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   }
 
