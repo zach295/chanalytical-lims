@@ -68,6 +68,7 @@ function isCellRed(cell) {
   const pt = String(cell.s.patternType || '').toLowerCase();
   // Red/salmon/pink fill patterns used in ICP-MS software
   const redPatterns = [
+    'FA8072', // salmon — the color used in ICP-MS files
     'FF0000','C0504D','FF5050','FF9999','FFC7CE',
     'FF4444','CC0000','FF3333','EA9999','FF8080',
     'FFB6B6','FFBFBF','FF6666','FF0066','E06666',
