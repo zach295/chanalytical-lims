@@ -1,12 +1,13 @@
 /**
  * import-acid.js — Azure version
- * Reads the acid prep sheet (one Excel per year, monthly tabs),
- * finds the last business day's entries, and writes
- * MetalsStartDate_x002f_Time to Results Cache for each sample.
+ * 1. Reads Results Cache to get all Lab IDs missing MetalsStartDate
+ * 2. Opens the acid sheet Excel file
+ * 3. For each Lab ID, finds it in the correct month tab (derived from MMDDYY)
+ * 4. Writes the date+time back to Results Cache
  *
- * POST {} — imports from last business day
- * POST { debug: true } — returns parsed data without writing
- * POST { date: "2026-07-28" } — import specific date
+ * POST {} — run import
+ * POST { debug: true } — show what would be written without writing
+ * POST { all: true } — re-import all IDs, not just missing ones
  */
 const { app }    = require('@azure/functions');
 const { listFolder, downloadFile, listItems, updateItem, createItem } = require('../shared/graph');
@@ -14,27 +15,23 @@ const { listFolder, downloadFile, listItems, updateItem, createItem } = require(
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-acid] xlsx not available:', e.message); }
 
-// Tab name patterns for each month (handles typos in sheet names)
-const MONTH_TAB_PATTERNS = [
+// Month tab name patterns (handles "acidification" and "acidifcation" typo)
+const MONTH_TABS = [
   /jan/i, /feb/i, /mar/i, /apr/i, /may/i, /jun/i,
   /jul/i, /aug/i, /sep/i, /oct/i, /nov/i, /dec/i,
 ];
 
-function getLastBusinessDay(fromDate) {
-  const d = fromDate ? new Date(fromDate) : new Date();
-  const dow = d.getDay(); // 0=Sun, 1=Mon ... 6=Sat
-  let daysBack = 1;
-  if (dow === 1) daysBack = 3; // Monday → Friday
-  if (dow === 0) daysBack = 2; // Sunday → Friday
-  const result = new Date(d);
-  result.setDate(result.getDate() - daysBack);
-  return result;
+function findMonthTab(wb, month0) {
+  return wb.SheetNames.find(n =>
+    MONTH_TABS[month0].test(n) && /acid/i.test(n)
+  ) || null;
 }
 
-function findMonthTab(wb, month0) {
-  // month0 is 0-based (0=Jan, 6=Jul, etc.)
-  const pattern = MONTH_TAB_PATTERNS[month0];
-  return wb.SheetNames.find(n => pattern.test(n)) || null;
+// Extract month (0-based) from base ID like "072827-003" → July = 6
+function monthFromBaseId(baseId) {
+  const m = String(baseId || '').match(/^(\d{2})(\d{2})(\d{2})-/);
+  if (!m) return null;
+  return parseInt(m[1]) - 1; // MM is 1-based, return 0-based
 }
 
 function cellStr(ws, r, c) {
@@ -48,119 +45,89 @@ function getBaseId(sampleId) {
   return m ? m[1] : '';
 }
 
-// Format date+time for Results Cache: "7/28/2026 4:01 PM" → "07/28/26 16:01"
 function formatDateTime(dateStr, timeStr) {
   if (!dateStr) return '';
   try {
-    // Parse date like "7/28/2026" or Excel serial number
     let datePart = '';
     const dNum = parseFloat(dateStr);
     if (!isNaN(dNum) && dNum > 40000) {
-      // Excel serial date
       const d = new Date(Date.UTC(1899, 11, 30) + dNum * 86400000);
       datePart = `${String(d.getUTCMonth()+1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCFullYear()).slice(-2)}`;
     } else {
-      // String like "7/28/2026"
       const parts = String(dateStr).split('/');
       if (parts.length >= 3) {
         const yr = parts[2].length === 4 ? parts[2].slice(-2) : parts[2];
         datePart = `${String(parts[0]).padStart(2,'0')}/${String(parts[1]).padStart(2,'0')}/${yr}`;
-      } else {
-        datePart = dateStr;
-      }
+      } else datePart = dateStr;
     }
-
-    // Parse time like "4:01 PM"
     let timePart = '';
     if (timeStr) {
       const tNum = parseFloat(timeStr);
       if (!isNaN(tNum) && tNum < 1) {
-        // Excel time fraction
         const totalMin = Math.round(tNum * 1440);
-        const h = Math.floor(totalMin / 60);
-        const m = totalMin % 60;
-        timePart = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        const h = Math.floor(totalMin / 60), mn = totalMin % 60;
+        timePart = `${String(h).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;
       } else {
-        // String like "4:01 PM"
         const am = String(timeStr).match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
         if (am) {
-          let h = parseInt(am[1]), m = parseInt(am[2]);
-          const isPM = am[3] && am[3].toUpperCase() === 'PM';
-          if (isPM && h < 12) h += 12;
-          if (!isPM && h === 12) h = 0;
-          timePart = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+          let h = parseInt(am[1]); const mn = parseInt(am[2]);
+          if (am[3]?.toUpperCase() === 'PM' && h < 12) h += 12;
+          if (am[3]?.toUpperCase() === 'AM' && h === 12) h = 0;
+          timePart = `${String(h).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;
         }
       }
     }
-
     return timePart ? `${datePart} ${timePart}` : datePart;
-  } catch(e) {
-    return `${dateStr} ${timeStr}`.trim();
-  }
+  } catch { return `${dateStr} ${timeStr}`.trim(); }
 }
 
-// Check if a date cell matches a target date
-function dateMatches(cellDateStr, targetDate) {
-  if (!cellDateStr) return false;
-  const target = `${targetDate.getMonth()+1}/${targetDate.getDate()}/${targetDate.getFullYear()}`;
+// Build a lookup map from the acid sheet: baseId → { date, time, formatted }
+function buildAcidLookup(wb, targetIds) {
+  const lookup = {}; // baseId → entry
 
-  // Handle Excel serial date
-  const dNum = parseFloat(cellDateStr);
-  if (!isNaN(dNum) && dNum > 40000) {
-    const d = new Date(Date.UTC(1899, 11, 30) + dNum * 86400000);
-    const cellTarget = `${d.getUTCMonth()+1}/${d.getUTCDate()}/${d.getUTCFullYear()}`;
-    return cellTarget === target;
+  // Group target IDs by month so we only scan relevant tabs
+  const byMonth = {};
+  for (const id of targetIds) {
+    const m = monthFromBaseId(id);
+    if (m === null) continue;
+    if (!byMonth[m]) byMonth[m] = new Set();
+    byMonth[m].add(id);
   }
 
-  // Handle string date
-  const parts = String(cellDateStr).split('/');
-  if (parts.length >= 3) {
-    const yr = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-    const cellTarget = `${parseInt(parts[0])}/${parseInt(parts[1])}/${yr}`;
-    return cellTarget === target;
-  }
-  return false;
-}
+  for (const [month0Str, ids] of Object.entries(byMonth)) {
+    const month0  = parseInt(month0Str);
+    const tabName = findMonthTab(wb, month0);
+    if (!tabName) continue;
 
-function parseAcidSheet(buffer, targetDate) {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
+    const ws    = wb.Sheets[tabName];
+    if (!ws) continue;
+    const range = XLSX.utils.decode_range(ws['!ref']);
 
-  // Find the right month tab
-  const month0 = targetDate.getMonth();
-  const tabName = findMonthTab(wb, month0);
-  if (!tabName) throw new Error(`No tab found for month ${month0+1}. Available tabs: ${wb.SheetNames.join(', ')}`);
+    // Find header row
+    let dataStart = 1;
+    for (let r = 0; r <= Math.min(5, range.e.r); r++) {
+      const f = cellStr(ws, r, 5);
+      if (/sample.?id/i.test(f)) { dataStart = r + 1; break; }
+    }
 
-  const ws = wb.Sheets[tabName];
-  if (!ws) throw new Error(`Tab "${tabName}" not found`);
+    for (let r = dataStart; r <= range.e.r; r++) {
+      const sampleId = cellStr(ws, r, 5); // col F
+      if (!sampleId) continue;
+      const baseId = getBaseId(sampleId);
+      if (!baseId || !ids.has(baseId)) continue;
+      if (lookup[baseId]) continue; // already found
 
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  const results = {}; // baseId → { dateStr, timeStr, formatted }
-
-  // Find header row — look for "sample ID" or "sample id" in col F
-  let dataStartRow = 1; // default skip row 0 (header)
-  for (let r = 0; r <= Math.min(5, range.e.r); r++) {
-    const cellF = cellStr(ws, r, 5); // col F (index 5)
-    if (/sample.?id/i.test(cellF)) { dataStartRow = r + 1; break; }
-  }
-
-  for (let r = dataStartRow; r <= range.e.r; r++) {
-    const dateStr   = cellStr(ws, r, 0); // A
-    const timeStr   = cellStr(ws, r, 1); // B
-    const sampleId  = cellStr(ws, r, 5); // F
-
-    if (!sampleId || !dateStr) continue;
-    if (!dateMatches(dateStr, targetDate)) continue;
-
-    const baseId = getBaseId(sampleId);
-    if (!baseId) continue;
-
-    const formatted = formatDateTime(dateStr, timeStr);
-    if (!results[baseId]) {
-      results[baseId] = { dateStr, timeStr, formatted, tabName };
+      const dateStr = cellStr(ws, r, 0); // col A
+      const timeStr = cellStr(ws, r, 1); // col B
+      lookup[baseId] = {
+        dateStr, timeStr,
+        formatted: formatDateTime(dateStr, timeStr),
+        tabName,
+      };
     }
   }
 
-  return { results, tabName, targetDate: targetDate.toDateString() };
+  return lookup;
 }
 
 app.http('import-acid', {
@@ -171,19 +138,34 @@ app.http('import-acid', {
       if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx not installed' }) };
 
       const body = await request.json().catch(() => ({}));
-      const { debug, fileId: specificFileId, date: specificDate } = body;
+      const { debug, fileId: specificFileId, all: importAll } = body;
 
-      // Determine target date
-      const targetDate = specificDate
-        ? new Date(specificDate + 'T12:00:00Z')
-        : getLastBusinessDay();
-      context.log(`[import-acid] Target date: ${targetDate.toDateString()}`);
+      // Step 1: Get Results Cache entries
+      const cacheItems = await listItems('Results Cache', { top: 500 });
 
-      // Find acid sheet file
+      // Find IDs that need acid date/time (or all if importAll=true)
+      const needsAcid = cacheItems.filter(r => {
+        const hasId   = !!(r.LabID || '').trim();
+        const hasDate = !!(r.MetalsStartDate_x002f_Time || '').trim();
+        return hasId && (importAll || !hasDate);
+      });
+
+      if (!needsAcid.length) {
+        return {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: true, message: 'All Results Cache entries already have acid dates', updated: 0 }),
+        };
+      }
+
+      const targetIds = needsAcid.map(r => String(r.LabID || '').split(' ')[0].trim()).filter(Boolean);
+      context.log(`[import-acid] Looking up ${targetIds.length} IDs: ${targetIds.slice(0,5).join(', ')}...`);
+
+      // Step 2: Find acid sheet file
       const rawFolder = process.env.SP_ACID_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test M';
       const marker = 'Shared Documents/';
-      const mi = rawFolder.indexOf(marker);
+      const mi     = rawFolder.indexOf(marker);
       const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
       let fileId = specificFileId, fileName = '';
@@ -191,8 +173,8 @@ app.http('import-acid', {
         const files     = await listFolder(folder);
         const xlsxFiles = files.filter(f => /\.xlsx?$/i.test(f.name));
         if (!xlsxFiles.length) return { status: 404, body: JSON.stringify({ error: 'No Excel files in acid folder' }) };
-        // Use the most recent file (or the one matching current year)
-        const year = String(targetDate.getFullYear());
+        // Prefer file matching current year
+        const year     = String(new Date().getFullYear());
         const yearFile = xlsxFiles.find(f => f.name.includes(year));
         const latest   = yearFile || xlsxFiles[xlsxFiles.length - 1];
         fileId   = latest.id;
@@ -200,46 +182,46 @@ app.http('import-acid', {
         context.log(`[import-acid] Using: ${fileName}`);
       }
 
-      // Download and parse
+      // Step 3: Parse acid sheet
       const buffer = await downloadFile(fileId);
-      const { results, tabName, targetDate: targetDateStr } = parseAcidSheet(buffer, targetDate);
+      const wb     = XLSX.read(buffer, { type: 'buffer' });
+      const lookup = buildAcidLookup(wb, targetIds);
+
+      context.log(`[import-acid] Found acid dates for ${Object.keys(lookup).length}/${targetIds.length} IDs`);
 
       if (debug) {
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ fileName, tabName, targetDate: targetDateStr, sampleCount: Object.keys(results).length, results }),
+          body: JSON.stringify({
+            fileName,
+            targetCount:  targetIds.length,
+            foundCount:   Object.keys(lookup).length,
+            missing:      targetIds.filter(id => !lookup[id]),
+            lookup,
+          }),
         };
       }
 
-      // Write MetalsStartDate_x002f_Time to Results Cache
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      const log = []; let updated = 0, created = 0, errors = 0;
+      // Step 4: Write back to Results Cache
+      const log = []; let updated = 0, errors = 0, notFound = 0;
 
-      for (const [baseId, entry] of Object.entries(results)) {
-        const fields = { MetalsStartDate_x002f_Time: entry.formatted };
+      for (const cacheItem of needsAcid) {
+        const baseId = String(cacheItem.LabID || '').split(' ')[0].trim();
+        const entry  = lookup[baseId];
+        if (!entry) { notFound++; continue; }
 
-        const existing = cacheItems.find(r => {
-          const storedId   = String(r.LabID || '').trim();
-          const storedBase = storedId.split(' ')[0].trim();
-          return storedBase === baseId || storedId === baseId;
-        });
-
-        if (existing) {
-          await updateItem('Results Cache', existing._id, fields)
-            .then(() => { updated++; log.push(`Updated: ${baseId} → ${entry.formatted}`); })
-            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
-        } else {
-          await createItem('Results Cache', { LabID: baseId, ...fields })
-            .then(() => { created++; log.push(`Created: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
-        }
+        await updateItem('Results Cache', cacheItem._id, {
+          MetalsStartDate_x002f_Time: entry.formatted,
+        })
+          .then(() => { updated++; log.push(`Updated: ${baseId} → ${entry.formatted}`); })
+          .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
       }
 
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, fileName, tabName, targetDate: targetDateStr, sampleCount: Object.keys(results).length, updated, created, errors, log }),
+        body: JSON.stringify({ success: true, fileName, updated, notFound, errors, log }),
       };
 
     } catch(e) {
