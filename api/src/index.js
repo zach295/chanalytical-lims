@@ -26,3 +26,4 @@ require('./approve-scan-debug');
 require('./ms-token-exchange');
 require('./labid-search');
 require('./list-columns');
+require('./import-icpms');
