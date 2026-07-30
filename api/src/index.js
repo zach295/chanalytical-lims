@@ -25,3 +25,4 @@ require('./auth-role');
 require('./approve-scan-debug');
 require('./ms-token-exchange');
 require('./labid-search');
+require('./list-columns');
