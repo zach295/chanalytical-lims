@@ -5682,7 +5682,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ all: true }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
@@ -5696,13 +5696,13 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.textContent = '⏳ Importing Acid dates...';
         const acidData = await doImport('/api/import-acid', 'Acid').catch(e => ({ success:false, error: e.message }));
         statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ ICP-MS: ${icpData.created} created, ${icpData.updated} updated (${icpData.fileName}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}`;
+        statusEl.textContent = `✅ ICP-MS: ${icpData.created||0} created, ${icpData.updated||0} updated (${(icpData.filesUsed||[]).join(', ')||icpData.fileName||'—'}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}`;
         showToast('✅ ICP-MS + Acid import complete');
       } else {
         btn.textContent = '⏳ Importing Control Sheet...';
         const data = await doImport('/api/import-control', 'Control Sheet');
         statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ Control Sheet: ${data.created} created, ${data.updated} updated (${data.fileName})`;
+        statusEl.textContent = `✅ Control Sheet: ${data.created||0} created, ${data.updated||0} updated (${(data.filesUsed||[]).join(', ')||data.fileName||'—'})`;
         showToast('✅ Control Sheet import complete');
       }
       loadPendingLabIds();
