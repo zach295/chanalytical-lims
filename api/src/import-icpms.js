@@ -255,9 +255,8 @@ app.http('import-icpms', {
           const fieldName = ELEMENT_MAP[elemKey];
           if (fieldName && elemResult) {
             // Format value: round to 4 decimal places for display
-            const val = typeof elemResult.value === 'number'
-              ? String(Math.round(elemResult.value * 10000) / 10000)
-              : String(elemResult.value || '');
+            const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
+            const val = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
             fields[fieldName] = val;
           }
         }
