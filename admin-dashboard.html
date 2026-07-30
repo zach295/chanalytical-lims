@@ -5675,22 +5675,36 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     const orig = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '⏳ Importing...';
     statusEl.style.color = 'var(--slate)';
-    statusEl.textContent = `Running ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} import...`;
-    try {
-      const endpoint = type === 'icpms' ? '/api/import-icpms' : '/api/import-control';
+
+    const doImport = async (endpoint, label) => {
+      statusEl.textContent = `⏳ Running ${label} import...`;
       const res  = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Import failed');
-      statusEl.style.color = 'var(--success)';
-      statusEl.textContent = `✅ ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} imported — ${data.created} created, ${data.updated} updated, ${data.errors} errors (${data.fileName})`;
-      showToast(`✅ ${type === 'icpms' ? 'ICP-MS' : 'Control Sheet'} import complete`);
-      // Refresh pending lab IDs
+      if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
+      return data;
+    };
+
+    try {
+      if (type === 'icpms') {
+        btn.textContent = '⏳ Importing ICP-MS...';
+        const icpData = await doImport('/api/import-icpms', 'ICP-MS');
+        btn.textContent = '⏳ Importing Acid dates...';
+        const acidData = await doImport('/api/import-acid', 'Acid').catch(e => ({ success:false, error: e.message }));
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ ICP-MS: ${icpData.created} created, ${icpData.updated} updated (${icpData.fileName}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}`;
+        showToast('✅ ICP-MS + Acid import complete');
+      } else {
+        btn.textContent = '⏳ Importing Control Sheet...';
+        const data = await doImport('/api/import-control', 'Control Sheet');
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ Control Sheet: ${data.created} created, ${data.updated} updated (${data.fileName})`;
+        showToast('✅ Control Sheet import complete');
+      }
       loadPendingLabIds();
     } catch(e) {
       statusEl.style.color = 'var(--error)';
