@@ -134,10 +134,15 @@ app.http('import-control', {
 
       // Step 1: Get Results Cache IDs needing control data
       const cacheItems = await listItems('Results Cache', { top: 500 });
+      // Process rows missing pH (Title) OR coliform OR any Gallery chemistry
       const needsControl = cacheItems.filter(r => {
-        const hasId   = !!(r.LabID || '').trim();
-        const hasData = !!(r.Title || r.field_2 || '').trim(); // Title=pH, field_2=coliform
-        return hasId && (importAll || !hasData);
+        const hasId = !!(r.LabID || '').trim();
+        if (!hasId) return false;
+        const hasPH       = !!(r.Title   || '').toString().trim();
+        const hasColiform = !!(r.field_2  || '').toString().trim();
+        const hasChloride = !!(r.field_6  || '').toString().trim();
+        const allFilled   = hasPH && hasColiform && hasChloride;
+        return importAll || !allFilled;
       });
 
       if (!needsControl.length) {
