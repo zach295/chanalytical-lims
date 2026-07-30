@@ -6,15 +6,7 @@ app.http('reject-sample', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { labId, rejectionType, reason, rejectedBy, debug } = await request.json();
-
-      // Debug mode — show raw fields of Rejected list
-      if (debug) {
-        const items = await listItems(LISTS.REJECTED, { top: 1 }).catch(() => []);
-        return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ raw: items[0] || 'empty list' }) };
-      }
-
+      const { labId, rejectionType, reason, rejectedBy } = await request.json();
       if (!labId)          return { status: 400, body: JSON.stringify({ error: 'labId required' }) };
       if (!rejectionType)  return { status: 400, body: JSON.stringify({ error: 'rejectionType required' }) };
       if (!reason?.trim()) return { status: 400, body: JSON.stringify({ error: 'reason required' }) };
@@ -24,36 +16,40 @@ app.http('reject-sample', {
       const rejNote = `${rejectionType}: ${reason.trim()}`;
       const log = [];
 
-      // Write to Rejected list — try display names with spaces
-      const rejResult = await createItem(LISTS.REJECTED, {
-        Title:            labId,
-        'Lab ID':         labId,
-        'Rejection Type': rejectionType,
-        Reason:           reason.trim(),
-        'Rejected By':    rejectedBy || 'Lab Staff',
-      }).catch(e => { context.log('[Rejected] Error:', e.message); return null; });
+      // 1. Write to Rejected list
+      // field_1=LabId, field_2=RejectionType, field_3=Reason, field_4=RejectedBy
+      await createItem(LISTS.REJECTED, {
+        Title:   now,
+        field_1: labId,
+        field_2: rejectionType,
+        field_3: reason.trim(),
+        field_4: rejectedBy || 'Lab Staff',
+      }).catch(e => context.log('[Rejected] Error:', e.message));
+      log.push('✅ Written to Rejected list');
 
-      if (rejResult) log.push('✅ Written to Rejected list');
-      else log.push('⚠️ Failed to write to Rejected list — check function logs');
-
-      // Update Archived Intake
+      // 2. Update Archived Intake — change suffix to REJ and append notes
+      // field_1=fullId, field_2=coaTest, field_13=notes, field_14=status
       const archived = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
       const matches  = archived.filter(r => (r.field_1 || '').startsWith(baseId));
+
       for (const item of matches) {
         const existingNotes = item.field_13 || '';
         const newNotes = existingNotes ? `${existingNotes} | ${rejNote}` : rejNote;
+        // Change full lab ID suffix to REJ (e.g. "072826-003 COMP" → "072826-003 REJ")
+        const newFullId = `${baseId} REJ`;
         await updateItem(LISTS.ARCHIVED_INTAKE, item._id, {
+          field_1:  newFullId,
           field_2:  rejectionType,
           field_13: newNotes,
-          field_14: 'Pending',
+          field_14: 'Rejected',
         }).catch(e => context.log('[ArchivedIntake] Error:', e.message));
       }
-      log.push(`✅ Archived Intake: updated ${matches.length} row(s)`);
+      log.push(`✅ Archived Intake: updated ${matches.length} row(s) → suffix changed to REJ`);
 
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, labId, rejectionType, log }),
+        body: JSON.stringify({ success: true, labId, newLabId: `${baseId} REJ`, rejectionType, log }),
       };
     } catch(e) {
       context.log('[reject-sample] Error:', e.message);
