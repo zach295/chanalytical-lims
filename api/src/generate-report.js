@@ -208,7 +208,12 @@ app.http('generate-report', {
       // ── Resolve meta ────────────────────────────────────────────────────────
       const meta = frontendMeta || metaRaw || {};
       log.push(`meta: ${meta.customer || 'unknown'}`);
-      log.push(`cache: ${cache ? 'found' : 'not found'}`);
+      if (cache) {
+        const filledFields = Object.keys(cache).filter(k => !k.startsWith('_') && !k.startsWith('@') && cache[k]);
+        log.push(`cache: found — ${filledFields.length} fields: ${filledFields.slice(0,8).join(', ')}`);
+      } else {
+        log.push(`cache: NOT FOUND for baseId=${baseId}`);
+      }
 
       const clientInfo = await getClientInfo(
         formatCustomerName(meta.customer || ''),
