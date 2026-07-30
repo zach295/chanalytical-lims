@@ -1,52 +1,69 @@
+/**
+ * accession-status.js — Azure version
+ * Reads Archived Intake (field_X mapping) to list pending/reported Lab IDs.
+ *
+ * GET  → { pending: [...], reported: [...] }
+ * POST { action:'mark-reported', baseId } → sets field_14 to 'Reported'
+ * POST { action:'mark-pending',  baseId } → sets field_14 to 'Pending'
+ */
 const { app } = require('@azure/functions');
-const { listItems, findItem, updateItem, LISTS } = require('../shared/graph');
+const { listItems, updateItem, LISTS } = require('../shared/graph');
+
+// Archived Intake field mapping:
+// Title=timestamp, field_1=fullId, field_2=coaTest, field_3=clientName,
+// field_4=dateDrawn, field_5=timeDrawn, field_6=receivedDate, field_7=receivedTime,
+// field_8=address, field_9=city, field_10=state, field_11=zip,
+// field_12=approvedBy, field_13=notes, field_14=status
 
 app.http('accession-status', {
   methods: ['GET', 'POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      // ── GET — list pending and sent lab IDs ─────────────────────────────────
       if (request.method === 'GET') {
-        const items = await listItems(LISTS.ARCHIVED_INTAKE, {
-          top: 500,
-        });
+        const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
 
+        // Group by base Lab ID
         const byBase = {};
-        items.forEach(r => {
-          const fullId = (r.FullId || '').trim();
-          if (!fullId) return;
+        for (const r of items) {
+          const fullId   = (r.field_1  || '').trim();
+          const coaTest  = (r.field_2  || '').trim();
+          const customer = (r.field_3  || '').trim();
+          const status   = (r.field_14 || 'Pending').trim();
+          if (!fullId) continue;
+
           const baseId = fullId.replace(/\s+\S+$/, '').trim();
           if (!byBase[baseId]) {
             byBase[baseId] = {
               baseId,
               fullIds:      [],
               tests:        [],
-              customer:     r.Customer     || '',
-              location:     r.Location     || '',
-              city:         r.City         || '',
-              state:        r.State        || 'ME',
-              zip:          r.Zip          || '',
-              dateDrawn:    r.DateDrawn    || '',
-              timeDrawn:    r.TimeDrawn    || '',
-              dateReceived: r.ReceivedDate || '',
-              timeReceived: r.ReceivedTime || '',
-              reviewedBy:   r.ReviewedBy   || '',
+              customer,
+              location:     r.field_8  || '',
+              city:         r.field_9  || '',
+              state:        r.field_10 || 'ME',
+              zip:          r.field_11 || '',
+              dateDrawn:    r.field_4  || '',
+              timeDrawn:    r.field_5  || '',
+              dateReceived: r.field_6  || '',
+              timeReceived: r.field_7  || '',
+              approvedBy:   r.field_12 || '',
+              email:        '',
               status:       'Pending',
-              timestamp:    r.Timestamp    || '',
-              _itemIds:     [],
+              timestamp:    r.Title    || '',
+              _ids:         [],
             };
           }
-          byBase[baseId]._itemIds.push(r._id);
-          if (fullId && !byBase[baseId].fullIds.includes(fullId)) byBase[baseId].fullIds.push(fullId);
-          if (r.CoaTest && !byBase[baseId].tests.includes(r.CoaTest)) byBase[baseId].tests.push(r.CoaTest);
-          const status = (r.ReportStatus || 'Pending').trim();
-          if (status === 'Sent' || status === 'Reported') byBase[baseId].status = 'Sent';
-        });
+          byBase[baseId]._ids.push(r._id);
+          if (fullId  && !byBase[baseId].fullIds.includes(fullId))  byBase[baseId].fullIds.push(fullId);
+          if (coaTest && !byBase[baseId].tests.includes(coaTest))   byBase[baseId].tests.push(coaTest);
+          if (status === 'Sent' || status === 'Reported')            byBase[baseId].status = 'Sent';
+          if (!byBase[baseId].customer && customer)                  byBase[baseId].customer = customer;
+        }
 
-        const all = Object.values(byBase);
-        const pending  = all.filter(r => r.status === 'Pending');
-        const reported = all.filter(r => r.status === 'Sent');
+        const all      = Object.values(byBase);
+        const pending  = all.filter(r => r.status !== 'Sent' && r.status !== 'Reported');
+        const reported = all.filter(r => r.status === 'Sent' || r.status === 'Reported');
 
         return {
           status: 200,
@@ -55,30 +72,36 @@ app.http('accession-status', {
         };
       }
 
-      // ── POST — mark reported / pending ─────────────────────────────────────
       if (request.method === 'POST') {
-        const body = await request.json();
-        const { action, baseId } = body;
+        const { action, baseId } = await request.json().catch(() => ({}));
         if (!baseId) return { status: 400, body: JSON.stringify({ error: 'baseId required' }) };
 
-        const status = action === 'mark-reported' ? 'Sent' : 'Pending';
-        const items = await listItems(LISTS.ARCHIVED_INTAKE);
-        const matches = items.filter(r =>
-          (r.FullId || '').trim().startsWith(baseId)
-        );
+        const newStatus = action === 'mark-reported' ? 'Reported' : 'Pending';
 
-        for (const item of matches) {
-          await updateItem(LISTS.ARCHIVED_INTAKE, item._id, { ReportStatus: status });
+        // Find all Archived Intake rows matching this base ID
+        const items   = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+        const matches = items.filter(r => {
+          const fullId = (r.field_1 || '').trim();
+          return fullId && fullId.replace(/\s+\S+$/, '').trim() === baseId;
+        });
+
+        if (!matches.length) {
+          return { status: 404, body: JSON.stringify({ error: `No rows found for ${baseId}` }) };
         }
+
+        await Promise.all(matches.map(r =>
+          updateItem(LISTS.ARCHIVED_INTAKE, r._id, { field_14: newStatus })
+        ));
 
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ success: true, baseId, status, rowsUpdated: matches.length }),
+          body: JSON.stringify({ success: true, baseId, status: newStatus, rowsUpdated: matches.length }),
         };
       }
 
       return { status: 405, body: 'Method Not Allowed' };
+
     } catch(e) {
       context.log('[accession-status] Error:', e.message);
       return { status: 500, body: JSON.stringify({ error: e.message }) };
