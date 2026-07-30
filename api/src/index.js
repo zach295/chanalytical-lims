@@ -28,3 +28,4 @@ require('./labid-search');
 require('./list-columns');
 require('./import-icpms');
 require('./import-control');
+require('./import-acid');
