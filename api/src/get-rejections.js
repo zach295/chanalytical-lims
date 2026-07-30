@@ -7,13 +7,14 @@ app.http('get-rejections', {
   handler: async (request, context) => {
     try {
       const items = await listItems(LISTS.REJECTED, { top: 100 });
+      // field_1=LabId, field_2=RejectionType, field_3=Reason, field_4=RejectedBy
+      // Title=timestamp (use Created as fallback for display date)
       const rows = items.map(r => [
-        // Try both direct names and field_X — handles both manually created and Excel-imported lists
-        r.Timestamp     || r.field_5 || r.Created || '',
-        r.LabId         || r.field_1 || r.Title   || '',
-        r.RejectionType || r.field_2 || '',
-        r.Reason        || r.field_3 || '',
-        r.RejectedBy    || r.field_4 || '',
+        r.Created   || r.Title || '',
+        r.field_1   || '',
+        r.field_2   || '',
+        r.field_3   || '',
+        r.field_4   || '',
       ]);
       return {
         status: 200,
