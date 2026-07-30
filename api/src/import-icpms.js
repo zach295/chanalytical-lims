@@ -170,8 +170,14 @@ app.http('import-icpms', {
       const body = await request.json().catch(() => ({}));
       const { debug, fileId: specificFileId } = body;
 
-      const icpmsFolder = process.env.SP_ICPMS_FOLDER ||
+      const rawFolder = process.env.SP_ICPMS_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test ICPMS';
+      // listFolder needs path relative to drive root (strip up to and including "Shared Documents/")
+      const marker = 'Shared Documents/';
+      const markerIdx = rawFolder.indexOf(marker);
+      const icpmsFolder = markerIdx >= 0
+        ? rawFolder.slice(markerIdx + marker.length)
+        : rawFolder.replace(/^\/+/, '');
 
       // Find file
       let fileId = specificFileId;
