@@ -27,3 +27,4 @@ require('./ms-token-exchange');
 require('./labid-search');
 require('./list-columns');
 require('./import-icpms');
+require('./import-control');
