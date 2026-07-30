@@ -5168,82 +5168,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
-      statusEl.textContent = `✅ Report loaded — fetching lab results from SharePoint...`;
-      statusEl.style.color = 'var(--slate)';
       document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-      // ── Step 2: Trigger background SP fetch and poll for result ──────────
-      statusEl.textContent = `✅ Report loaded — fetching lab results (this may take up to 60s)...`;
-      statusEl.style.color = 'var(--slate)';
-
-      try {
-        // Fire background function (returns 202 immediately)
-        await fetch('/api/generate-report-sp-background', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ labId }),
-        });
-
-        // Poll get-sp-cache every 3 seconds for up to 90 seconds
-        let attempts = 0;
-        const maxAttempts = 30;
-        const poll = async () => {
-          if (attempts++ >= maxAttempts) {
-            statusEl.textContent = `✅ Report loaded — SP results taking too long. Try again shortly.`;
-            statusEl.style.color = 'var(--warning)';
-            return;
-          }
-          try {
-            const cacheRes = await fetch(`/api/get-sp-cache?labId=${encodeURIComponent(labId)}`);
-            const cacheData = await cacheRes.json();
-            if (cacheData.status === 'pending') {
-              setTimeout(poll, 3000);
-              return;
-            }
-            if (cacheData.status === 'ready') {
-              const spData = cacheData.data;
-              console.log('[SP cache]', cacheData.log?.join(' | '));
-              const { phResult: spPh, ctrlData: spCtrl, icpmsResult: spIcpms, acidPrepDT: spAcid } = spData;
-              if (spPh || spCtrl || spIcpms) {
-                const icpmsAnalDT = spIcpms?.acqTime || '';
-                currentReportData.activeParams.forEach(p => {
-                  let rawVal = '', analDT = '', prepDT = '';
-                  switch (p.source) {
-                    case 'gallery': { const gd = spCtrl?.gallery?.[p.name]||{}; rawVal=gd.value||''; analDT=gd.analDT||''; break; }
-                    case 'icpms': { const v=spIcpms?.elements?.[p.icpmsCol]; rawVal=v!==undefined?String(v):''; analDT=icpmsAnalDT; prepDT=spAcid||''; break; }
-                    case 'ph': { rawVal=spPh?.value||''; analDT=spPh?.analDT||''; break; }
-                    case 'control': {
-                      rawVal = p.name==='Total Coliform' ? spCtrl?.coliformMPN||'' : p.name==='E. Coli' ? spCtrl?.ecoliMPN||'' : '';
-                      prepDT=spCtrl?.coliformPrepDT||''; analDT=spCtrl?.coliformAnalDT||''; break;
-                    }
-                    case 'calc': {
-                      const ca=parseFloat(spIcpms?.elements?.['Ca 43 (mg/L)']??'');
-                      const mg=parseFloat(spIcpms?.elements?.['Mg 24 (mg/L)']??'');
-                      if(!isNaN(ca)&&!isNaN(mg)) rawVal=(Math.round((ca*2.497+mg*4.118)*100)/100).toString();
-                      analDT=icpmsAnalDT; prepDT=spAcid||''; break;
-                    }
-                  }
-                  if (rawVal||analDT||prepDT) {
-                    const ex = currentReportData.resultsMap[p.name]||{};
-                    currentReportData.resultsMap[p.name] = {...ex, value:rawVal||ex.value||'', prepDT:prepDT||ex.prepDT||'', time:analDT||ex.time||'', analDT:analDT||ex.analDT||''};
-                  }
-                });
-                renderEditableReport(currentReportData);
-                statusEl.textContent = `✅ Report ready for ${labId}.`;
-                statusEl.style.color = 'var(--success)';
-              } else {
-                statusEl.textContent = `✅ Report loaded — SP results not yet in control sheet.`;
-                statusEl.style.color = 'var(--success)';
-              }
-            }
-          } catch { setTimeout(poll, 3000); }
-        };
-        setTimeout(poll, 3000); // first poll after 3 seconds
-      } catch(spErr) {
-        statusEl.textContent = `✅ Report loaded for ${labId} — click any value to edit.`;
-        statusEl.style.color = 'var(--success)';
-        console.warn('SP BG failed:', spErr.message);
-      }
+      statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
+      statusEl.style.color = 'var(--success)';
 
     } catch (err) {
       statusEl.textContent = '⚠️ ' + err.message;
