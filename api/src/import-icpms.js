@@ -44,12 +44,13 @@ function isQCRow(id) {
 }
 
 function isSampleRow(id) {
-  // Must match MMDDYY-NNN or MMDDYY-NNN x5 etc.
-  return /^\d{6}-\d{3}(\s+[xX]\d+)?$/.test(String(id || '').trim());
+  // Match MMDDYY-NNN with ANY optional suffix (test type, elements, dilution)
+  return /^\d{6}-\d{3}/.test(String(id || '').trim());
 }
 
 function getDilution(id) {
-  const m = String(id || '').match(/[xX](\d+)\s*$/);
+  // Match x5, x10 anywhere in the string
+  const m = String(id || '').match(/[xX](\d+)/);
   return m ? parseInt(m[1]) : 1;
 }
 
@@ -173,7 +174,7 @@ function mergeResults(rows) {
   return merged;
 }
 
-app.http('import-icpms-v2', {
+app.http('import-icpms', {
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
