@@ -1,23 +1,16 @@
 /**
  * import-icpms.js — Azure version
- * Reads the most recent ICP-MS Excel file from SP_ICPMS_FOLDER,
- * parses the Concentrations sheet, handles red (rejected) cells
- * and dilution fallback logic, then writes to Results Cache.
- *
- * POST {} — imports latest file
- * POST { debug: true } — returns parsed data without writing
- * POST { fileId: "..." } — imports specific file
+ * 1. Reads Results Cache to get Lab IDs needing ICP-MS data
+ * 2. Groups IDs by date (MMDDYY from base ID)
+ * 3. Finds ALL matching ICP-MS files for each date (handles multiple runs)
+ * 4. Merges results across files, writes to Results Cache
  */
-const { app }      = require('@azure/functions');
-const { getToken, listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
+const { app }    = require('@azure/functions');
+const { listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
 
-const GRAPH = 'https://graph.microsoft.com/v1.0';
-
-// Lazy-load xlsx to avoid startup crash if not installed
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-icpms] xlsx not available:', e.message); }
 
-// Maps ICP-MS column header → Results Cache internal field name
 const ELEMENT_MAP = {
   'Na 23':  'Sodium_x0028_Na23_x0029_',
   'Mg 24':  'Magnesium_x0028_Mg24_x0029_',
@@ -34,9 +27,7 @@ const ELEMENT_MAP = {
   'U 238':  'Uranium_x0028_U238_x0029_',
 };
 
-// Skip internal standards and QC rows
-const SKIP_ELEMENTS = new Set(['Sc 45', 'Ge 74', 'In 115', 'Bi 209', 'Sr 88']);
-const QC_PREFIXES   = ['cal ', 'ccb', 'ccs', 'cqc', 'smsd', 'sms_', 'cvm', 'qcs', 'calibration', 'blank', 'ccv'];
+const QC_PREFIXES = ['cal ', 'ccb', 'ccs', 'cqc', 'smsd', 'sms_', 'cvm', 'qcs', 'calibration', 'blank', 'ccv'];
 
 function isQCRow(id) {
   const low = String(id || '').toLowerCase().trim();
@@ -44,60 +35,50 @@ function isQCRow(id) {
 }
 
 function isSampleRow(id) {
-  // Match MMDDYY-NNN with ANY optional suffix (test type, elements, dilution)
   return /^\d{6}-\d{3}/.test(String(id || '').trim());
 }
 
 function getDilution(id) {
-  // Match x5, x10 anywhere in the string
   const m = String(id || '').match(/[xX](\d+)/);
   return m ? parseInt(m[1]) : 1;
 }
 
 function getBaseId(id) {
-  // Extract MMDDYY-NNN regardless of what comes after
   const m = String(id || '').match(/^(\d{6}-\d{3})/);
   return m ? m[1] : '';
 }
 
-// Check if a cell has a red/salmon background (rejected)
-// SheetJS captures direct fill colors; conditional formatting colors may not appear
+function getDatePart(baseId) {
+  const m = String(baseId || '').match(/^(\d{6})/);
+  return m ? m[1] : '';
+}
+
 function isCellRed(cell) {
   if (!cell || !cell.s) return false;
   const fg = String(cell.s.fgColor?.rgb || '').toUpperCase();
   const bg = String(cell.s.bgColor?.rgb || '').toUpperCase();
-  const pt = String(cell.s.patternType || '').toLowerCase();
-  // Red/salmon/pink fill patterns used in ICP-MS software
   const redPatterns = [
-    'FA8072', // salmon — the color used in ICP-MS files
-    'FF0000','C0504D','FF5050','FF9999','FFC7CE',
+    'FA8072','FF0000','C0504D','FF5050','FF9999','FFC7CE',
     'FF4444','CC0000','FF3333','EA9999','FF8080',
     'FFB6B6','FFBFBF','FF6666','FF0066','E06666',
     'CC4125','FF7575','FFAAAA','FF4500','DC143C',
   ];
-  const hasFill = pt && pt !== 'none' && pt !== '';
-  const isRed = redPatterns.some(p => fg.includes(p) || bg.includes(p));
-  return isRed || (hasFill && redPatterns.some(p => fg.startsWith(p.slice(0,4))));
+  return redPatterns.some(p => fg.includes(p) || bg.includes(p));
 }
 
-function parseIcpms(buffer) {
+function parseIcpmsFile(buffer, targetIds) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
-
-  // Find Concentrations sheet
   const sheetName = wb.SheetNames.find(n => /concentrat/i.test(n)) || wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
-  if (!ws) throw new Error(`Concentrations sheet not found. Available: ${wb.SheetNames.join(', ')}`);
+  if (!ws) return [];
 
   const range = XLSX.utils.decode_range(ws['!ref']);
-
-  // Read headers (row 0)
   const headers = [];
   for (let c = range.s.c; c <= range.e.c; c++) {
     const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
     headers[c] = cell ? String(cell.v || '').trim().replace(/\s*\(.*?\)\s*/g, '').trim() : '';
   }
 
-  // Map element keys to column indices
   const elementCols = {};
   for (const elemKey of Object.keys(ELEMENT_MAP)) {
     const idx = headers.findIndex(h => {
@@ -108,17 +89,19 @@ function parseIcpms(buffer) {
     if (idx >= 0) elementCols[elemKey] = idx;
   }
 
-  // Find key columns
   const sampleIdCol = headers.findIndex(h => /sample.?id/i.test(h) || h.toLowerCase() === 'sample id');
   const acqTimeCol  = headers.findIndex(h => /acquisition/i.test(h));
-
-  if (sampleIdCol < 0) throw new Error(`Sample ID column not found. Headers: ${headers.slice(0,10).join(', ')}`);
+  if (sampleIdCol < 0) return [];
 
   const rows = [];
   for (let r = 1; r <= range.e.r; r++) {
     const idCell   = ws[XLSX.utils.encode_cell({ r, c: sampleIdCol })];
     const sampleId = idCell ? String(idCell.v || '').trim() : '';
     if (!sampleId || isQCRow(sampleId) || !isSampleRow(sampleId)) continue;
+    const baseId = getBaseId(sampleId);
+    if (!baseId) continue;
+    // Only process IDs we need
+    if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
 
     const acqCell = ws[XLSX.utils.encode_cell({ r, c: acqTimeCol })];
     const acqTime = acqCell ? String(acqCell.w || acqCell.v || '') : '';
@@ -131,19 +114,12 @@ function parseIcpms(buffer) {
       elements[elemKey] = { value, rejected };
     }
 
-    rows.push({
-      sampleId,
-      baseId:   getBaseId(sampleId),
-      dilution: getDilution(sampleId),
-      acqTime,
-      elements,
-    });
+    rows.push({ sampleId, baseId, dilution: getDilution(sampleId), acqTime, elements });
   }
 
-  return { rows, sheetName };
+  return rows;
 }
 
-// Merge dilutions — prefer non-diluted, fall back for rejected cells
 function mergeResults(rows) {
   const byBase = {};
   for (const row of rows) {
@@ -153,24 +129,20 @@ function mergeResults(rows) {
 
   const merged = {};
   for (const [baseId, baseRows] of Object.entries(byBase)) {
-    baseRows.sort((a, b) => a.dilution - b.dilution); // 1, 2, 5, 10...
-
+    baseRows.sort((a, b) => a.dilution - b.dilution);
     const result = { baseId, acqTime: baseRows[0]?.acqTime || '', elements: {} };
-
     for (const elemKey of Object.keys(ELEMENT_MAP)) {
       for (const row of baseRows) {
         const el = row.elements[elemKey];
         if (!el) continue;
         if (!el.rejected && el.value !== null && el.value !== undefined) {
           result.elements[elemKey] = { value: el.value, dilution: row.dilution };
-          break; // Got a good value — stop trying dilutions
+          break;
         }
       }
     }
-
     merged[baseId] = result;
   }
-
   return merged;
 }
 
@@ -179,111 +151,105 @@ app.http('import-icpms', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx package not installed on server. Check package.json dependencies.' }) };
-
+      if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx not installed' }) };
       const body = await request.json().catch(() => ({}));
-      const { debug, fileId: specificFileId } = body;
+      const { debug, all: importAll } = body;
 
       const rawFolder = process.env.SP_ICPMS_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test ICPMS';
-      // listFolder needs path relative to drive root (strip up to and including "Shared Documents/")
       const marker = 'Shared Documents/';
-      const markerIdx = rawFolder.indexOf(marker);
-      const icpmsFolder = markerIdx >= 0
-        ? rawFolder.slice(markerIdx + marker.length)
-        : rawFolder.replace(/^\/+/, '');
+      const mi     = rawFolder.indexOf(marker);
+      const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
-      // Find file
-      let fileId = specificFileId;
-      let fileName = '';
-      if (!fileId) {
-        const files = await listFolder(icpmsFolder);
-        const xlsxFiles = files.filter(f => /\.xlsx?$/i.test(f.name));
-        if (!xlsxFiles.length) return { status: 404, body: JSON.stringify({ error: 'No Excel files in ICPMS folder' }) };
-        const latest = xlsxFiles[xlsxFiles.length - 1];
-        fileId   = latest.id;
-        fileName = latest.name;
-        context.log(`[import-icpms] Using: ${fileName}`);
+      // Step 1: Get Results Cache — find IDs needing ICP-MS data
+      const cacheItems = await listItems('Results Cache', { top: 500 });
+      const needsIcpms = cacheItems.filter(r => {
+        const hasId = !!(r.LabID || '').trim();
+        const hasData = !!(r.AcquisitionTime || r.Sodium_x0028_Na23_x0029_ || '').trim();
+        return hasId && (importAll || !hasData);
+      });
+
+      if (!needsIcpms.length) {
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: true, message: 'All Results Cache entries already have ICP-MS data', updated: 0 }) };
       }
 
-      // Download and parse
-      const buffer = await downloadFile(fileId);
-      const { rows, sheetName } = parseIcpms(buffer);
-      const merged = mergeResults(rows);
+      // Group IDs by date portion (MMDDYY)
+      const byDate = {};
+      for (const item of needsIcpms) {
+        const baseId   = String(item.LabID || '').split(' ')[0].trim();
+        const datePart = getDatePart(baseId);
+        if (!datePart) continue;
+        if (!byDate[datePart]) byDate[datePart] = new Set();
+        byDate[datePart].add(baseId);
+      }
+
+      context.log(`[import-icpms] Dates to process: ${Object.keys(byDate).join(', ')}`);
+
+      // Step 2: List all files in ICPMS folder
+      const allFiles = await listFolder(folder);
+      const xlsxFiles = allFiles.filter(f => /\.xlsx?$/i.test(f.name));
+
+      // Step 3: For each date group, find matching files and parse
+      const allRows = [];
+      const filesUsed = [];
+
+      for (const [datePart, ids] of Object.entries(byDate)) {
+        // Match files containing the date portion (e.g., M_072826-01.xlsx, M_072826-02.xlsx)
+        const matchingFiles = xlsxFiles.filter(f => f.name.includes(datePart));
+        if (!matchingFiles.length) {
+          context.log(`[import-icpms] No files found for date ${datePart}`);
+          continue;
+        }
+        context.log(`[import-icpms] Found ${matchingFiles.length} file(s) for ${datePart}: ${matchingFiles.map(f=>f.name).join(', ')}`);
+
+        for (const file of matchingFiles) {
+          filesUsed.push(file.name);
+          const buffer = await downloadFile(file.id);
+          const rows   = parseIcpmsFile(buffer, ids);
+          allRows.push(...rows);
+          context.log(`[import-icpms] ${file.name}: ${rows.length} rows`);
+        }
+      }
+
+      const merged = mergeResults(allRows);
 
       if (debug) {
-        // Also include raw cell style info for first sample row to diagnose red detection
-        const wb2 = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
-        const ws2 = wb2.Sheets[sheetName];
-        const range2 = XLSX.utils.decode_range(ws2['!ref']);
-        const cellStyles = {};
-        // Sample a few cells from row 19 (index 18) and row 24 (index 23) — the "rejected" rows
-        for (let r = 1; r <= Math.min(30, range2.e.r); r++) {
-          const idCell = ws2[XLSX.utils.encode_cell({ r, c: 0 })];
-          const id = idCell ? String(idCell.v || '') : '';
-          if (!id || !isSampleRow(id)) continue;
-          const sampleCells = {};
-          for (let c = 0; c <= Math.min(10, range2.e.c); c++) {
-            const cell = ws2[XLSX.utils.encode_cell({ r, c })];
-            if (cell && cell.s) {
-              sampleCells[`col${c}`] = {
-                v: cell.v,
-                fgColor: cell.s.fgColor,
-                bgColor: cell.s.bgColor,
-                patternType: cell.s.patternType,
-              };
-            }
-          }
-          cellStyles[id] = sampleCells;
-        }
-        return {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ fileName, sheetName, rowCount: rows.length, sampleCount: Object.keys(merged).length, merged, cellStyles }),
-        };
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ filesUsed, sampleCount: Object.keys(merged).length, merged }) };
       }
 
-      // Write to Results Cache
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      const log = [];
-      let created = 0, updated = 0, errors = 0;
+      // Step 4: Write to Results Cache
+      const log = []; let updated = 0, created = 0, errors = 0;
 
       for (const [baseId, result] of Object.entries(merged)) {
         const fields = { AcquisitionTime: result.acqTime || '' };
-
         for (const [elemKey, elemResult] of Object.entries(result.elements)) {
           const fieldName = ELEMENT_MAP[elemKey];
           if (fieldName && elemResult) {
-            // Format value: round to 4 decimal places for display
             const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
-            const val = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
-            fields[fieldName] = val;
+            fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
           }
         }
 
-        // Match on base ID — strip any suffix from stored LabID
         const existing = cacheItems.find(r => {
-          const storedId = String(r.LabID || r.Title || '').trim();
-          const storedBase = storedId.split(' ')[0].trim();
-          return storedBase === baseId || storedId === baseId;
+          const storedBase = String(r.LabID || '').split(' ')[0].trim();
+          return storedBase === baseId || r.LabID === baseId;
         });
 
         if (existing) {
           await updateItem('Results Cache', existing._id, fields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error updating ${baseId}: ${e.message}`); });
+            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
         } else {
           await createItem('Results Cache', { LabID: baseId, ...fields })
             .then(() => { created++; log.push(`Created: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error creating ${baseId}: ${e.message}`); });
+            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
         }
       }
 
-      return {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, fileName, sheetName, sampleCount: Object.keys(merged).length, created, updated, errors, log }),
-      };
+      return { status: 200, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log }) };
 
     } catch(e) {
       context.log('[import-icpms] Error:', e.message);
