@@ -14,8 +14,8 @@ app.http('get-scan-queue', {
       });
 
       const pending = filtered.map(r => ({
-        fileId:           r.FileID       || r.FileId       || r.fileId       || '',
-        barcodeId:        r.BarcodeID    || r.BarcodeId    || r.barcodeId    || '',
+        fileId:           r.FileID       || r.FileId       || '',
+        barcodeId:        r.BarcodeID    || r.BarcodeId    || '',
         customer:         r.ClientName   || '',
         email:            r.Email        || '',
         dateDrawn:        r.SampleDate   || '',
@@ -35,39 +35,48 @@ app.http('get-scan-queue', {
         _rowIndex:        r._id,
       }));
 
-      // ── Recently approved (last 5 from Archived Intake) ──────────────────────
-      const archivedItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 50 });
+      // ── Recently approved from Archived Intake ────────────────────────────────
+      // field_1=fullId, field_2=coaTest, field_3=clientName, field_12=approvedBy
+      // Title=timestamp (ISO string used for grouping and date filtering)
+      const archivedItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 200 });
 
+      // Sort newest first by Title (timestamp)
+      archivedItems.sort((a, b) => {
+        const da = new Date(a.Title || 0);
+        const db = new Date(b.Title || 0);
+        return db - da;
+      });
+
+      // Group by timestamp so kits approved together appear as one entry
       const groupedByTs = {};
       archivedItems.forEach(r => {
-        const ts = r.Timestamp || '';
+        const ts = r.Title || '';
         if (!ts) return;
         if (!groupedByTs[ts]) {
           groupedByTs[ts] = {
             ts,
             labIds:     [],
             coaTests:   [],
-            customer:   r.ClientName || r.Customer || '',
-            approvedBy: r.ReviewedBy || '',
+            customer:   r.field_3  || '',
+            approvedBy: r.field_12 || '',
           };
         }
-        if (r.FullId)  groupedByTs[ts].labIds.push(r.FullId);
-        if (r.CoaTest) groupedByTs[ts].coaTests.push(r.CoaTest);
+        if (r.field_1) groupedByTs[ts].labIds.push(r.field_1);
+        if (r.field_2) groupedByTs[ts].coaTests.push(r.field_2);
       });
 
+      // Sort by Lab ID descending (most recent sequence first)
       const allSorted = Object.values(groupedByTs).sort((a, b) => {
-        const baseA = (a.labIds[0]||'').match(/^\d{6}-\d{3}/)?.[0] || '';
-        const baseB = (b.labIds[0]||'').match(/^\d{6}-\d{3}/)?.[0] || '';
-        if (baseB > baseA) return 1;
-        if (baseB < baseA) return -1;
-        return 0;
+        const tsA = new Date(a.ts || 0);
+        const tsB = new Date(b.ts || 0);
+        return tsB - tsA;
       });
 
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const todayApproved = allSorted.slice(0, 5).map(g => ({
+      const todayApproved = allSorted.slice(0, 10).map(g => ({
         ts:         g.ts,
-        labIds:     g.labIds,
-        tests:      g.coaTests,
+        labIds:     [...new Set(g.labIds)],
+        tests:      [...new Set(g.coaTests)],
         customer:   g.customer,
         approvedBy: g.approvedBy,
       }));
