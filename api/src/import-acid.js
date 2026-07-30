@@ -144,9 +144,10 @@ app.http('import-acid', {
       const cacheItems = await listItems('Results Cache', { top: 500 });
 
       // Find IDs that need acid date/time (or all if importAll=true)
+      // Process all rows missing the acid prep date
       const needsAcid = cacheItems.filter(r => {
         const hasId   = !!(r.LabID || '').trim();
-        const hasDate = !!(r.MetalsStartDate_x002f_Time || '').trim();
+        const hasDate = !!(r.MetalsStartDate_x002f_Time || '').toString().trim();
         return hasId && (importAll || !hasDate);
       });
 
