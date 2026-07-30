@@ -6,7 +6,15 @@ app.http('reject-sample', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { labId, rejectionType, reason, rejectedBy } = await request.json();
+      const { labId, rejectionType, reason, rejectedBy, debug } = await request.json();
+
+      // Debug mode — show raw fields of Rejected list
+      if (debug) {
+        const items = await listItems(LISTS.REJECTED, { top: 1 }).catch(() => []);
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ raw: items[0] || 'empty list' }) };
+      }
+
       if (!labId)          return { status: 400, body: JSON.stringify({ error: 'labId required' }) };
       if (!rejectionType)  return { status: 400, body: JSON.stringify({ error: 'rejectionType required' }) };
       if (!reason?.trim()) return { status: 400, body: JSON.stringify({ error: 'reason required' }) };
@@ -16,21 +24,21 @@ app.http('reject-sample', {
       const rejNote = `${rejectionType}: ${reason.trim()}`;
       const log = [];
 
-      // 1. Write to Rejected list — use Title only plus whatever columns exist
-      await createItem(LISTS.REJECTED, {
-        Title:         labId,
-        LabId:         labId,
-        RejectionType: rejectionType,
-        Reason:        reason.trim(),
-        RejectedBy:    rejectedBy || 'Lab Staff',
-        Timestamp:     now,
-      }).catch(e => context.log('[Rejected] Write error:', e.message));
-      log.push('✅ Written to Rejected list');
+      // Write to Rejected list — try display names with spaces
+      const rejResult = await createItem(LISTS.REJECTED, {
+        Title:            labId,
+        'Lab ID':         labId,
+        'Rejection Type': rejectionType,
+        Reason:           reason.trim(),
+        'Rejected By':    rejectedBy || 'Lab Staff',
+      }).catch(e => { context.log('[Rejected] Error:', e.message); return null; });
 
-      // 2. Update Archived Intake — field_X mapping
+      if (rejResult) log.push('✅ Written to Rejected list');
+      else log.push('⚠️ Failed to write to Rejected list — check function logs');
+
+      // Update Archived Intake
       const archived = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
       const matches  = archived.filter(r => (r.field_1 || '').startsWith(baseId));
-
       for (const item of matches) {
         const existingNotes = item.field_13 || '';
         const newNotes = existingNotes ? `${existingNotes} | ${rejNote}` : rejNote;
@@ -38,7 +46,7 @@ app.http('reject-sample', {
           field_2:  rejectionType,
           field_13: newNotes,
           field_14: 'Pending',
-        }).catch(e => context.log('[ArchivedIntake] Update error:', e.message));
+        }).catch(e => context.log('[ArchivedIntake] Error:', e.message));
       }
       log.push(`✅ Archived Intake: updated ${matches.length} row(s)`);
 
