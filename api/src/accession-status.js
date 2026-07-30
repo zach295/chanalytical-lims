@@ -9,6 +9,23 @@
 const { app } = require('@azure/functions');
 const { listItems, updateItem, LISTS } = require('../shared/graph');
 
+// Format public client name: "Public-Chandler, Zach" → "Zach Chandler"
+function formatCustomerName(name) {
+  if (!name) return '';
+  if (!name.startsWith('Public-')) return name;
+  // Strip "Public-" prefix
+  const inner = name.slice('Public-'.length).trim();
+  // Check for "Last, First" format
+  const commaIdx = inner.indexOf(',');
+  if (commaIdx > 0) {
+    const last  = inner.slice(0, commaIdx).trim();
+    const first = inner.slice(commaIdx + 1).trim();
+    return first ? `${first} ${last}` : last;
+  }
+  // No comma — just return the name without "Public-"
+  return inner;
+}
+
 // Archived Intake field mapping:
 // Title=timestamp, field_1=fullId, field_2=coaTest, field_3=clientName,
 // field_4=dateDrawn, field_5=timeDrawn, field_6=receivedDate, field_7=receivedTime,
@@ -32,13 +49,13 @@ app.http('accession-status', {
           const status   = (r.field_14 || 'Pending').trim();
           if (!fullId) continue;
 
-          const baseId = fullId.replace(/\s+\S+$/, '').trim();
+          const baseId = fullId.split(' ')[0].trim();
           if (!byBase[baseId]) {
             byBase[baseId] = {
               baseId,
               fullIds:      [],
               tests:        [],
-              customer,
+              customer: formatCustomerName(customer),
               location:     r.field_8  || '',
               city:         r.field_9  || '',
               state:        r.field_10 || 'ME',
