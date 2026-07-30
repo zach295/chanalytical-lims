@@ -163,10 +163,18 @@ app.http('import-icpms', {
 
       // Step 1: Get Results Cache — find IDs needing ICP-MS data
       const cacheItems = await listItems('Results Cache', { top: 500 });
+      // Always process all rows — find ones missing ANY element data
       const needsIcpms = cacheItems.filter(r => {
         const hasId = !!(r.LabID || '').trim();
-        const hasData = !!(r.AcquisitionTime || r.Sodium_x0028_Na23_x0029_ || '').trim();
-        return hasId && (importAll || !hasData);
+        if (!hasId) return false;
+        // Skip only if ALL element fields are already populated
+        const elementsFilled = Object.values({
+          a: r.Sodium_x0028_Na23_x0029_,
+          b: r.Arsenic_x0028_As75_x0029_,
+          c: r.Uranium_x0028_U238_x0029_,
+          d: r.Iron_x0028_Fe54_x0029_,
+        }).every(v => !!(v || '').toString().trim());
+        return importAll || !elementsFilled;
       });
 
       if (!needsIcpms.length) {
