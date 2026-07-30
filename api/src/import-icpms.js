@@ -10,9 +10,12 @@
  */
 const { app }      = require('@azure/functions');
 const { getToken, listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
-const XLSX         = require('xlsx');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
+
+// Lazy-load xlsx to avoid startup crash if not installed
+let XLSX;
+try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-icpms] xlsx not available:', e.message); }
 
 // Maps ICP-MS column header → Results Cache internal field name
 const ELEMENT_MAP = {
@@ -162,6 +165,8 @@ app.http('import-icpms', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
+      if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx package not installed on server. Check package.json dependencies.' }) };
+
       const body = await request.json().catch(() => ({}));
       const { debug, fileId: specificFileId } = body;
 
