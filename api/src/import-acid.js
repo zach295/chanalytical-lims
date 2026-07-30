@@ -173,7 +173,7 @@ app.http('import-acid', {
       if (!fileId) {
         const files     = await listFolder(folder);
         context.log(`[import-acid] Files in folder (${folder}): ${files.map(f=>f.name).join(', ') || 'EMPTY'}`);
-        const xlsxFiles = files.filter(f => /\.xlsx?$/i.test(f.name));
+        const xlsxFiles = files.filter(f => /\.xlsx?m?$/i.test(f.name));
         if (!xlsxFiles.length) return { status: 404, body: JSON.stringify({
           error: 'No Excel files in acid folder',
           folder,
