@@ -29,3 +29,4 @@ require('./list-columns');
 require('./import-icpms');
 require('./import-control');
 require('./import-acid');
+require('./sync-results-cache');
