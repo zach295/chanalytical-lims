@@ -54,16 +54,28 @@ function getDilution(id) {
 }
 
 function getBaseId(id) {
-  return String(id || '').replace(/\s+[xX]\d+\s*$/, '').trim();
+  // Extract MMDDYY-NNN regardless of what comes after
+  const m = String(id || '').match(/^(\d{6}-\d{3})/);
+  return m ? m[1] : '';
 }
 
-// Check if a cell has a red background (rejected)
+// Check if a cell has a red/salmon background (rejected)
+// SheetJS captures direct fill colors; conditional formatting colors may not appear
 function isCellRed(cell) {
   if (!cell || !cell.s) return false;
-  const fg = String(cell.s.fgColor?.rgb || cell.s.fgColor?.indexed || '').toUpperCase();
+  const fg = String(cell.s.fgColor?.rgb || '').toUpperCase();
   const bg = String(cell.s.bgColor?.rgb || '').toUpperCase();
-  const redPatterns = ['FF0000','C0504D','FF5050','FF9999','FFC7CE','FF4444','CC0000','FF3333','EA9999'];
-  return redPatterns.some(p => fg.includes(p) || bg.includes(p));
+  const pt = String(cell.s.patternType || '').toLowerCase();
+  // Red/salmon/pink fill patterns used in ICP-MS software
+  const redPatterns = [
+    'FF0000','C0504D','FF5050','FF9999','FFC7CE',
+    'FF4444','CC0000','FF3333','EA9999','FF8080',
+    'FFB6B6','FFBFBF','FF6666','FF0066','E06666',
+    'CC4125','FF7575','FFAAAA','FF4500','DC143C',
+  ];
+  const hasFill = pt && pt !== 'none' && pt !== '';
+  const isRed = redPatterns.some(p => fg.includes(p) || bg.includes(p));
+  return isRed || (hasFill && redPatterns.some(p => fg.startsWith(p.slice(0,4))));
 }
 
 function parseIcpms(buffer) {
@@ -198,10 +210,34 @@ app.http('import-icpms', {
       const merged = mergeResults(rows);
 
       if (debug) {
+        // Also include raw cell style info for first sample row to diagnose red detection
+        const wb2 = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
+        const ws2 = wb2.Sheets[sheetName];
+        const range2 = XLSX.utils.decode_range(ws2['!ref']);
+        const cellStyles = {};
+        // Sample a few cells from row 19 (index 18) and row 24 (index 23) — the "rejected" rows
+        for (let r = 1; r <= Math.min(30, range2.e.r); r++) {
+          const idCell = ws2[XLSX.utils.encode_cell({ r, c: 0 })];
+          const id = idCell ? String(idCell.v || '') : '';
+          if (!id || !isSampleRow(id)) continue;
+          const sampleCells = {};
+          for (let c = 0; c <= Math.min(10, range2.e.c); c++) {
+            const cell = ws2[XLSX.utils.encode_cell({ r, c })];
+            if (cell && cell.s) {
+              sampleCells[`col${c}`] = {
+                v: cell.v,
+                fgColor: cell.s.fgColor,
+                bgColor: cell.s.bgColor,
+                patternType: cell.s.patternType,
+              };
+            }
+          }
+          cellStyles[id] = sampleCells;
+        }
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ fileName, sheetName, rowCount: rows.length, sampleCount: Object.keys(merged).length, merged }),
+          body: JSON.stringify({ fileName, sheetName, rowCount: rows.length, sampleCount: Object.keys(merged).length, merged, cellStyles }),
         };
       }
 
@@ -224,14 +260,14 @@ app.http('import-icpms', {
           }
         }
 
-        const existing = cacheItems.find(r => (r.LabID || r.Title || '').trim() === baseId);
+        const existing = cacheItems.find(r => (r.LabID || '').trim() === baseId);
 
         if (existing) {
           await updateItem('Results Cache', existing._id, fields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
             .catch(e => { errors++; log.push(`Error updating ${baseId}: ${e.message}`); });
         } else {
-          await createItem('Results Cache', { Title: baseId, LabID: baseId, ...fields })
+          await createItem('Results Cache', { LabID: baseId, ...fields })
             .then(() => { created++; log.push(`Created: ${baseId}`); })
             .catch(e => { errors++; log.push(`Error creating ${baseId}: ${e.message}`); });
         }
