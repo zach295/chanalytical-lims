@@ -172,8 +172,13 @@ app.http('import-acid', {
       let fileId = specificFileId, fileName = '';
       if (!fileId) {
         const files     = await listFolder(folder);
+        context.log(`[import-acid] Files in folder (${folder}): ${files.map(f=>f.name).join(', ') || 'EMPTY'}`);
         const xlsxFiles = files.filter(f => /\.xlsx?$/i.test(f.name));
-        if (!xlsxFiles.length) return { status: 404, body: JSON.stringify({ error: 'No Excel files in acid folder' }) };
+        if (!xlsxFiles.length) return { status: 404, body: JSON.stringify({
+          error: 'No Excel files in acid folder',
+          folder,
+          filesFound: files.map(f => f.name),
+        }) };
         // Prefer file matching current year
         const year     = String(new Date().getFullYear());
         const yearFile = xlsxFiles.find(f => f.name.includes(year));
