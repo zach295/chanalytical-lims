@@ -173,7 +173,7 @@ function mergeResults(rows) {
   return merged;
 }
 
-app.http('import-icpms', {
+app.http('import-icpms-v2', {
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
