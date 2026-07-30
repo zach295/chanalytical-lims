@@ -1,3 +1,10 @@
+/**
+ * import-control.js — Azure version
+ * 1. Reads Results Cache to get Lab IDs needing control sheet data
+ * 2. Groups IDs by date (MMDDYY from base ID)
+ * 3. Finds the matching control sheet file for each date
+ * 4. Writes pH, bacteria, Gallery chemistry to Results Cache
+ */
 const { app }    = require('@azure/functions');
 const { listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
 
@@ -5,13 +12,13 @@ let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-control] xlsx not available:', e.message); }
 
 const COL = {
-  BARCODE:0, CHLORINE:1, DT_CHLORINE:2, PH:3, DT_PH:4,
-  COLIFORM:5, ECOLI:6, START_INIT:7, START_DT:8, END_INIT:9, END_DT:10,
-  LOT_COLLECT:11, LOT_QUAN:12,
+  BARCODE:0, PH:3, DT_PH:4, COLIFORM:5, ECOLI:6,
+  START_DT:8, END_DT:10,
   CHLORIDE:13, DT_CHLORIDE:14, FLUORIDE:15, DT_FLUORIDE:16,
   NITRITE:17, DT_NITRITE:18, NITRATE:19, DT_NITRATE:20,
   ALKALINITY:21, DT_ALKALINITY:22, SULFATE:23, DT_SULFATE:24,
-  TANNINS:25, DT_TANNINS:26, TDS:27, DT_TDS:28, BROMIDE:29, DT_BROMIDE:30,
+  TANNINS:25, DT_TANNINS:26, TDS:27, DT_TDS:28,
+  BROMIDE:29, DT_BROMIDE:30,
 };
 
 function cellVal(ws, r, c) {
@@ -26,7 +33,11 @@ function getBaseId(barcode) {
   return m ? m[1] : '';
 }
 
-// Sanitize numeric values — negative = 0, non-numeric (like "<1") kept as-is
+function getDatePart(baseId) {
+  const m = String(baseId || '').match(/^(\d{6})/);
+  return m ? m[1] : '';
+}
+
 function sn(val) {
   if (!val || val === '') return val;
   const n = parseFloat(val);
@@ -34,10 +45,10 @@ function sn(val) {
   return n < 0 ? '0' : String(Math.round(n * 10000) / 10000);
 }
 
-function parseControlSheet(buffer) {
+function parseControlFile(buffer, targetIds) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) throw new Error('No sheets found');
+  if (!ws) return [];
   const range = XLSX.utils.decode_range(ws['!ref']);
   const rows = [];
   for (let r = 1; r <= range.e.r; r++) {
@@ -45,6 +56,7 @@ function parseControlSheet(buffer) {
     if (!barcode) continue;
     const baseId = getBaseId(barcode);
     if (!baseId) continue;
+    if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
     rows.push({
       baseId, barcode,
       ph:           cellVal(ws, r, COL.PH),
@@ -112,50 +124,81 @@ app.http('import-control', {
     try {
       if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx not installed' }) };
       const body = await request.json().catch(() => ({}));
-      const { debug, fileId: specificFileId } = body;
+      const { debug, all: importAll } = body;
 
       const rawFolder = process.env.SP_CONTROL_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
       const marker = 'Shared Documents/';
-      const mi = rawFolder.indexOf(marker);
+      const mi     = rawFolder.indexOf(marker);
       const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
-      let fileId = specificFileId, fileName = '';
-      if (!fileId) {
-        const files = await listFolder(folder);
-        const xlsx  = files.filter(f => /\.xlsx?$/i.test(f.name));
-        if (!xlsx.length) return { status: 404, body: JSON.stringify({ error: 'No Excel files in control folder' }) };
-        const latest = xlsx[xlsx.length - 1];
-        fileId = latest.id; fileName = latest.name;
-        context.log(`[import-control] Using: ${fileName}`);
+      // Step 1: Get Results Cache IDs needing control data
+      const cacheItems = await listItems('Results Cache', { top: 500 });
+      const needsControl = cacheItems.filter(r => {
+        const hasId   = !!(r.LabID || '').trim();
+        const hasData = !!(r.Title || r.field_2 || '').trim(); // Title=pH, field_2=coliform
+        return hasId && (importAll || !hasData);
+      });
+
+      if (!needsControl.length) {
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ success: true, message: 'All Results Cache entries already have control data', updated: 0 }) };
       }
 
-      const buffer = await downloadFile(fileId);
-      const rows   = parseControlSheet(buffer);
+      // Group by date portion
+      const byDate = {};
+      for (const item of needsControl) {
+        const baseId   = String(item.LabID || '').split(' ')[0].trim();
+        const datePart = getDatePart(baseId);
+        if (!datePart) continue;
+        if (!byDate[datePart]) byDate[datePart] = new Set();
+        byDate[datePart].add(baseId);
+      }
 
-      if (debug) return {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ fileName, rowCount: rows.length, rows: rows.slice(0, 5) }),
-      };
+      context.log(`[import-control] Dates: ${Object.keys(byDate).join(', ')}`);
 
-      // Group rows by baseId and merge fields
+      // Step 2: List all control files
+      const allFiles   = await listFolder(folder);
+      const xlsxFiles  = allFiles.filter(f => /\.xlsx?$/i.test(f.name));
+
+      // Step 3: Parse matching files
+      const allRows  = [];
+      const filesUsed = [];
+
+      for (const [datePart, ids] of Object.entries(byDate)) {
+        const matchingFiles = xlsxFiles.filter(f => f.name.includes(datePart));
+        if (!matchingFiles.length) {
+          context.log(`[import-control] No file for date ${datePart}`);
+          continue;
+        }
+        for (const file of matchingFiles) {
+          filesUsed.push(file.name);
+          const buffer = await downloadFile(file.id);
+          const rows   = parseControlFile(buffer, ids);
+          allRows.push(...rows);
+          context.log(`[import-control] ${file.name}: ${rows.length} rows`);
+        }
+      }
+
+      if (debug) {
+        return { status: 200, headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ filesUsed, rowCount: allRows.length, rows: allRows.slice(0, 5) }) };
+      }
+
+      // Step 4: Merge rows by baseId and write
       const byBase = {};
-      for (const row of rows) {
+      for (const row of allRows) {
         if (!byBase[row.baseId]) byBase[row.baseId] = {};
         Object.assign(byBase[row.baseId], buildFields(row));
       }
 
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      const log = []; let created = 0, updated = 0, errors = 0;
+      const log = []; let updated = 0, created = 0, errors = 0;
 
       for (const [baseId, fields] of Object.entries(byBase)) {
         if (!Object.keys(fields).length) continue;
-        // Match on base ID — strip any suffix from stored LabID
         const existing = cacheItems.find(r => {
-          const storedId = String(r.LabID || r.Title || '').trim();
-          const storedBase = storedId.split(' ')[0].trim();
-          return storedBase === baseId || storedId === baseId;
+          const storedBase = String(r.LabID || '').split(' ')[0].trim();
+          return storedBase === baseId || r.LabID === baseId;
         });
         if (existing) {
           await updateItem('Results Cache', existing._id, fields)
@@ -168,11 +211,9 @@ app.http('import-control', {
         }
       }
 
-      return {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, fileName, rowCount: rows.length, created, updated, errors, log }),
-      };
+      return { status: 200, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ success: true, filesUsed, rowCount: allRows.length, created, updated, errors, log }) };
+
     } catch(e) {
       context.log('[import-control] Error:', e.message);
       return { status: 500, body: JSON.stringify({ error: e.message }) };
