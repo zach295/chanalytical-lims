@@ -151,7 +151,12 @@ app.http('import-control', {
 
       for (const [baseId, fields] of Object.entries(byBase)) {
         if (!Object.keys(fields).length) continue;
-        const existing = cacheItems.find(r => (r.LabID || '').trim() === baseId);
+        // Match on base ID — strip any suffix from stored LabID
+        const existing = cacheItems.find(r => {
+          const storedId = String(r.LabID || r.Title || '').trim();
+          const storedBase = storedId.split(' ')[0].trim();
+          return storedBase === baseId || storedId === baseId;
+        });
         if (existing) {
           await updateItem('Results Cache', existing._id, fields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
