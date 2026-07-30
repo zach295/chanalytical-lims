@@ -430,9 +430,11 @@ app.http('approve-scan', {
       }
 
       // ── Write Results Cache ──────────────────────────────────────────────────
+      // Write base ID to LabID field so ICP-MS and control sheet imports
+      // can find and update this row. Do NOT write to Title (that is the PH column).
       for (const item of labItems) {
         await createItem('Results Cache', {
-          Title:  item.fullId,
+          LabID: item.baseId,
         }).catch(e => context.log('[ResultsCache]', e.message));
       }
 
