@@ -7,7 +7,8 @@
  * POST { action:'mark-pending',  baseId } → sets field_14 to 'Pending'
  */
 const { app } = require('@azure/functions');
-const { listItems, updateItem, LISTS } = require('../shared/graph');
+const { listItems, updateItem, getToken, LISTS } = require('../shared/graph');
+const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 // Format public client name: "Public-Chandler, Zach" → "Zach Chandler"
 function formatCustomerName(name) {
@@ -84,10 +85,10 @@ app.http('accession-status', {
 
         // Fetch client emails from Clients list
         try {
-          const token  = await require('../shared/graph').getToken();
+          const token  = await getToken();
           const siteId = process.env.SP_SITE_ID;
           const cRes   = await fetch(
-            `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,Email)&$top=500`,
+            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,Email)&$top=500`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (cRes.ok) {
