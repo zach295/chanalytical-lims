@@ -170,17 +170,22 @@ async function getClientInfo(customerName, token) {
   try {
     const siteId = process.env.SP_SITE_ID;
     const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Phone)&$top=500`,
+      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,ClientCode,Abbrev,Email,Aliases,Phone)&$top=500`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return empty;
     const data  = await res.json();
     const name  = customerName.toLowerCase().trim();
+    // Also search by formatted version of Public- names
+    const formatted = formatCustomerName(customerName).toLowerCase().trim();
     const match = (data.value || []).find(item => {
       const f  = item.fields || {};
-      const cn = (f.Title   || '').toLowerCase().trim();
+      const cn = (f.Title || f.ClientName || '').toLowerCase().trim();
       const al = (f.Aliases || '').toLowerCase();
-      return cn === name || al.split(/[,;]/).map(s=>s.trim()).some(a => a && (name.includes(a)||a.includes(name)));
+      return cn === name
+        || cn === formatted
+        || cn.includes(name) || name.includes(cn)
+        || al.split(/[,;]/).map(s=>s.trim()).some(a => a && (name.includes(a)||a.includes(name)));
     });
     if (!match) return empty;
     const f = match.fields || {};
@@ -224,14 +229,14 @@ app.http('generate-report', {
         log.push(`cache: NOT FOUND for baseId=${baseId}`);
       }
 
-      // Look up client — try formatted name first, then Public- format for walk-ins
-      const formattedName = formatCustomerName(meta.customer || '');
+      // Look up client — try raw stored name first (e.g. "Public-Chandler, Zach")
+      // then formatted name (e.g. "Zach Chandler")
       const rawName       = meta.customer || '';
-      const clientInfo = await getClientInfo(formattedName, token)
+      const formattedName = formatCustomerName(rawName);
+      const clientInfo = await getClientInfo(rawName, token)
         .then(async c => {
           if (c.email) return c;
-          // Try raw Public-Last, First format if formatted didn't find email
-          if (rawName !== formattedName) return getClientInfo(rawName, token).catch(() => c);
+          if (rawName !== formattedName) return getClientInfo(formattedName, token).catch(() => c);
           return c;
         })
         .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' }));
