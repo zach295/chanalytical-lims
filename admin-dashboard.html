@@ -5467,7 +5467,34 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
       } else {
-        // ── Save PDF (Print): open browser print dialog immediately ──────────
+        // ── Save PDF: generate from template and download ─────────────────────
+        statusEl.textContent = '⏳ Generating PDF from template...';
+        const pdfRes2 = await fetch('/api/render-report-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData2 = await pdfRes2.json().catch(() => ({}));
+        if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
+        const bytes2 = Uint8Array.from(atob(pdfData2.pdfBase64), c => c.charCodeAt(0));
+        const blob2  = new Blob([bytes2], { type: 'application/pdf' });
+        const url2   = URL.createObjectURL(blob2);
+        const a2     = document.createElement('a');
+        a2.href = url2; a2.download = pdfData2.fileName || (labId + '_COA.pdf');
+        document.body.appendChild(a2); a2.click();
+        document.body.removeChild(a2); URL.revokeObjectURL(url2);
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ PDF downloaded: ${pdfData2.fileName}`;
+        showToast('✅ PDF saved');
+        // These lines prevent the print fallback from running
+        const rLabId3 = currentReportData.labId || '';
+        logActivity({ date: new Date().toISOString().split('T')[0], client: currentReportData.meta?.customer || rLabId3, type: 'report_saved', qty: 1, notes: 'PDF — ' + rLabId3, by: authorizedBy });
+        reportHistory.unshift({ labId: rLabId3, emailed: false, by: authorizedBy, time: new Date().toLocaleTimeString() });
+        renderReportHistory();
+        return;
+      }
+      // ── Fallback browser print (should not normally reach here) ───────────
+      if (false) {
         statusEl.textContent = '⏳ Opening print dialog...';
         const reportEl = document.getElementById('rpt-live-preview');
         const printWindow = window.open('', '_blank');
