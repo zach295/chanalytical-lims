@@ -110,11 +110,12 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, val] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
-    // Scan right for the FIRST empty cell — that's the value input cell
-    let targetCol = f.c + 1;
-    for (let dc = 1; dc <= 6; dc++) {
+    // col+1 is typically the interior of the merged label cell (silent fail)
+    // Start scanning from col+2 to find the actual input cell
+    let targetCol = f.c + 2;
+    for (let dc = 2; dc <= 6; dc++) {
       const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
-      if (!cv) { targetCol = f.c + dc; break; } // stop at first empty
+      if (!cv) { targetCol = f.c + dc; break; }
     }
     addCell(f.r, targetCol, val);
     context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${val}"`);
@@ -146,7 +147,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   if (lf) {
     // Scan right for first empty cell on the Location row
     let locValCol = lf.c + 1;
-    for (let dc = 1; dc <= 4; dc++) {
+    for (let dc = 1; dc <= 6; dc++) {
       const cv = normalizeCell((rows[lf.r] || [])[lf.c + dc]);
       if (!cv) { locValCol = lf.c + dc; break; }
     }
