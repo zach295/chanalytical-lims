@@ -1,10 +1,14 @@
 /**
- * render-report-pdf.js — Azure v2
- * Copies Report Templates.xlsx, fills via Excel Workbook API, exports PDF.
+ * render-report-pdf.js — Azure v3
+ * Download template → modify with SheetJS → upload → export PDF
+ * Much faster than Workbook API (no session, no per-cell roundtrips)
  */
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
+
+let XLSX;
+try { XLSX = require('xlsx'); } catch(e) { console.warn('xlsx unavailable'); }
 
 const SHEET_LAB   = 'Lab Report - Template';
 const SHEET_FHA   = 'FHA Lab Report - Template';
@@ -17,71 +21,73 @@ function toDrivePath(p) {
   return r.split('/').map(s => encodeURIComponent(s)).join('/');
 }
 
-function colLetter(n) {
-  let s = '';
-  while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
-  return s;
-}
-
-async function graphFetch(method, path, token, body, sid) {
-  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  if (sid) h['workbook-session-id'] = sid;
-  const opts = { method, headers: h };
-  if (body !== undefined) opts.body = JSON.stringify(body);
-  return fetch(`${GRAPH}${path}`, opts);
-}
-
-async function setCell(siteId, itemId, wsId, addr, value, token, sid) {
-  await graphFetch('PATCH',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')`,
-    token, { values: [[value]] }, sid);
-}
-
-async function setCellFill(siteId, itemId, wsId, addr, hex, token, sid) {
-  await graphFetch('PATCH',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/format/fill`,
-    token, { color: hex }, sid);
-}
-
-async function deleteRow(siteId, itemId, wsId, row1based, cols, token, sid) {
-  const addr = `A${row1based}:${colLetter(cols - 1)}${row1based}`;
-  await graphFetch('POST',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`,
-    token, { shift: 'Up' }, sid);
-}
-
-async function hideSheet(siteId, itemId, wsId, token, sid) {
-  await graphFetch('PATCH',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`,
-    token, { visibility: 'Hidden' }, sid);
-}
-
-async function getRange(siteId, itemId, wsId, token, sid) {
-  const r = await graphFetch('GET',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,rowCount,columnCount`,
-    token, undefined, sid);
-  if (!r.ok) return { values: [], rowCount: 0, columnCount: 0 };
-  return r.json();
-}
-
-function findLabel(rows, label) {
-  const l = label.toLowerCase().trim();
-  for (let r = 0; r < rows.length; r++) {
-    for (let c = 0; c < (rows[r] || []).length; c++) {
-      const v = String(rows[r][c] || '').toLowerCase().trim();
-      if (v === l || v.startsWith(l)) return { row: r, col: c };
+// ── Find cell containing label text, return {r, c} ────────────────────────────
+function findCell(ws, label) {
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  const l     = label.toLowerCase().trim();
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (!cell) continue;
+      const v = String(cell.v || '').toLowerCase().trim();
+      if (v === l || v.startsWith(l)) return { r, c };
     }
   }
   return null;
 }
 
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid) {
-  const range = await getRange(siteId, itemId, wsId, token, sid);
-  const rows  = range.values || [];
-  const nc    = range.columnCount || 10;
-  if (!rows.length) return;
+// ── Set cell value (creates if needed) ────────────────────────────────────────
+function setVal(ws, r, c, val) {
+  const addr = XLSX.utils.encode_cell({ r, c });
+  const existing = ws[addr] || {};
+  ws[addr] = { ...existing, t: 's', v: String(val), w: String(val) };
+}
 
-  // Fill header fields (value goes in cell to the right of label)
+// ── Set cell background color ─────────────────────────────────────────────────
+function setFill(ws, r, c, hex) {
+  const addr = XLSX.utils.encode_cell({ r, c });
+  if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+  ws[addr].s = {
+    ...(ws[addr].s || {}),
+    fill: { fgColor: { rgb: hex.replace('#', '') }, patternType: 'solid' },
+  };
+}
+
+// ── Delete a row from worksheet ───────────────────────────────────────────────
+function deleteRow(ws, delRow) {
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  // Shift rows above the deleted row down
+  for (let r = delRow; r < range.e.r; r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const from = XLSX.utils.encode_cell({ r: r + 1, c });
+      const to   = XLSX.utils.encode_cell({ r, c });
+      if (ws[from]) ws[to] = ws[from];
+      else delete ws[to];
+    }
+  }
+  // Clear last row
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    delete ws[XLSX.utils.encode_cell({ r: range.e.r, c })];
+  }
+  range.e.r--;
+  ws['!ref'] = XLSX.utils.encode_range(range);
+  // Fix merged cells
+  if (ws['!merges']) {
+    ws['!merges'] = ws['!merges']
+      .filter(m => m.s.r !== delRow && m.e.r !== delRow)
+      .map(m => {
+        if (m.s.r > delRow) { m.s.r--; m.e.r--; }
+        return m;
+      });
+  }
+}
+
+// ── Fill one worksheet ────────────────────────────────────────────────────────
+function fillWorksheet(ws, params, meta, labId, authorizedBy, reviewDate, today) {
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+  const colorHex = { green: '00B050', red: 'FF0000', blue: '0070C0', none: 'E0E0E0' };
+
+  // Header fields — fill cell to the right of the label
   const headers = {
     'attention:':           meta.customer || '',
     'lab id number:':       labId,
@@ -93,94 +99,86 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   };
 
   for (const [lbl, val] of Object.entries(headers)) {
-    const f = findLabel(rows, lbl);
-    if (!f) continue;
-    await setCell(siteId, itemId, wsId, `${colLetter(f.col + 1)}${f.row + 1}`, val, token, sid);
+    const f = findCell(ws, lbl);
+    if (f) setVal(ws, f.r, f.c + 1, val);
   }
 
-  // Location (below label)
-  const locF = findLabel(rows, 'location:');
+  // Location — fill below label
+  const locF = findCell(ws, 'location:');
   if (locF) {
-    await setCell(siteId, itemId, wsId, `${colLetter(locF.col)}${locF.row + 2}`, meta.location || '', token, sid);
-    await setCell(siteId, itemId, wsId, `${colLetter(locF.col)}${locF.row + 3}`,
-      [meta.city, meta.state, meta.zip].filter(Boolean).join(', '), token, sid);
+    setVal(ws, locF.r + 1, locF.c, meta.location || '');
+    setVal(ws, locF.r + 2, locF.c, [meta.city, meta.state, meta.zip].filter(Boolean).join(', '));
   }
 
   // Find parameter table header row
   let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1;
-  for (let r = 0; r < rows.length; r++) {
-    const rLow = (rows[r] || []).map(c => String(c || '').toLowerCase().trim());
-    if (rLow.some(c => c.includes('your result'))) {
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const rowCells = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      rowCells.push({ c, v: String(cell?.v || '').toLowerCase().trim() });
+    }
+    if (rowCells.some(x => x.v.includes('your result'))) {
       hdrRow = r;
-      rLow.forEach((c, i) => {
-        if (c.includes('your result'))        colResult = i;
-        else if (c.includes('preparation') || c.includes('prep date')) colPrepDT = i;
-        else if (c.includes('analysis date') || c.includes('anal'))    colAnalDT = i;
+      rowCells.forEach(x => {
+        if (x.v.includes('your result'))       colResult = x.c;
+        else if (x.v.includes('prep'))         colPrepDT = x.c;
+        else if (x.v.includes('analysis'))     colAnalDT = x.c;
       });
       break;
     }
   }
-
   if (hdrRow < 0) return;
 
-  // Map param name → row index
+  // Map parameter name → row index
   const paramRowMap = {};
-  for (let r = hdrRow + 1; r < rows.length; r++) {
-    const name = String((rows[r] || [])[0] || '').trim();
+  for (let r = hdrRow + 1; r <= range.e.r; r++) {
+    const cell = ws[XLSX.utils.encode_cell({ r, c: range.s.c })];
+    const name = String(cell?.v || '').trim();
     if (name) paramRowMap[name.toLowerCase()] = r;
   }
 
-  const colorHex = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
+  // Fill results and collect rows to delete (process bottom-up)
   const toDelete = [];
-
   for (const [nameLow, rowIdx] of Object.entries(paramRowMap)) {
     const p = params.find(x => x.name.toLowerCase().trim() === nameLow);
     if (!p) {
-      toDelete.push(rowIdx + 1);
+      toDelete.push(rowIdx);
     } else {
-      const hex = colorHex[p.color || 'none'] || '#FFFFFF';
-      // Color cell (col B = index 1)
-      await setCellFill(siteId, itemId, wsId, `B${rowIdx + 1}`, hex, token, sid);
-      // Result value
-      if (colResult >= 0 && p.value) {
-        await setCell(siteId, itemId, wsId, `${colLetter(colResult)}${rowIdx + 1}`, p.value, token, sid);
-      }
-      // Prep date
-      if (colPrepDT >= 0 && p.prepDT) {
-        await setCell(siteId, itemId, wsId, `${colLetter(colPrepDT)}${rowIdx + 1}`, p.prepDT, token, sid);
-      }
-      // Anal date
-      if (colAnalDT >= 0 && (p.analDT || p.time)) {
-        await setCell(siteId, itemId, wsId, `${colLetter(colAnalDT)}${rowIdx + 1}`, p.analDT || p.time || '', token, sid);
-      }
+      // Color indicator in col B (or adjacent to param name)
+      const hex = colorHex[p.color || 'none'] || 'E0E0E0';
+      setFill(ws, rowIdx, range.s.c + 1, hex); // col B
+
+      if (colResult >= 0 && p.value) setVal(ws, rowIdx, colResult, p.value);
+      if (colPrepDT >= 0 && p.prepDT) setVal(ws, rowIdx, colPrepDT, p.prepDT);
+      if (colAnalDT >= 0 && (p.analDT || p.time)) setVal(ws, rowIdx, colAnalDT, p.analDT || p.time);
     }
   }
 
-  // Delete unused rows bottom-to-top
   for (const r of toDelete.sort((a, b) => b - a)) {
-    await deleteRow(siteId, itemId, wsId, r, nc, token, sid);
+    deleteRow(ws, r);
   }
 }
 
-async function cleanup(siteId, tempId) {
-  try {
-    const t = await getToken();
-    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
-      { method: 'DELETE', headers: { Authorization: `Bearer ${t}` } });
-  } catch(e) { console.warn('[render-pdf] cleanup failed:', e.message); }
+// ── Hide a sheet in workbook ──────────────────────────────────────────────────
+function hideSheet(wb, sheetName) {
+  const idx = wb.SheetNames.indexOf(sheetName);
+  if (idx < 0) return;
+  if (!wb.Workbook) wb.Workbook = {};
+  if (!wb.Workbook.Sheets) wb.Workbook.Sheets = [];
+  while (wb.Workbook.Sheets.length <= idx) wb.Workbook.Sheets.push({});
+  wb.Workbook.Sheets[idx].Hidden = 1;
 }
 
 app.http('render-report-pdf', {
-  methods: ['POST'],
+  methods:   ['POST'],
   authLevel: 'anonymous',
-  handler: async (request, context) => {
-    const siteId = process.env.SP_SITE_ID;
-    let tempId   = null;
+  handler:   async (request, context) => {
+    if (!XLSX) return { status: 500, jsonBody: { error: 'xlsx package not available' } };
 
-    const body = await request.json().catch(() => null);
-    if (!body?.reportData) {
-      return { status: 400, jsonBody: { error: 'reportData required' } };
-    }
+    const siteId = process.env.SP_SITE_ID;
+    const body   = await request.json().catch(() => null);
+    if (!body?.reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
 
     const { reportData, authorizedBy = '', reviewDate = '' } = body;
     const meta      = reportData.meta || {};
@@ -193,124 +191,102 @@ app.http('render-report-pdf', {
 
     let token;
     try { token = await getToken(); }
-    catch(e) { return { status: 500, jsonBody: { error: 'Auth failed: ' + e.message } }; }
+    catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
-    // Find template
+    // ── Download template ───────────────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
       '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
     const dp = toDrivePath(tmplPath);
-    let tmpl;
+
+    let tmplBuffer, tmplItem;
     try {
-      const r = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id,parentReference`,
+      // Get item metadata
+      const metaRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id,parentReference`,
         { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) throw new Error(`Template not found (${r.status}): ${tmplPath}`);
-      tmpl = await r.json();
+      if (!metaRes.ok) throw new Error(`Template not found (${metaRes.status})`);
+      tmplItem = await metaRes.json();
+
+      // Download content
+      const dlRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplItem.id}/content`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      if (!dlRes.ok) throw new Error(`Template download failed (${dlRes.status})`);
+      tmplBuffer = Buffer.from(await dlRes.arrayBuffer());
+      context.log(`[render-pdf] Template downloaded: ${tmplBuffer.length} bytes`);
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
-    // Copy template
-    const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
+    // ── Read and modify workbook ────────────────────────────────────────────
+    let modBuffer;
     try {
-      const cr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmpl.id}/copy`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentReference: tmpl.parentReference, name: tempName }),
-      });
-      if (!cr.ok) throw new Error(`Copy failed: ${cr.status}`);
-      const monUrl = cr.headers.get('Location');
-      if (!monUrl) throw new Error('No monitor URL from copy');
+      const wb = XLSX.read(tmplBuffer, { type: 'buffer', cellStyles: true });
+      context.log('[render-pdf] Sheets:', wb.SheetNames.join(', '));
 
-      // Poll for completion
-      for (let i = 0; i < 25; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const pr  = await fetch(monUrl, { headers: { Authorization: `Bearer ${token}` } });
-        const pd  = await pr.json();
-        if (pd.status === 'completed') { tempId = pd.resourceId; break; }
-        if (pd.status === 'failed')    throw new Error('Copy operation failed');
-      }
-      if (!tempId) throw new Error('Copy timed out after 50s');
-    } catch(e) {
-      return { status: 500, jsonBody: { error: e.message } };
-    }
-
-    context.log(`[render-pdf] Temp file: ${tempId}`);
-
-    // Open session
-    let sid = null;
-    try {
-      const sr = await graphFetch('POST',
-        `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
-        token, { persistChanges: true });
-      if (sr.ok) sid = (await sr.json()).id || null;
-    } catch(e) { context.log('[render-pdf] Session warning:', e.message); }
-
-    // Get sheets
-    let sheets = [];
-    try {
-      const wr = await graphFetch('GET',
-        `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`,
-        token, undefined, sid);
-      sheets = wr.ok ? (await wr.json()).value || [] : [];
-    } catch(e) { context.log('[render-pdf] Sheets error:', e.message); }
-
-    const ws = name => sheets.find(s => s.name === name);
-    context.log('[render-pdf] Sheets:', sheets.map(s => s.name).join(', '));
-
-    try {
       if (isRadon) {
-        const lab = ws(SHEET_LAB), fha = ws(SHEET_FHA);
-        if (lab) await hideSheet(siteId, tempId, lab.id, token, sid);
-        if (fha) await hideSheet(siteId, tempId, fha.id, token, sid);
+        hideSheet(wb, SHEET_LAB);
+        hideSheet(wb, SHEET_FHA);
       } else {
-        const radon = ws(SHEET_RADON);
-        if (radon) await hideSheet(siteId, tempId, radon.id, token, sid);
+        hideSheet(wb, SHEET_RADON);
 
-        const lab = ws(SHEET_LAB);
-        if (lab) {
-          await fillSheet(siteId, tempId, lab.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid);
+        const labWs = wb.Sheets[SHEET_LAB];
+        if (labWs) {
+          fillWorksheet(labWs, params, meta, labId, authorizedBy, reviewDate, today);
           context.log('[render-pdf] Lab sheet filled');
         }
 
-        const fha = ws(SHEET_FHA);
-        if (fha) {
-          if (needsFHA && fhaParams.length) {
-            await fillSheet(siteId, tempId, fha.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid);
+        if (needsFHA && fhaParams.length) {
+          const fhaWs = wb.Sheets[SHEET_FHA];
+          if (fhaWs) {
+            fillWorksheet(fhaWs, fhaParams, meta, labId, authorizedBy, reviewDate, today);
             context.log('[render-pdf] FHA sheet filled');
-          } else {
-            await hideSheet(siteId, tempId, fha.id, token, sid);
           }
+        } else {
+          hideSheet(wb, SHEET_FHA);
         }
       }
-    } catch(e) {
-      context.log('[render-pdf] Fill error:', e.message);
-      await cleanup(siteId, tempId);
-      return { status: 500, jsonBody: { error: 'Fill error: ' + e.message } };
-    }
 
-    // Close session
-    if (sid) {
-      await graphFetch('POST',
-        `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
-        token, {}, sid).catch(() => {});
-    }
+      modBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true });
+      context.log('[render-pdf] Modified workbook: ' + modBuffer.length + ' bytes');
+    } catch(e) { return { status: 500, jsonBody: { error: 'Modify failed: ' + e.message } }; }
 
-    // Wait for flush
-    await new Promise(r => setTimeout(r, 4000));
+    // ── Upload modified file to SharePoint ─────────────────────────────────
+    const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
+    const tempPath = toDrivePath(tmplPath.replace(/[^/]+\.xlsx$/i, '') + tempName);
+    let tempId;
+    try {
+      const upRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${tempPath}:/content`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+        body: modBuffer,
+      });
+      if (!upRes.ok) throw new Error(`Upload failed (${upRes.status})`);
+      const upData = await upRes.json();
+      tempId = upData.id;
+      context.log('[render-pdf] Uploaded temp file:', tempId);
+    } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
-    // Export PDF
+    // ── Export as PDF ──────────────────────────────────────────────────────
     let pdfBase64;
     try {
-      const pr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
+      // Small wait for SharePoint to index the file
+      await new Promise(r => setTimeout(r, 2000));
+      const pdfRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
         { headers: { Authorization: `Bearer ${token}` } });
-      if (!pr.ok) throw new Error(`PDF export: ${pr.status}`);
-      pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
-      context.log('[render-pdf] PDF bytes:', pdfBase64.length);
+      if (!pdfRes.ok) throw new Error(`PDF export (${pdfRes.status})`);
+      pdfBase64 = Buffer.from(await pdfRes.arrayBuffer()).toString('base64');
+      context.log('[render-pdf] PDF: ' + pdfBase64.length + ' chars');
     } catch(e) {
-      await cleanup(siteId, tempId);
-      return { status: 500, jsonBody: { error: 'PDF export failed: ' + e.message } };
+      // Cleanup on error
+      await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+      return { status: 500, jsonBody: { error: e.message } };
     }
 
-    // Cleanup and return
-    await cleanup(siteId, tempId);
+    // ── Cleanup ────────────────────────────────────────────────────────────
+    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+
     return { status: 200, jsonBody: { success: true, pdfBase64, fileName: `${labId}_COA.pdf` } };
   }
 });
