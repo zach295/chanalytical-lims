@@ -5403,70 +5403,59 @@ document.addEventListener('DOMContentLoaded', function() {
       showToast('No client email found. Enter one in the Send To field.'); return;
     }
 
-    statusEl.textContent = '⏳ Generating PDF from template...';
+    statusEl.textContent = '⏳ Preparing report...';
     statusEl.style.color = 'var(--slate)';
 
     try {
-      // ── Generate PDF from Google Sheets templates ─────────────────────────
-      const pdfRes = await fetch('/api/render-report-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reportData:   currentReportData,
-          authorizedBy,
-          reviewDate,
-        }),
-      });
-      const pdfText = await pdfRes.text();
-      let pdfData;
-      try { pdfData = JSON.parse(pdfText); }
-      catch { throw new Error(`PDF generation failed: ${pdfText.slice(0,200)}`); }
-      if (!pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
-
-      const pdfPages = pdfData.pdfPages || [];
+      const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
 
       if (sendEmail) {
-        statusEl.textContent = '⏳ Sending email...';
-        // Send via send-report, passing base64 PDF pages
+        // ── Email: send report data to server for PDF generation + email ────
+        statusEl.textContent = '⏳ Generating PDF and sending email...';
         const res = await fetch('/api/send-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            labId:         currentReportData.labId || currentReportData.meta?.labId,
-            pdfPages,
-            reportType:    currentReportData.reportType,
+            labId,
+            reportData:   currentReportData,
+            reportType:   currentReportData.reportType,
             authorizedBy,
             overrideEmail,
           }),
         });
-        const text = await res.text();
-        let data;
-        try { data = JSON.parse(text); } catch { throw new Error('Send failed: ' + text.slice(0,120)); }
-        if (!res.ok) throw new Error(data.error);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Send failed');
         statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ Report emailed to ${data.sentTo}`;
-        showToast(`✅ Emailed to ${data.sentTo}`);
+        statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
+        showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
       } else {
-        // Download PDF in browser
-        statusEl.textContent = '⏳ Preparing download...';
-        // Merge pages (simple concatenation — browser PDF viewer shows all pages)
-        // For now download first page; full merge would require pdf-lib on client
-        for (let i = 0; i < pdfPages.length; i++) {
-          const blob = base64ToBlob(pdfPages[i], 'application/pdf');
-          const url  = URL.createObjectURL(blob);
-          const a    = document.createElement('a');
-          const labId = currentReportData.labId || 'report';
-          a.href     = url;
-          a.download = pdfPages.length === 1
-            ? `${labId}_COA.pdf`
-            : `${labId}_COA_page${i+1}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
+        // ── Print: open browser print dialog ────────────────────────────────
+        statusEl.textContent = '⏳ Opening print dialog...';
+        const reportEl = document.getElementById('rpt-live-preview');
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`<!DOCTYPE html>
+<html><head><title>${labId} COA</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #000; margin: 20px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:12px; }
+  th { background:#1F3864; color:white; padding:6px 8px; font-size:11px; border:1px solid #333; }
+  td { padding:5px 8px; border:1px solid #ccc; font-size:12px; }
+  h2 { text-align:center; color:#003A5C; }
+  [contenteditable] { border:none !important; outline:none !important; }
+  div[style*="dashed"] { border:none !important; }
+  @media print { @page { margin:1cm; } body { margin:0; } }
+</style></head><body>
+${reportEl.innerHTML}
+<div style="margin-top:20px;border-top:1px solid #ccc;padding-top:12px;font-size:12px;">
+  <strong>Authorized By:</strong> ${authorizedBy} &nbsp;&nbsp;&nbsp;
+  <strong>Review Date:</strong> ${reviewDate}
+</div>
+</body></html>`);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 500);
         statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ PDF downloaded (${pdfPages.length} page${pdfPages.length>1?'s':''})`;
+        statusEl.textContent = `✅ Print dialog opened for ${labId}`;
       }
 
       // ── Mark Lab ID as Reported ───────────────────────────────────────────
