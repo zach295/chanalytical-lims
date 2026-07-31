@@ -5581,9 +5581,9 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = `✅ Print dialog opened for ${labId}`;
       }
 
-      // ── Mark Lab ID as Reported ───────────────────────────────────────────
+      // ── Mark Lab ID as Reported (only when emailing, not when printing) ──
       const reportedBaseId = (currentReportData.labId || currentReportData.meta?.labId || '').replace(/\s+\w+$/, '').trim();
-      if (reportedBaseId) {
+      if (reportedBaseId && sendEmail) {
         try {
           const markRes  = await fetch('/api/accession-status', {
             method: 'POST',
@@ -5596,7 +5596,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch(e) {
           console.warn('mark-reported failed:', e.message);
         }
-        // Always refresh dropdown — with small delay to let Sheets API settle
+        // Refresh dropdown after email sent
         setTimeout(() => {
           loadPendingLabIds();
           const sel = document.getElementById('rpt-labid-select');
