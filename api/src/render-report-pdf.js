@@ -48,11 +48,14 @@ async function graphBatch(reqs, token, sid) {
   return r.ok ? (await r.json()).responses || [] : [];
 }
 
+function normalizeCell(v) {
+  return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
+}
 function findLabel(rows, label) {
-  const l = label.toLowerCase().trim();
+  const l = normalizeCell(label);
   for (let r = 0; r < rows.length; r++) {
     for (let c = 0; c < (rows[r] || []).length; c++) {
-      const v = String(rows[r][c] || '').toLowerCase().trim();
+      const v = normalizeCell(rows[r][c]);
       if (v === l || v.startsWith(l)) return { r, c };
     }
   }
@@ -100,13 +103,13 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // Parameter table
   let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1;
   for (let r = 0; r < rows.length; r++) {
-    const rl = (rows[r] || []).map(c => String(c || '').toLowerCase().trim());
-    if (rl.some(c => c.includes('your result'))) {
+    const rl = (rows[r] || []).map(c => normalizeCell(c));
+    if (rl.some(c => c.includes('your result') || c.includes('result'))) {
       hdrRow = r;
       rl.forEach((c, i) => {
-        if (c.includes('your result'))                         colResult = i;
-        else if (c.includes('preparation') || c.includes('prep date')) colPrepDT = i;
-        else if (c.includes('analysis date'))                  colAnalDT = i;
+        if (c.includes('your result') || c === 'result')       colResult = i;
+        else if (c.includes('preparation') || c.includes('prep')) colPrepDT = i;
+        else if (c.includes('analysis') || c.includes('anal')) colAnalDT = i;
       });
       break;
     }
@@ -116,12 +119,12 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   if (hdrRow >= 0) {
     const pMap = {};
     for (let r = hdrRow + 1; r < rows.length; r++) {
-      const name = String((rows[r] || [])[0] || '').trim();
-      if (name) pMap[name.toLowerCase()] = r;
+      const name = normalizeCell((rows[r] || [])[0]);
+      if (name) pMap[name] = r;
     }
     const cx = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
     for (const [nl, ri] of Object.entries(pMap)) {
-      const p = params.find(x => x.name.toLowerCase().trim() === nl);
+      const p = params.find(x => normalizeCell(x.name) === nl);
       if (!p) { toDelete.push(ri + 1); }
       else {
         colorUpdates.push({ url: `${base}/range(address='B${ri + 1}')/format/fill`, body: { color: cx[p.color||'none']||'#FFFFFF' } });
@@ -132,8 +135,15 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     }
   }
 
+  context.log(`[pdf] Updates: ${cellUpdates.length} cells, ${colorUpdates.length} colors, ${toDelete.length} deletes`);
+  context.log(`[pdf] colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT} hdrRow=${hdrRow}`);
+
   // Send cell + color updates in batches of 20
-  for (let i = 0; i < cellUpdates.length; i += 20) await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
+  for (let i = 0; i < cellUpdates.length; i += 20) {
+    const resp = await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
+    const errs = resp.filter(r => r.status >= 400);
+    if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0,2)));
+  }
   for (let i = 0; i < colorUpdates.length; i += 20) await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
 
   // Delete unused rows bottom-to-top (must be sequential)
@@ -224,6 +234,14 @@ app.http('render-report-pdf', {
     if (wr.ok) sheets = (await wr.json()).value || [];
     context.log('[pdf] Sheets:', sheets.map(s => s.name).join(', '));
     const ws = name => sheets.find(s => s.name === name);
+
+    // Ensure each visible sheet starts on its own page in the PDF
+    for (const sheet of sheets) {
+      await gReq('PATCH',
+        `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/pageLayout`,
+        token, { fitToPage: false }, sid
+      ).catch(() => {});
+    }
 
     // ── Fill sheets ─────────────────────────────────────────────────────────
     if (isRadon) {
