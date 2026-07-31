@@ -1,366 +1,347 @@
 /**
  * render-report-pdf.js — Azure version
- * 1. Copies the Report Templates.xlsx from SharePoint
- * 2. Uses Excel Workbook API to fill values (preserves all formatting/logo)
+ * 1. Copies Report Templates.xlsx from SharePoint
+ * 2. Fills in header fields and parameter results via Excel Workbook API
  * 3. Deletes rows for parameters not in this test
- * 4. Downloads as PDF via Graph (?format=pdf)
- * 5. Cleans up the temp copy
- * 6. Returns base64 PDF
- *
- * POST { reportData, authorizedBy, reviewDate }
+ * 4. Hides unused sheets (Radon/FHA if not needed)
+ * 5. Downloads as PDF via Graph ?format=pdf
+ * 6. Cleans up temp copy
+ * Returns { success, pdfBase64, fileName }
  */
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-// ── Template location ─────────────────────────────────────────────────────────
-// SP_REPORT_TEMPLATE env var — full SharePoint path to Report Templates.xlsx
-// e.g. /sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx
-function toDrivePath(fullPath) {
-  const marker = 'Shared Documents/';
-  const idx    = fullPath.indexOf(marker);
-  const rel    = idx >= 0 ? fullPath.slice(idx + marker.length) : fullPath.replace(/^\/+/, '');
-  return rel.split('/').map(s => encodeURIComponent(s)).join('/');
+const SHEET_LAB    = 'Lab Report - Template';
+const SHEET_FHA    = 'FHA Lab Report - Template';
+const SHEET_RADON  = 'Radon Lab Report - Template';
+const SHEET_NOTES  = 'Notations - Template';
+
+function toDrivePath(p) {
+  const m = 'Shared Documents/';
+  const i = p.indexOf(m);
+  const r = i >= 0 ? p.slice(i + m.length) : p.replace(/^\/+/, '');
+  return r.split('/').map(s => encodeURIComponent(s)).join('/');
 }
 
-async function graphReq(method, path, token, body) {
-  const opts = {
-    method,
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  };
-  if (body !== undefined) opts.body = JSON.stringify(body);
-  const res = await fetch(`${GRAPH}${path}`, opts);
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`${method} ${path} → ${res.status}: ${err.slice(0, 200)}`);
-  }
-  return res;
-}
-
-// ── Find cell by searching a column for a label ───────────────────────────────
-function findCellByLabel(rows, label) {
-  const lbl = label.toLowerCase().trim();
-  for (let r = 0; r < rows.length; r++) {
-    for (let c = 0; c < rows[r].length; c++) {
-      const cell = String(rows[r][c] || '').toLowerCase().trim();
-      if (cell === lbl || cell.startsWith(lbl)) {
-        return { row: r, col: c };
-      }
-    }
-  }
-  return null;
-}
-
-// ── Excel address helpers ──────────────────────────────────────────────────────
 function colLetter(n) {
   let s = '';
   while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
   return s;
 }
-function cellAddr(row, col) { return `${colLetter(col)}${row + 1}`; }
-function rangeAddr(r1, c1, r2, c2) { return `${cellAddr(r1,c1)}:${cellAddr(r2,c2)}`; }
 
-// ── Update a single cell value (preserves formatting) ─────────────────────────
-async function setCellValue(siteId, itemId, worksheetId, address, value, token, sessionId) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-  if (sessionId) headers['workbook-session-id'] = sessionId;
+// ── Graph helpers ─────────────────────────────────────────────────────────────
+async function gGet(path, token, sessionId) {
+  const h = { Authorization: `Bearer ${token}` };
+  if (sessionId) h['workbook-session-id'] = sessionId;
+  const r = await fetch(`${GRAPH}${path}`, { headers: h });
+  if (!r.ok) throw new Error(`GET ${path} → ${r.status}: ${await r.text().catch(()=>'')}`);
+  return r.json();
+}
 
-  const res = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${worksheetId}/range(address='${address}')`,
-    { method: 'PATCH', headers, body: JSON.stringify({ values: [[value]] }) }
-  );
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    console.warn(`setCellValue ${address}=${value}: ${res.status} ${err.slice(0,100)}`);
+async function gPatch(path, token, body, sessionId) {
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (sessionId) h['workbook-session-id'] = sessionId;
+  const r = await fetch(`${GRAPH}${path}`, { method: 'PATCH', headers: h, body: JSON.stringify(body) });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    console.warn(`PATCH ${path} → ${r.status}: ${t.slice(0,120)}`);
   }
+  return r;
 }
 
-// ── Set cell background color ─────────────────────────────────────────────────
-async function setCellColor(siteId, itemId, worksheetId, address, hexColor, token, sessionId) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-  if (sessionId) headers['workbook-session-id'] = sessionId;
-
-  await fetch(
-    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${worksheetId}/range(address='${address}')/format/fill`,
-    { method: 'PATCH', headers, body: JSON.stringify({ color: hexColor }) }
-  ).catch(e => console.warn('setCellColor:', e.message));
+async function gPost(path, token, body, sessionId) {
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (sessionId) h['workbook-session-id'] = sessionId;
+  const r = await fetch(`${GRAPH}${path}`, { method: 'POST', headers: h, body: JSON.stringify(body) });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    console.warn(`POST ${path} → ${r.status}: ${t.slice(0,120)}`);
+  }
+  return r;
 }
 
-// ── Delete a row by shifting up ───────────────────────────────────────────────
-async function deleteRow(siteId, itemId, worksheetId, rowNum, totalCols, token, sessionId) {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-  if (sessionId) headers['workbook-session-id'] = sessionId;
-
-  const addr = `A${rowNum}:${colLetter(totalCols-1)}${rowNum}`;
-  await fetch(
-    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${worksheetId}/range(address='${addr}')/delete`,
-    { method: 'POST', headers, body: JSON.stringify({ shift: 'Up' }) }
-  ).catch(e => console.warn(`deleteRow ${rowNum}:`, e.message));
-}
-
-// ── Get used range values ─────────────────────────────────────────────────────
-async function getUsedRangeValues(siteId, itemId, worksheetId, token, sessionId) {
-  const headers = { Authorization: `Bearer ${token}` };
-  if (sessionId) headers['workbook-session-id'] = sessionId;
-
-  const res = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${worksheetId}/usedRange?$select=values,rowCount,columnCount`,
-    { headers }
+// ── Set a cell value ──────────────────────────────────────────────────────────
+async function setCell(siteId, itemId, wsId, addr, value, token, sid) {
+  await gPatch(
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')`,
+    token, { values: [[value]] }, sid
   );
-  if (!res.ok) return { values: [], rowCount: 0, columnCount: 0 };
-  return res.json();
 }
 
-// ── Color mapping ─────────────────────────────────────────────────────────────
-function resultColorHex(color) {
-  return color === 'green' ? '#00B050' : color === 'red' ? '#FF0000' : color === 'blue' ? '#0070C0' : '#E0E0E0';
+// ── Set cell fill color ───────────────────────────────────────────────────────
+async function setCellColor(siteId, itemId, wsId, addr, hex, token, sid) {
+  await gPatch(
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/format/fill`,
+    token, { color: hex }, sid
+  );
 }
 
-// ── Fill a worksheet (COA or FHA) ─────────────────────────────────────────────
-async function fillWorksheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sessionId) {
-  const { values: rows, columnCount } = await getUsedRangeValues(siteId, itemId, wsId, token, sessionId);
+// ── Delete a row (shift up) ───────────────────────────────────────────────────
+async function deleteRow(siteId, itemId, wsId, rowNum, colCount, token, sid) {
+  const addr = `A${rowNum}:${colLetter(colCount - 1)}${rowNum}`;
+  await gPost(
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`,
+    token, { shift: 'Up' }, sid
+  );
+}
+
+// ── Get used range ────────────────────────────────────────────────────────────
+async function getUsedRange(siteId, itemId, wsId, token, sid) {
+  return gGet(
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,rowCount,columnCount`,
+    token, sid
+  );
+}
+
+// ── Search rows for a label, return { row, col } ──────────────────────────────
+function findLabel(rows, label) {
+  const l = label.toLowerCase().trim();
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < (rows[r]||[]).length; c++) {
+      if (String(rows[r][c]||'').toLowerCase().trim() === l) return { row: r, col: c };
+    }
+  }
+  return null;
+}
+
+// ── Fill one worksheet (COA or FHA) ──────────────────────────────────────────
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid) {
+  const { values: rows, columnCount } = await getUsedRange(siteId, itemId, wsId, token, sid);
   if (!rows || !rows.length) return;
 
-  const totalCols = columnCount || 10;
+  const nc = columnCount || 10;
 
-  // ── Fill header fields ───────────────────────────────────────────────────────
-  const headerMap = {
-    'attention':             meta.customer || '',
-    'lab id number':         labId,
-    'date/time collected':   meta.dtCollected || '',
-    'date/time received':    meta.dtReceived  || '',
-    'date reported':         today,
-    'location':              [meta.location, meta.city, meta.state, meta.zip].filter(Boolean).join(', '),
-    'authorized by':         authorizedBy,
-    'review date':           reviewDate,
+  // Header fields — value goes in the cell to the RIGHT of the label
+  const headers = {
+    'attention:':             meta.customer || '',
+    'lab id number:':         labId,
+    'date/time collected:':   meta.dtCollected || '',
+    'date/time received:':    meta.dtReceived  || '',
+    'date reported:':         today,
+    'authorized by:':         authorizedBy,
+    'review date:':           reviewDate,
   };
 
-  for (const [label, value] of Object.entries(headerMap)) {
-    const found = findCellByLabel(rows, label);
-    if (!found) continue;
-    // Value goes in the cell to the right of the label
-    const valAddr = cellAddr(found.row, found.col + 1);
-    await setCellValue(siteId, itemId, wsId, valAddr, value, token, sessionId);
+  // Location goes in cell BELOW "Location:" label
+  const locFound = findLabel(rows, 'location:');
+  if (locFound) {
+    const locAddr = `${colLetter(locFound.col)}${locFound.row + 2}`;
+    await setCell(siteId, itemId, wsId, locAddr, meta.location || '', token, sid);
+    const cityAddr = `${colLetter(locFound.col)}${locFound.row + 3}`;
+    await setCell(siteId, itemId, wsId, cityAddr,
+      [meta.city, meta.state, meta.zip].filter(Boolean).join(', '), token, sid);
   }
 
-  // ── Find parameter rows ──────────────────────────────────────────────────────
-  // Parameter names are in column A; results in the adjacent columns
-  // Find the column indices for Result, EPA, Prep Date, Anal Date
-  let headerRow = -1;
-  let colResult = 2, colEPA = 3, colUnit = 4, colMethod = 5, colPrepDT = 6, colAnalDT = 7;
+  for (const [label, value] of Object.entries(headers)) {
+    const found = findLabel(rows, label);
+    if (!found) continue;
+    const addr = `${colLetter(found.col + 1)}${found.row + 1}`;
+    await setCell(siteId, itemId, wsId, addr, value, token, sid);
+  }
+
+  // ── Find parameter table header row ──────────────────────────────────────────
+  let hdrRow = -1;
+  let colResult = -1, colPrepDT = -1, colAnalDT = -1, colColor = 1;
 
   for (let r = 0; r < rows.length; r++) {
-    const rowLow = rows[r].map(c => String(c||'').toLowerCase().trim());
+    const rowLow = (rows[r] || []).map(c => String(c || '').toLowerCase().trim());
     if (rowLow.some(c => c.includes('your result') || c === 'result')) {
-      headerRow = r;
-      // Find column positions from header row
-      rowLow.forEach((cell, i) => {
-        if (cell.includes('your result') || cell === 'result') colResult = i;
-        else if (cell.includes('epa')) colEPA = i;
-        else if (cell === 'unit') colUnit = i;
-        else if (cell === 'method') colMethod = i;
-        else if (cell.includes('prep')) colPrepDT = i;
-        else if (cell.includes('anal') || cell.includes('analysis')) colAnalDT = i;
+      hdrRow = r;
+      rowLow.forEach((c, i) => {
+        if (c.includes('your result') || c === 'result') colResult = i;
+        else if (c.includes('prep'))   colPrepDT = i;
+        else if (c.includes('anal') || c === 'analysis date/time') colAnalDT = i;
       });
       break;
     }
   }
 
-  // ── Build lookup of template params vs requested params ───────────────────────
+  if (hdrRow < 0 || colResult < 0) return; // Can't find table
+
+  // ── Map parameter names in the sheet ─────────────────────────────────────────
+  const paramMap = {}; // name.toLowerCase() → row index (0-based)
+  for (let r = hdrRow + 1; r < rows.length; r++) {
+    const name = String((rows[r] || [])[0] || '').trim();
+    if (name) paramMap[name.toLowerCase()] = r;
+  }
+
   const requestedNames = new Set(params.map(p => p.name.toLowerCase().trim()));
+  const colorMap = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
 
-  // Process rows from bottom up (so row deletion doesn't shift our indices)
-  const rowsToDelete = [];
+  // Collect rows to delete (process after fills so row numbers stay valid)
+  const toDelete = [];
 
-  for (let r = rows.length - 1; r > headerRow; r--) {
-    const paramName = String(rows[r][0] || '').trim();
-    if (!paramName) continue;
-    const paramLow  = paramName.toLowerCase().trim();
-
-    const matchedParam = params.find(p => p.name.toLowerCase().trim() === paramLow);
+  for (const [nameLow, rowIdx] of Object.entries(paramMap)) {
+    const matchedParam = params.find(p => p.name.toLowerCase().trim() === nameLow);
 
     if (!matchedParam) {
-      // Parameter not in this test — mark for deletion
-      rowsToDelete.push(r + 1); // 1-based row number for API
+      toDelete.push(rowIdx + 1); // 1-based
     } else {
-      // Fill in the result values
-      const color = resultColorHex(matchedParam.color || 'none');
-      // Color indicator cell (column B = index 1)
-      await setCellColor(siteId, itemId, wsId, cellAddr(r, 1), color, token, sessionId);
-      // Result value
-      await setCellValue(siteId, itemId, wsId, cellAddr(r, colResult), matchedParam.value || '', token, sessionId);
-      // Prep date/time
-      if (matchedParam.prepDT) await setCellValue(siteId, itemId, wsId, cellAddr(r, colPrepDT), matchedParam.prepDT, token, sessionId);
-      // Analysis date/time
-      if (matchedParam.analDT || matchedParam.time) await setCellValue(siteId, itemId, wsId, cellAddr(r, colAnalDT), matchedParam.analDT || matchedParam.time, token, sessionId);
+      // Fill color cell (col B = index 1)
+      const hex = colorMap[matchedParam.color || 'none'] || '#FFFFFF';
+      await setCellColor(siteId, itemId, wsId,
+        `${colLetter(colColor)}${rowIdx + 1}`, hex, token, sid);
+
+      // Fill result value
+      if (colResult >= 0) {
+        await setCell(siteId, itemId, wsId,
+          `${colLetter(colResult)}${rowIdx + 1}`, matchedParam.value || '', token, sid);
+      }
+
+      // Fill prep date/time
+      if (colPrepDT >= 0 && matchedParam.prepDT) {
+        await setCell(siteId, itemId, wsId,
+          `${colLetter(colPrepDT)}${rowIdx + 1}`, matchedParam.prepDT, token, sid);
+      }
+
+      // Fill analysis date/time
+      if (colAnalDT >= 0 && (matchedParam.analDT || matchedParam.time)) {
+        await setCell(siteId, itemId, wsId,
+          `${colLetter(colAnalDT)}${rowIdx + 1}`, matchedParam.analDT || matchedParam.time || '', token, sid);
+      }
     }
   }
 
-  // Delete rows for unused parameters (bottom to top so indices stay valid)
-  rowsToDelete.sort((a, b) => b - a);
-  for (const rowNum of rowsToDelete) {
-    await deleteRow(siteId, itemId, wsId, rowNum, totalCols, token, sessionId);
+  // Delete unused rows — bottom to top so row numbers stay valid
+  toDelete.sort((a, b) => b - a);
+  for (const rowNum of toDelete) {
+    await deleteRow(siteId, itemId, wsId, rowNum, nc, token, sid);
   }
+}
+
+// ── Hide a worksheet ──────────────────────────────────────────────────────────
+async function hideSheet(siteId, itemId, wsId, token, sid) {
+  await gPatch(
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`,
+    token, { visibility: 'Hidden' }, sid
+  );
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 app.http('render-report-pdf', {
-  methods: ['POST'],
+  methods:   ['POST'],
   authLevel: 'anonymous',
-  handler: async (request, context) => {
-    let tempFileId = null;
-    const siteId   = process.env.SP_SITE_ID;
+  handler:   async (request, context) => {
+    let tempId  = null;
+    const siteId = process.env.SP_SITE_ID;
 
     try {
       const { reportData, authorizedBy, reviewDate } = await request.json();
       if (!reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
 
-      const token  = await getToken();
-      const meta   = reportData.meta || {};
-      const labId  = reportData.labId || '';
+      const token      = await getToken();
+      const meta       = reportData.meta || {};
+      const labId      = reportData.labId || '';
       const params     = reportData.activeParams || reportData.paramRows || [];
       const fhaParams  = reportData.fhaParams    || reportData.fhaRows   || [];
       const needsFHA   = reportData.needsFHA;
+      const isRadon    = reportData.isRadon;
       const today      = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
 
-      // ── Find template file ──────────────────────────────────────────────────
-      const templatePath = process.env.SP_REPORT_TEMPLATE ||
+      // ── Find template ───────────────────────────────────────────────────────
+      const tmplPath = process.env.SP_REPORT_TEMPLATE ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
-      const drivePath    = toDrivePath(templatePath);
+      const dp = toDrivePath(tmplPath);
+      const tmpl = await gGet(`/sites/${siteId}/drive/root:/${dp}?$select=id,parentReference`, token);
 
-      const tmplRes = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/root:/${drivePath}?$select=id,parentReference`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!tmplRes.ok) throw new Error(`Template not found at ${templatePath}`);
-      const tmpl = await tmplRes.json();
-
-      // ── Copy template to temp file ──────────────────────────────────────────
+      // ── Copy template ───────────────────────────────────────────────────────
       const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
-      const copyRes  = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${tmpl.id}/copy`,
-        {
-          method:  'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ parentReference: tmpl.parentReference, name: tempName }),
-        }
+      const copyRes  = await gPost(
+        `/sites/${siteId}/drive/items/${tmpl.id}/copy`,
+        token, { parentReference: tmpl.parentReference, name: tempName }
       );
-      if (!copyRes.ok) throw new Error(`Copy failed: ${copyRes.status}`);
+      const monUrl = copyRes.headers?.get?.('Location');
+      if (!monUrl) throw new Error('No monitor URL from copy operation');
 
-      // Poll until copy is complete
-      const monitorUrl = copyRes.headers.get('Location');
-      let copyDone = false, tempId = null;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 1500));
-        const pollRes  = await fetch(monitorUrl, { headers: { Authorization: `Bearer ${token}` } });
-        const pollData = await pollRes.json();
-        if (pollData.status === 'completed') { tempId = pollData.resourceId; copyDone = true; break; }
-        if (pollData.status === 'failed') throw new Error('Copy operation failed');
+      // Poll until copy complete
+      for (let i = 0; i < 30; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const poll = await fetch(monUrl, { headers: { Authorization: `Bearer ${token}` } });
+        const pd   = await poll.json();
+        if (pd.status === 'completed') { tempId = pd.resourceId; break; }
+        if (pd.status === 'failed') throw new Error('Copy failed');
       }
-      if (!copyDone || !tempId) throw new Error('Copy timed out');
-      tempFileId = tempId;
+      if (!tempId) throw new Error('Copy timed out');
+      context.log(`[render-pdf] Copied: ${tempName}`);
 
-      context.log(`[render-pdf] Temp file: ${tempName} (${tempId})`);
-
-      // ── Open persistent session ─────────────────────────────────────────────
-      const sessRes = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
-        {
-          method:  'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ persistChanges: true }),
-        }
-      );
-      const sessData  = sessRes.ok ? await sessRes.json() : {};
-      const sessionId = sessData.id || null;
-      context.log(`[render-pdf] Session: ${sessionId ? 'OK' : 'none (changes may not persist)'}`);
+      // ── Open session ────────────────────────────────────────────────────────
+      const sessRes  = await gPost(`/sites/${siteId}/drive/items/${tempId}/workbook/createSession`, token, { persistChanges: true });
+      const sessJson = sessRes.ok ? await sessRes.json() : {};
+      const sid      = sessJson.id || null;
 
       // ── Get worksheets ──────────────────────────────────────────────────────
-      const wsRes  = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`,
-        { headers: { Authorization: `Bearer ${token}`, ...(sessionId ? { 'workbook-session-id': sessionId } : {}) } }
-      );
-      const wsData = wsRes.ok ? await wsRes.json() : { value: [] };
+      const wsData = await gGet(`/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, sid);
       const sheets = wsData.value || [];
+      const ws     = name => sheets.find(s => s.name === name);
+
+      const labSheet   = ws(SHEET_LAB);
+      const fhaSheet   = ws(SHEET_FHA);
+      const radonSheet = ws(SHEET_RADON);
+      const notesSheet = ws(SHEET_NOTES);
+
       context.log(`[render-pdf] Sheets: ${sheets.map(s=>s.name).join(', ')}`);
 
-      // Find COA, FHA, and Notations sheets
-      const coaSheet  = sheets.find(s => /coa|lab report|certificate/i.test(s.name) && !/fha|basic/i.test(s.name)) || sheets[0];
-      const fhaSheet  = sheets.find(s => /fha|basic safety/i.test(s.name));
-      const notSheet  = sheets.find(s => /notation/i.test(s.name));
+      if (isRadon) {
+        // Radon report: show Radon sheet + Notations, hide Lab + FHA
+        if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
+        if (fhaSheet)   await hideSheet(siteId, tempId, fhaSheet.id,   token, sid);
+        // TODO: fill radon sheet when needed
+      } else {
+        // Standard report: hide Radon sheet
+        if (radonSheet) await hideSheet(siteId, tempId, radonSheet.id, token, sid);
 
-      // ── Fill COA sheet ──────────────────────────────────────────────────────
-      if (coaSheet) {
-        await fillWorksheet(siteId, tempId, coaSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sessionId);
-        context.log('[render-pdf] COA sheet filled');
-      }
+        // Fill Lab Report sheet
+        if (labSheet) {
+          await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid);
+          context.log('[render-pdf] Lab sheet filled');
+        }
 
-      // ── Fill or hide FHA sheet ──────────────────────────────────────────────
-      if (fhaSheet) {
-        if (needsFHA && fhaParams.length) {
-          await fillWorksheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sessionId);
-          context.log('[render-pdf] FHA sheet filled');
-        } else {
-          // Hide FHA sheet if not needed
-          const hideHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-          if (sessionId) hideHeaders['workbook-session-id'] = sessionId;
-          await fetch(
-            `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`,
-            { method: 'PATCH', headers: hideHeaders, body: JSON.stringify({ visibility: 'Hidden' }) }
-          ).catch(e => context.log('Hide FHA:', e.message));
-          context.log('[render-pdf] FHA sheet hidden (not needed)');
+        // Fill or hide FHA sheet
+        if (fhaSheet) {
+          if (needsFHA && fhaParams.length) {
+            await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid);
+            context.log('[render-pdf] FHA sheet filled');
+          } else {
+            await hideSheet(siteId, tempId, fhaSheet.id, token, sid);
+            context.log('[render-pdf] FHA sheet hidden');
+          }
         }
       }
 
       // ── Close session ───────────────────────────────────────────────────────
-      if (sessionId) {
-        await fetch(
-          `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sessionId, 'Content-Type': 'application/json' } }
-        ).catch(() => {});
+      if (sid) {
+        await gPost(`/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}, sid);
       }
 
-      // ── Wait for changes to settle ──────────────────────────────────────────
-      await new Promise(r => setTimeout(r, 3000));
+      // Wait for changes to flush
+      await new Promise(r => setTimeout(r, 4000));
 
-      // ── Export as PDF ───────────────────────────────────────────────────────
-      const pdfRes = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!pdfRes.ok) throw new Error(`PDF export failed: ${pdfRes.status}`);
-      const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-      const pdfBase64 = pdfBuffer.toString('base64');
-
-      context.log(`[render-pdf] PDF generated: ${pdfBuffer.length} bytes`);
+      // ── Export PDF ──────────────────────────────────────────────────────────
+      const h       = { Authorization: `Bearer ${token}` };
+      const pdfRes  = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`, { headers: h });
+      if (!pdfRes.ok) throw new Error(`PDF export: ${pdfRes.status}`);
+      const pdfB64  = Buffer.from(await pdfRes.arrayBuffer()).toString('base64');
+      context.log(`[render-pdf] PDF: ${pdfB64.length} chars`);
 
       return {
         status: 200,
-        jsonBody: { success: true, pdfBase64, fileName: `${labId}_COA.pdf` },
+        jsonBody: { success: true, pdfBase64: pdfB64, fileName: `${labId}_COA.pdf` },
       };
 
     } catch(e) {
       context.log('[render-report-pdf] Error:', e.message);
       return { status: 500, jsonBody: { error: e.message } };
     } finally {
-      // ── Always clean up temp file ─────────────────────────────────────────
-      if (tempFileId && siteId) {
-        const token2 = await getToken().catch(() => null);
-        if (token2) {
-          await fetch(
-            `${GRAPH}/sites/${siteId}/drive/items/${tempFileId}`,
-            { method: 'DELETE', headers: { Authorization: `Bearer ${token2}` } }
-          ).catch(e => console.warn('Cleanup failed:', e.message));
+      // Always delete temp file
+      if (tempId && siteId) {
+        const t2 = await getToken().catch(() => null);
+        if (t2) {
+          await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`, {
+            method: 'DELETE', headers: { Authorization: `Bearer ${t2}` }
+          }).catch(() => {});
+          context.log('[render-pdf] Temp file deleted');
         }
       }
     }
