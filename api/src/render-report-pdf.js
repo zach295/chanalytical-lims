@@ -110,21 +110,23 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, val] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
-    addCell(f.r, f.c + 1, val);
-    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+1)}${f.r+1} = "${val}"`);
+    // Scan right for the FIRST empty cell — that's the value input cell
+    let targetCol = f.c + 1;
+    for (let dc = 1; dc <= 6; dc++) {
+      const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
+      if (!cv) { targetCol = f.c + dc; break; } // stop at first empty
+    }
+    addCell(f.r, targetCol, val);
+    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${val}"`);
   }
 
   // ── Attention block — name + address + email below ────────────────────────
   const attF = findLabel(rows, 'attention:');
   if (attF) {
     addCell(attF.r, attF.c + 1, meta.customer || '');
-    // Rows below attention: address, city/state/zip, email
-    const addrLine = meta.location || '';
-    const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+    // Row below name: client email
     const emailLine = meta.email || '';
-    if (addrLine)  addCell(attF.r + 1, attF.c + 1, addrLine);
-    if (cityLine)  addCell(attF.r + 2, attF.c + 1, cityLine);
-    if (emailLine) addCell(attF.r + 3, attF.c + 1, emailLine);
+    if (emailLine) addCell(attF.r + 1, attF.c + 1, emailLine);
   }
 
   // ── Left-side fields ──────────────────────────────────────────────────────
@@ -139,11 +141,18 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     addCell(f.r, f.c + 1, val);
   }
 
-  // ── Location — property address below "Location:" label ──────────────────
+  // ── Location — address to the RIGHT of "Location:" label, city/state/zip below ──
   const lf = findLabel(rows, 'location:');
   if (lf) {
-    addCell(lf.r + 1, lf.c, meta.location || '');
-    addCell(lf.r + 2, lf.c, [meta.city, meta.state, meta.zip].filter(Boolean).join(', '));
+    // Scan right for first empty cell on the Location row
+    let locValCol = lf.c + 1;
+    for (let dc = 1; dc <= 4; dc++) {
+      const cv = normalizeCell((rows[lf.r] || [])[lf.c + dc]);
+      if (!cv) { locValCol = lf.c + dc; break; }
+    }
+    const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+    addCell(lf.r,     locValCol, meta.location || '');  // address on same row as Location:
+    addCell(lf.r + 1, locValCol, cityLine);              // city/state/zip on next row
   }
 
   // Find parameter table header row
