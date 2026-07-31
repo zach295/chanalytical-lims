@@ -5433,24 +5433,147 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = '⏳ Opening print dialog...';
         const reportEl = document.getElementById('rpt-live-preview');
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`<!DOCTYPE html>
-<html><head><title>${labId} COA</title>
+        const m = currentReportData.meta || {};
+        const isRW = currentReportData.isRadon;
+        const needsFHA = currentReportData.needsFHA;
+        const params = currentReportData.activeParams || [];
+        const fhaParams = currentReportData.fhaParams || [];
+        const rmap = currentReportData.resultsMap || {};
+
+        const colorHex = (color) => color === 'green' ? '#00B050' : color === 'red' ? '#FF0000' : color === 'blue' ? '#0070C0' : '#E0E0E0';
+
+        const paramRow = (p) => {
+          const res = rmap[p.name] || {};
+          const val = res.value !== undefined ? res.value : '';
+          const color = currentReportData ? (typeof resultColor === 'function' ? resultColor(p.name, val, p.epa) : 'none') : 'none';
+          const bg = val ? colorHex(color) : '#E0E0E0';
+          const prepDT = res.prepDT || '';
+          const analDT = res.analDT || res.time || '';
+          return \`<tr>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${p.name}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;background:\${bg};text-align:center;font-weight:600;">\${val}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">\${p.epa || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">\${p.unit || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${p.method || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${prepDT}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${analDT}</td>
+          </tr>\`;
+        };
+
+        const paramTable = (rows) => \`
+          <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
+            <thead>
+              <tr style="background:#1F3864;color:white;">
+                <th style="padding:6px 8px;text-align:left;border:1px solid #333;width:22%;">Parameter</th>
+                <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:10%;">Your Result</th>
+                <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:9%;">EPA Limit</th>
+                <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:7%;">Unit</th>
+                <th style="padding:6px 8px;text-align:left;border:1px solid #333;width:13%;">Method</th>
+                <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:16%;">Preparation Date/Time</th>
+                <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:16%;">Analysis Date/Time</th>
+              </tr>
+            </thead>
+            <tbody>\${rows.map(p => paramRow(p)).join('')}</tbody>
+          </table>\`;
+
+        const today = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
+
+        printWindow.document.write(\`<!DOCTYPE html>
+<html><head><title>\${labId} COA</title>
 <style>
-  body { font-family: Arial, sans-serif; font-size: 12px; color: #000; margin: 20px; }
-  table { width:100%; border-collapse:collapse; margin-bottom:12px; }
-  th { background:#1F3864; color:white; padding:6px 8px; font-size:11px; border:1px solid #333; }
-  td { padding:5px 8px; border:1px solid #ccc; font-size:12px; }
-  h2 { text-align:center; color:#003A5C; }
-  [contenteditable] { border:none !important; outline:none !important; }
-  div[style*="dashed"] { border:none !important; }
-  @media print { @page { margin:1cm; } body { margin:0; } }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Arial,sans-serif; font-size:11px; color:#000; padding:16px; }
+  .page { max-width:800px; margin:0 auto; }
+  .hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px; border-bottom:3px solid #1F3864; padding-bottom:6px; }
+  .logo { font-size:14px; font-weight:700; color:#1F3864; line-height:1.3; }
+  .logo span { font-size:11px; font-weight:400; display:block; }
+  .hdr-right { text-align:right; font-size:11px; }
+  h1 { text-align:center; font-size:20px; color:#1F3864; margin:14px 0 12px; }
+  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; margin-bottom:12px; font-size:11px; }
+  .info-row { display:flex; gap:4px; padding:2px 0; }
+  .info-label { font-weight:700; white-space:nowrap; }
+  .legend { border:1px solid #999; padding:8px; font-size:10px; }
+  .legend-title { font-weight:700; text-align:center; margin-bottom:4px; }
+  .legend-row { display:flex; align-items:center; gap:6px; margin:2px 0; }
+  .legend-box { width:16px; height:12px; display:inline-block; }
+  .comments { border:1px solid #ccc; min-height:40px; padding:6px; margin:8px 0 16px; font-size:11px; }
+  .notations { font-size:10px; margin-top:12px; }
+  .notations p { margin-bottom:6px; }
+  .footer-line { border-top:2px solid #1F3864; margin-top:16px; padding-top:8px; font-size:11px; }
+  @media print { @page { margin:0.75cm; size:letter portrait; } body { padding:0; } }
 </style></head><body>
-${reportEl.innerHTML}
-<div style="margin-top:20px;border-top:1px solid #ccc;padding-top:12px;font-size:12px;">
-  <strong>Authorized By:</strong> ${authorizedBy} &nbsp;&nbsp;&nbsp;
-  <strong>Review Date:</strong> ${reviewDate}
+<div class="page">
+  <!-- Header -->
+  <div class="hdr">
+    <div class="logo">Chanalytical Laboratories, Inc.<span>347 Main St., Unit 1B &nbsp; Gorham, ME 04038<br>Phone: 207-747-1815 &nbsp; Email: Labs@chanalytical.com</span></div>
+    <div class="hdr-right" style="font-size:10px;color:#555;">\${today} &nbsp;&nbsp; \${labId} COA</div>
+  </div>
+
+  <h1>Certificate of Analysis</h1>
+
+  <!-- Info + Legend -->
+  <div style="display:flex;gap:20px;margin-bottom:14px;">
+    <div style="flex:1;font-size:11px;">
+      <div class="info-row"><span class="info-label">Attention:</span> <span>\${m.customer || ''}</span></div>
+      <div style="font-size:10px;color:#555;margin-left:0;margin-bottom:4px;">\${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</div>
+      <div class="info-row"><span class="info-label">Date/Time Collected:</span> <span>\${m.dtCollected || ''}</span></div>
+      <div class="info-row"><span class="info-label">Date Reported:</span> <span>\${today}</span></div>
+      <div class="info-row" style="margin-top:4px;"><span class="info-label">Location:</span> <span>\${m.location || ''}</span></div>
+      <div class="info-row"><span class="info-label" style="opacity:0;">.</span><span>\${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</span></div>
+      <div class="info-row"><span class="info-label">Sample Type:</span> <span>Potability</span></div>
+    </div>
+    <div style="width:220px;">
+      <div style="float:right;text-align:right;margin-bottom:8px;font-size:11px;">
+        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Lab ID Number:</span> <span>\${labId}</span></div>
+        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Date/Time Received:</span> <span>\${m.dtReceived || ''}</span></div>
+      </div>
+      <div style="clear:both;"></div>
+      <div class="legend">
+        <div class="legend-title">Legend</div>
+        <div class="legend-row"><span class="legend-box" style="background:#00B050;"></span> Meets Acceptable EPA Limits</div>
+        <div class="legend-row"><span class="legend-box" style="background:#0070C0;"></span> See Notation</div>
+        <div class="legend-row"><span class="legend-box" style="background:#FF0000;"></span> Does Not Meet EPA Limits</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parameter Table -->
+  \${paramTable(params)}
+
+  <!-- Comments -->
+  <div><strong>Comments:</strong></div>
+  <div class="comments">\${currentReportData._comments || ''}</div>
+
+  \${needsFHA ? \`
+  <div style="page-break-before:always;padding-top:20px;">
+    <div class="hdr"><div class="logo">Chanalytical Laboratories, Inc.</div><div class="hdr-right" style="font-size:10px;">\${today} &nbsp;&nbsp; \${labId} COA</div></div>
+    <h1>Certificate of Analysis — FHA</h1>
+    <div style="font-size:11px;margin-bottom:10px;"><strong>Sample Type:</strong> Potability (FHA)</div>
+    \${paramTable(fhaParams)}
+  </div>\` : ''}
+
+  <!-- Notations -->
+  <div class="notations">
+    <div style="border-top:2px solid #1F3864;padding-top:10px;margin-top:16px;">
+      <p><strong>The following Notations may be referenced above.</strong></p>
+      <p><strong>Notation 1:</strong> The Maximum Exposure Guideline (MEG) is a health-based guideline set by the Maine Center for Disease Control and Prevention (MECDC). MEGs are recommendations for concentrations of chemical contaminants for all drinking water systems below which there is minimal risk of a harmful health effect from long-term ingestion of contaminated water.</p>
+      <p><strong>Notation 2:</strong> The Maximum Contaminant Level (MCL) is set by the United States Environmental Protection Agency (USEPA) through the National Primary Drinking Water Regulations and are legally enforceable drinking water standards that apply to all public water systems.</p>
+      <p><strong>Notation 3:</strong> The Secondary Maximum Contaminant Level (SMCL) is set by the United States Environmental Protection Agency (USEPA) through the National Secondary Drinking Water Regulations and these contaminants are not considered to present a risk to human health at the SMCL.</p>
+      <p><strong>Notation 4:</strong> According to the EPA revised total coliform rule (effective April 1st, 2016) total coliform bacteria are no longer considered a primary contaminant. Total coliform bacteria are still used as indicator organisms for the presence of pathogens.</p>
+      <p style="margin-top:8px;"><em>This report shall not be reproduced, except in full, without written permission from Chanalytical Laboratories Inc.</em></p>
+      <p><strong>If you have any questions regarding your results please call 207-747-1815</strong></p>
+      <p style="margin-top:8px;font-size:10px;">Reporting Limits as of 9/17/25: Chloride 2.00, Fluoride 0.20, Nitrite 0.20, Nitrate 1.00, Arsenic 1.00, Lead 1.00, Uranium 1.00, Copper 0.001, Iron 0.05, Manganese 0.001, Sodium 1.00, Calcium 0.20, Magnesium 0.1, Sulfate 40.00, Alkalinity 40.00, Antimony 0.0005, Chromium 0.002, Cadmium 0.002</p>
+      <p style="font-size:10px;margin-top:6px;">Analytical results and reports are generated by Chanalytical Laboratories, Inc. at the request of and for the exclusive use of the person or entity (client) named on this report. Results, reports, or copies of the same will not be released by Chanalytical Laboratories, Inc. to any third party without the prior express written consent from the client named in this report.</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-line">
+    <strong>Authorized By:</strong> \${authorizedBy} &nbsp;&nbsp;&nbsp;&nbsp;
+    <strong>Review Date:</strong> \${reviewDate}
+  </div>
 </div>
-</body></html>`);
+</body></html>\`);
         printWindow.document.close();
         printWindow.focus();
         setTimeout(() => { printWindow.print(); }, 500);
