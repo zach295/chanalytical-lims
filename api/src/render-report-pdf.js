@@ -101,7 +101,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   }
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
-  // These labels have their value cells to the right — try col+1 through col+4
   const rightHdrs = {
     'lab id number:':       labId,
     'date/time collected:': meta.dtCollected || '',
@@ -111,11 +110,8 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, val] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
-    // Try col+1 through col+4 — send all, whichever succeeds wins
-    for (let dc = 1; dc <= 4; dc++) {
-      addCell(f.r, f.c + dc, val);
-    }
-    context.log(`[pdf] "${lbl}" → cols ${f.c+1}-${f.c+4} row ${f.r+1} = "${val}"`);
+    addCell(f.r, f.c + 1, val);
+    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+1)}${f.r+1} = "${val}"`);
   }
 
   // ── Attention block — name + address + email below ────────────────────────
@@ -196,21 +192,38 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   context.log(`[pdf] ${cellUpdates.length} cells, ${colorUpdates.length} colors, ${toDelete.length} rows to delete`);
 
-  // Send updates in batches of 20
+  // Send cell value updates first
   for (let i = 0; i < cellUpdates.length; i += 20) {
     const resp = await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
     const errs = resp.filter(r => parseInt(r.status) >= 400);
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
-  for (let i = 0; i < colorUpdates.length; i += 20) {
-    await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
-  }
 
-  // Delete unused rows bottom-to-top (sequential — order matters)
-  for (const r of toDelete.sort((a, b) => b - a)) {
+  // Delete unused rows bottom-to-top BEFORE setting colors
+  // (so color row addresses are correct for the final sheet layout)
+  const toDeleteSorted = toDelete.sort((a, b) => b - a);
+  for (const r of toDeleteSorted) {
     const addr = `A${r}:${colLetter((nc || 10) - 1)}${r}`;
     const dr = await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
     if (!dr.ok) context.log(`[pdf] Delete row ${r} failed:`, dr.status);
+  }
+
+  // Re-build color updates with FINAL row numbers (after deletions shifted rows up)
+  // Count how many rows were deleted ABOVE each color row and adjust
+  const finalColorUpdates = colorUpdates.map(cu => {
+    // Extract row number from URL like .../range(address='B17')/...
+    const m = cu.url.match(/address='B(\d+)'/);
+    if (!m) return cu;
+    const origRow = parseInt(m[1]);
+    // Count deleted rows above this row
+    const deletedAbove = toDeleteSorted.filter(d => d < origRow).length;
+    const newRow = origRow - deletedAbove;
+    return { ...cu, url: cu.url.replace(`B${origRow}`, `B${newRow}`) };
+  });
+
+  // Set colors LAST — after row deletions and after CF was cleared
+  for (let i = 0; i < finalColorUpdates.length; i += 20) {
+    await graphBatch(finalColorUpdates.slice(i, i + 20), token, sid);
   }
 }
 
