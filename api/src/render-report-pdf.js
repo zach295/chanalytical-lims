@@ -101,24 +101,34 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   }
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
+  // Template has: label | (merge gap) | value | (time cell for date fields)
   const rightHdrs = {
-    'lab id number:':       labId,
-    'date/time collected:': meta.dtCollected || '',
-    'date/time received:':  meta.dtReceived  || '',
-    'date reported:':       today,
+    'lab id number:':       { val: labId,                split: false },
+    'date/time collected:': { val: meta.dtCollected||'', split: true  },
+    'date/time received:':  { val: meta.dtReceived ||'', split: true  },
+    'date reported:':       { val: today,                split: false },
   };
-  for (const [lbl, val] of Object.entries(rightHdrs)) {
+  for (const [lbl, cfg] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
-    // col+1 is typically the interior of the merged label cell (silent fail)
-    // Start scanning from col+2 to find the actual input cell
+    // col+1 is merge interior — start from col+2 for the actual input cell
     let targetCol = f.c + 2;
     for (let dc = 2; dc <= 6; dc++) {
       const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
       if (!cv) { targetCol = f.c + dc; break; }
     }
-    addCell(f.r, targetCol, val);
-    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${val}"`);
+    if (cfg.split && cfg.val.includes(' ')) {
+      // Date/Time fields: split "7/27/2026 8:30" → date cell | time cell
+      const spaceIdx = cfg.val.indexOf(' ');
+      const datePart = cfg.val.slice(0, spaceIdx);
+      const timePart = cfg.val.slice(spaceIdx + 1);
+      addCell(f.r, targetCol,     datePart);
+      addCell(f.r, targetCol + 1, timePart);
+      context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1}="${datePart}" ${colLetter(targetCol+1)}${f.r+1}="${timePart}"`);
+    } else {
+      addCell(f.r, targetCol, cfg.val);
+      context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${cfg.val}"`);
+    }
   }
 
   // ── Attention block — name + address + email below ────────────────────────
