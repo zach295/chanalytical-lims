@@ -77,6 +77,7 @@ app.http('accession-status', {
           if (coaTest && !byBase[baseId].tests.includes(coaTest))   byBase[baseId].tests.push(coaTest);
           if (status === 'Sent' || status === 'Reported')            byBase[baseId].status = 'Sent';
           if (!byBase[baseId].customer && customer)                  byBase[baseId].customer = customer;
+          if (!byBase[baseId].rawCustomer && rawCustomer)             byBase[baseId].rawCustomer = rawCustomer;
         }
 
         const all      = Object.values(byBase);
@@ -101,8 +102,11 @@ app.http('accession-status', {
             }
             // Add email to each pending entry
             for (const entry of pending) {
-              const raw = (entry.customer || '').toLowerCase().trim();
-              entry.email = emailMap[raw] || emailMap[formatCustomerName(entry.customer).toLowerCase()] || '';
+              // Try raw stored name first (e.g. "Public-Chandler, Zach")
+              // then formatted name (e.g. "Zach Chandler")
+              const rawKey       = (entry.rawCustomer || entry.customer || '').toLowerCase().trim();
+              const formattedKey = formatCustomerName(entry.rawCustomer || entry.customer || '').toLowerCase().trim();
+              entry.email = emailMap[rawKey] || emailMap[formattedKey] || '';
             }
           }
         } catch(e) { /* email lookup optional */ }
