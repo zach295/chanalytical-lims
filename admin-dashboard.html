@@ -5410,15 +5410,26 @@ document.addEventListener('DOMContentLoaded', function() {
       const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
 
       if (sendEmail) {
-        // ── Email: send report data to server for PDF generation + email ────
-        statusEl.textContent = '⏳ Generating PDF and sending email...';
+        // ── Step 1: Generate PDF from template ──────────────────────────────
+        statusEl.textContent = '⏳ Generating PDF from template...';
+        const pdfRes = await fetch('/api/render-report-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData = await pdfRes.json().catch(() => ({}));
+        if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+
+        // ── Step 2: Email the PDF ────────────────────────────────────────────
+        statusEl.textContent = '⏳ Sending email...';
         const res = await fetch('/api/send-report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             labId,
-            reportData:   currentReportData,
-            reportType:   currentReportData.reportType,
+            pdfBase64:  pdfData.pdfBase64,
+            fileName:   pdfData.fileName,
+            reportType: currentReportData.reportType,
             authorizedBy,
             overrideEmail,
           }),
@@ -5429,8 +5440,39 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
       } else {
-        // ── Print: open browser print dialog ────────────────────────────────
-        statusEl.textContent = '⏳ Opening print dialog...';
+        // ── Save PDF: generate from template and download ────────────────────
+        statusEl.textContent = '⏳ Generating PDF from template...';
+        try {
+          const pdfRes = await fetch('/api/render-report-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+          });
+          const pdfData = await pdfRes.json().catch(() => ({}));
+          if (pdfRes.ok && pdfData.success && pdfData.pdfBase64) {
+            const bytes = Uint8Array.from(atob(pdfData.pdfBase64), c => c.charCodeAt(0));
+            const blob  = new Blob([bytes], { type: 'application/pdf' });
+            const url   = URL.createObjectURL(blob);
+            const a     = document.createElement('a');
+            a.href = url; a.download = pdfData.fileName || (labId + '_COA.pdf');
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+            statusEl.style.color = 'var(--success)';
+            statusEl.textContent = `✅ PDF downloaded: ${pdfData.fileName}`;
+            showToast(`✅ PDF saved`);
+            // skip browser print fallback
+            const reportedBaseId2 = (currentReportData.labId||'').split(' ')[0].trim();
+            if (reportedBaseId && sendEmail) { /* handled below */ }
+            // log and return early
+            const rLabId2 = currentReportData.labId || currentReportData.meta?.labId || '';
+            logActivity({ date: new Date().toISOString().split('T')[0], client: currentReportData.meta?.customer || rLabId2, type: 'report_saved', qty: 1, notes: 'PDF saved — Lab ID: ' + rLabId2, by: authorizedBy });
+            reportHistory.unshift({ labId: rLabId2, emailed: false, by: authorizedBy, time: new Date().toLocaleTimeString() });
+            renderReportHistory();
+            return;
+          }
+        } catch(pdfErr) { context?.log?.('[PDF]', pdfErr.message); }
+        // Fallback to browser print if PDF generation fails
+        statusEl.textContent = '⏳ Opening print dialog (template unavailable)...';
         const reportEl = document.getElementById('rpt-live-preview');
         const printWindow = window.open('', '_blank');
         const m = currentReportData.meta || {};
