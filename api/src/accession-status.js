@@ -88,28 +88,38 @@ app.http('accession-status', {
         try {
           const token  = await getToken();
           const siteId = process.env.SP_SITE_ID;
+          // Use same field names as clients-read.js (Title=name, Email=email)
           const cRes   = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,Email)&$top=500`,
+            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,Email,Aliases)&$top=500`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (cRes.ok) {
             const cData = await cRes.json();
             const emailMap = {};
             for (const item of (cData.value || [])) {
-              const f = item.fields || {};
-              const name = (f.Title || f.ClientName || '').trim();
-              if (name && f.Email) emailMap[name.toLowerCase()] = f.Email;
+              const f    = item.fields || {};
+              const name = (f.Title || '').trim();
+              const email = (f.Email || '').trim();
+              if (name && email) {
+                emailMap[name.toLowerCase()] = email;
+                // Also index by formatted version of Public- names
+                const fmt = formatCustomerName(name).toLowerCase();
+                if (fmt !== name.toLowerCase()) emailMap[fmt] = email;
+                // Index by aliases too
+                for (const alias of (f.Aliases || '').split(',').map(a => a.trim()).filter(Boolean)) {
+                  emailMap[alias.toLowerCase()] = email;
+                }
+              }
             }
-            // Add email to each pending entry
+            // Add email to each pending entry — try all name variants
             for (const entry of pending) {
-              // Try raw stored name first (e.g. "Public-Chandler, Zach")
-              // then formatted name (e.g. "Zach Chandler")
-              const rawKey       = (entry.rawCustomer || entry.customer || '').toLowerCase().trim();
-              const formattedKey = formatCustomerName(entry.rawCustomer || entry.customer || '').toLowerCase().trim();
-              entry.email = emailMap[rawKey] || emailMap[formattedKey] || '';
+              const raw  = (entry.rawCustomer || '').toLowerCase().trim();
+              const fmt  = formatCustomerName(entry.rawCustomer || entry.customer || '').toLowerCase().trim();
+              const disp = (entry.customer || '').toLowerCase().trim();
+              entry.email = emailMap[raw] || emailMap[fmt] || emailMap[disp] || '';
             }
           }
-        } catch(e) { /* email lookup optional */ }
+        } catch(e) { console.warn('[accession-status] email lookup failed:', e.message); }
 
         return {
           status: 200,
