@@ -5443,13 +5443,23 @@ document.addEventListener('DOMContentLoaded', function() {
         function _colorHex(color) {
           return color === 'green' ? '#00B050' : color === 'red' ? '#FF0000' : color === 'blue' ? '#0070C0' : '#E0E0E0';
         }
+        function _inlineColor(name, val, epa) {
+          if (!val) return '#E0E0E0';
+          var s = String(val);
+          if (s.startsWith('<')) return '#00B050';
+          if (name === 'pH Electrometric') { var n = parseFloat(s); return isNaN(n) ? '#E0E0E0' : (n >= 6.5 && n <= 8.5) ? '#00B050' : '#FF0000'; }
+          if (!epa) return '#0070C0';
+          var n = parseFloat(s); if (isNaN(n)) return '#0070C0';
+          return n <= parseFloat(epa) ? '#00B050' : '#FF0000';
+        }
         function _paramRow(p) {
+          // p is from activeParams which already has value, color, prepDT, analDT from server
+          // Check resultsMap for user-edited values
           var res = rmap[p.name] || {};
-          var val = res.value !== undefined ? res.value : '';
-          var color = resultColor(p.name, val, p.epa);
-          var bg = val ? _colorHex(color) : '#E0E0E0';
-          var prepDT = res.prepDT || '';
-          var analDT = res.analDT || res.time || '';
+          var val = (res.value !== undefined && res.value !== '') ? res.value : (p.value || '');
+          var bg = val ? _inlineColor(p.name, val, p.epa) : '#E0E0E0';
+          var prepDT = res.prepDT || p.prepDT || '';
+          var analDT = res.analDT || res.time || p.analDT || p.time || '';
           return '<tr>' +
             '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">' + p.name + '</td>' +
             '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;background:' + bg + ';text-align:center;font-weight:600;">' + val + '</td>' +
