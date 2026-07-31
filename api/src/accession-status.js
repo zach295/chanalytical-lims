@@ -82,6 +82,30 @@ app.http('accession-status', {
         const pending  = all.filter(r => r.status !== 'Sent' && r.status !== 'Reported');
         const reported = all.filter(r => r.status === 'Sent' || r.status === 'Reported');
 
+        // Fetch client emails from Clients list
+        try {
+          const token  = await require('../shared/graph').getToken();
+          const siteId = process.env.SP_SITE_ID;
+          const cRes   = await fetch(
+            `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,Email)&$top=500`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            const emailMap = {};
+            for (const item of (cData.value || [])) {
+              const f = item.fields || {};
+              const name = (f.Title || f.ClientName || '').trim();
+              if (name && f.Email) emailMap[name.toLowerCase()] = f.Email;
+            }
+            // Add email to each pending entry
+            for (const entry of pending) {
+              const raw = (entry.customer || '').toLowerCase().trim();
+              entry.email = emailMap[raw] || emailMap[formatCustomerName(entry.customer).toLowerCase()] || '';
+            }
+          }
+        } catch(e) { /* email lookup optional */ }
+
         return {
           status: 200,
           headers: { 'content-type': 'application/json' },
