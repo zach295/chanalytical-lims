@@ -84,36 +84,31 @@ app.http('accession-status', {
         const pending  = all.filter(r => r.status !== 'Sent' && r.status !== 'Reported');
         const reported = all.filter(r => r.status === 'Sent' || r.status === 'Reported');
 
-        // Fetch client emails from Clients list
+        // Fetch client emails using listItems (known working)
         try {
-          const token  = await getToken();
-          const siteId = process.env.SP_SITE_ID;
-          // Use same field names as clients-read.js (Title=name, Email=email)
-          const cRes   = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,Email)&$top=500`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (cRes.ok) {
-            const cData = await cRes.json();
-            const emailMap = {};
-            for (const item of (cData.value || [])) {
-              const f    = item.fields || {};
-              const name  = (f.Title || '').trim();
-              const email = (f.Email || '').trim();
-              if (name && email) {
-                emailMap[name.toLowerCase()] = email;
-                // Also index by formatted Public- name e.g. "Zach Chandler"
-                const fmt = formatCustomerName(name).toLowerCase();
-                if (fmt !== name.toLowerCase()) emailMap[fmt] = email;
-              }
-            }
-            // Add email to each pending entry — try all name variants
-            for (const entry of pending) {
-              const raw  = (entry.rawCustomer || '').toLowerCase().trim();
-              const fmt  = formatCustomerName(entry.rawCustomer || entry.customer || '').toLowerCase().trim();
-              const disp = (entry.customer || '').toLowerCase().trim();
-              entry.email = emailMap[raw] || emailMap[fmt] || emailMap[disp] || '';
-            }
+          const clients = await listItems('Clients', { top: 500 });
+          // Build emailMap indexed by every name variant
+          const emailMap = {};
+          for (const c of clients) {
+            const name  = (c.Title || c.ClientName || '').trim();
+            const email = (c.Email || '').trim();
+            if (!name || !email) continue;
+            emailMap[name.toLowerCase()] = email;
+            // Also index formatted version: "Public-Chandler, Zach" → "Zach Chandler"
+            const fmt = formatCustomerName(name).toLowerCase();
+            if (fmt !== name.toLowerCase()) emailMap[fmt] = email;
+          }
+          // Match each pending entry — re-read raw customer from intakeItems
+          const rawByBase = {};
+          for (const r of intakeItems) {
+            const fid = (r.field_1 || '').trim();
+            const bid = fid.split(' ')[0].trim();
+            if (bid && r.field_3 && !rawByBase[bid]) rawByBase[bid] = r.field_3.trim();
+          }
+          for (const entry of pending) {
+            const raw  = (rawByBase[entry.baseId] || '').toLowerCase();
+            const disp = (entry.customer || '').toLowerCase();
+            entry.email = emailMap[raw] || emailMap[disp] || '';
           }
         } catch(e) { console.warn('[accession-status] email lookup failed:', e.message); }
 
