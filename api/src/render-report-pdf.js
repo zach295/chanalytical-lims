@@ -90,7 +90,18 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   };
   for (const [lbl, val] of Object.entries(hdrs)) {
     const f = findLabel(rows, lbl);
-    if (f) addCell(f.r, f.c + 1, val);
+    if (!f) continue;
+    // Find the first empty cell to the right of the label (the input cell)
+    // Skip over other label text, scan up to 6 columns ahead
+    let targetCol = f.c + 1;
+    for (let dc = 1; dc <= 6; dc++) {
+      const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
+      // Stop at the first genuinely empty cell (not another label)
+      if (!cv) { targetCol = f.c + dc; break; }
+      // If this cell looks like a value area (short, no colon), use it
+      if (!cv.includes(':') && cv.length < 20) { targetCol = f.c + dc; break; }
+    }
+    addCell(f.r, targetCol, val);
   }
 
   // Location
@@ -235,11 +246,17 @@ app.http('render-report-pdf', {
     context.log('[pdf] Sheets:', sheets.map(s => s.name).join(', '));
     const ws = name => sheets.find(s => s.name === name);
 
-    // Ensure each visible sheet starts on its own page in the PDF
+    // Enforce proper page layout: fit to 1 page wide, allow tall as needed
     for (const sheet of sheets) {
       await gReq('PATCH',
         `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/pageLayout`,
-        token, { fitToPage: false }, sid
+        token, {
+          orientation:  'portrait',
+          fitToPage:    true,
+          fitToWidth:   1,
+          fitToHeight:  0,
+          paperSize:    1,
+        }, sid
       ).catch(() => {});
     }
 
