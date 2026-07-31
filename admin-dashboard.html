@@ -5073,8 +5073,22 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>`;
       // Auto-populate send-to email field if visible
       const emailEl = document.getElementById('rpt-send-email-input');
-      console.log('[email lookup] entry.email=', entry.email, 'rawCustomer=', entry.rawCustomer, 'customer=', entry.customer);
-      if (emailEl && entry.email) emailEl.value = entry.email;
+      if (emailEl) {
+        // Try entry.email from accession-status first
+        let resolvedEmail = entry.email || '';
+        // If not found, look up directly from _clientsData (already loaded)
+        if (!resolvedEmail && entry.customer) {
+          const custLower = entry.customer.toLowerCase().trim();
+          const match = _clientsData.find(c => {
+            const n = (c.clientName || '').toLowerCase().trim();
+            const fmt = n.startsWith('public-') ?
+              n.slice('public-'.length).replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim() : n;
+            return n === custLower || fmt === custLower;
+          });
+          resolvedEmail = match?.email || '';
+        }
+        if (resolvedEmail) emailEl.value = resolvedEmail;
+      }
     }
   }
 
@@ -5159,10 +5173,21 @@ document.addEventListener('DOMContentLoaded', function() {
         };
       }
 
-      // Populate email field from meta
+      // Populate email field from meta or _clientsData lookup
       const emailInput = document.getElementById('rpt-send-email-input');
-      console.log('[report meta email]', data.meta?.email);
-      if (emailInput && data.meta?.email) emailInput.value = data.meta.email;
+      let reportEmail = data.meta?.email || '';
+      if (!reportEmail && data.meta?.customer) {
+        const custLower = data.meta.customer.toLowerCase().trim();
+        // Try _clientsData (already in memory)
+        const cMatch = _clientsData.find(c => {
+          const n = (c.clientName || '').toLowerCase().trim();
+          const fmt = n.startsWith('public-') ?
+            n.slice('public-'.length).replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim() : n;
+          return n === custLower || fmt === custLower;
+        });
+        reportEmail = cMatch?.email || '';
+      }
+      if (emailInput && reportEmail) emailInput.value = reportEmail;
 
       // Set authorization fields
       document.getElementById('rpt-authorized-by').value = getAdminName();
