@@ -1,15 +1,21 @@
 /**
- * render-report-pdf.js — Azure v5
- * Download template → re-upload as temp → fill via Workbook API $batch → export PDF
- * No async copy polling — synchronous download+upload is fast and reliable.
+ * render-report-pdf.js — Azure v6
+ * 1. Download Report Templates.xlsx
+ * 2. Re-upload as temp copy
+ * 3. Delete unneeded sheets
+ * 4. Rename tabs (remove "- Template")
+ * 5. Delete rows for parameters not in this test
+ * 6. Fill all data
+ * 7. Export as PDF → return base64
  */
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
-const SHEET_LAB   = 'Lab Report - Template';
-const SHEET_FHA   = 'FHA Lab Report - Template';
-const SHEET_RADON = 'Radon Lab Report - Template';
+const TMPL_LAB   = 'Lab Report - Template';
+const TMPL_FHA   = 'FHA Lab Report - Template';
+const TMPL_RADON = 'Radon Lab Report - Template';
+const TMPL_NOTES = 'Notations - Template';
 
 function toDrivePath(p) {
   const m = 'Shared Documents/';
@@ -22,32 +28,6 @@ function colLetter(n) {
   while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
   return s;
 }
-
-async function gReq(method, path, token, body, sid) {
-  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  if (sid) h['workbook-session-id'] = sid;
-  const o = { method, headers: h };
-  if (body !== undefined) o.body = JSON.stringify(body);
-  return fetch(`${GRAPH}${path}`, o);
-}
-
-async function graphBatch(reqs, token, sid) {
-  const r = await fetch(`${GRAPH}/$batch`, {
-    method:  'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      requests: reqs.map((r, i) => ({
-        id:      String(i + 1),
-        method:  r.method || 'PATCH',
-        url:     r.url,
-        headers: { 'Content-Type': 'application/json', ...(sid ? { 'workbook-session-id': sid } : {}) },
-        body:    r.body,
-      })),
-    }),
-  });
-  return r.ok ? (await r.json()).responses || [] : [];
-}
-
 function normalizeCell(v) {
   return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
 }
@@ -62,6 +42,33 @@ function findLabel(rows, label) {
   return null;
 }
 
+async function gReq(method, path, token, body, sid) {
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (sid) h['workbook-session-id'] = sid;
+  const o = { method, headers: h };
+  if (body !== undefined) o.body = JSON.stringify(body);
+  return fetch(`${GRAPH}${path}`, o);
+}
+
+async function graphBatch(reqs, token, sid) {
+  const r = await fetch(`${GRAPH}/$batch`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: reqs.map((r, i) => ({
+        id:      String(i + 1),
+        method:  r.method || 'PATCH',
+        url:     r.url,
+        headers: { 'Content-Type': 'application/json', ...(sid ? { 'workbook-session-id': sid } : {}) },
+        body:    r.body,
+      })),
+    }),
+  });
+  if (!r.ok) return [];
+  const d = await r.json();
+  return d.responses || [];
+}
+
 async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
   const rr = await gReq('GET',
     `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount`,
@@ -70,15 +77,16 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const { values: rows, columnCount: nc } = await rr.json();
   if (!rows?.length) return;
 
-  const base = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
-  const cellUpdates = [], colorUpdates = [];
+  const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
+  const cellUpdates = [];
+  const colorUpdates = [];
 
   const addCell = (r, c, val) => cellUpdates.push({
     url:  `${base}/range(address='${colLetter(c)}${r + 1}')`,
     body: { values: [[String(val || '')]] },
   });
 
-  // Headers
+  // Header labels → scan right for first empty input cell
   const hdrs = {
     'attention:':           meta.customer || '',
     'lab id number:':       labId,
@@ -88,86 +96,89 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     'authorized by:':       authorizedBy,
     'review date:':         reviewDate,
   };
+
   for (const [lbl, val] of Object.entries(hdrs)) {
     const f = findLabel(rows, lbl);
-    if (!f) continue;
-    // Find the first empty cell to the right of the label (the input cell)
-    // Skip over other label text, scan up to 6 columns ahead
+    if (!f) { context.log(`[pdf] Label not found: "${lbl}"`); continue; }
+    // Scan right up to 8 cols to find the empty input cell
     let targetCol = f.c + 1;
-    for (let dc = 1; dc <= 6; dc++) {
+    for (let dc = 1; dc <= 8; dc++) {
       const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
-      // Stop at the first genuinely empty cell (not another label)
       if (!cv) { targetCol = f.c + dc; break; }
-      // If this cell looks like a value area (short, no colon), use it
-      if (!cv.includes(':') && cv.length < 20) { targetCol = f.c + dc; break; }
     }
+    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r + 1} = "${val}"`);
     addCell(f.r, targetCol, val);
   }
 
-  // Location
+  // Location — below the "Location:" label
   const lf = findLabel(rows, 'location:');
   if (lf) {
     addCell(lf.r + 1, lf.c, meta.location || '');
     addCell(lf.r + 2, lf.c, [meta.city, meta.state, meta.zip].filter(Boolean).join(', '));
   }
 
-  // Parameter table
+  // Find parameter table header row
   let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1;
   for (let r = 0; r < rows.length; r++) {
     const rl = (rows[r] || []).map(c => normalizeCell(c));
-    if (rl.some(c => c.includes('your result') || c.includes('result'))) {
+    if (rl.some(c => c.includes('your result') || c === 'result')) {
       hdrRow = r;
       rl.forEach((c, i) => {
-        if (c.includes('your result') || c === 'result')       colResult = i;
+        if (c.includes('your result') || c === 'result')          colResult = i;
         else if (c.includes('preparation') || c.includes('prep')) colPrepDT = i;
-        else if (c.includes('analysis') || c.includes('anal')) colAnalDT = i;
+        else if (c.includes('analysis') || c.includes('anal'))    colAnalDT = i;
       });
       break;
     }
   }
+  context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT}`);
 
-  const toDelete = [];
+  // Map parameter names in sheet → row index
+  const pMap = {};
   if (hdrRow >= 0) {
-    const pMap = {};
     for (let r = hdrRow + 1; r < rows.length; r++) {
       const name = normalizeCell((rows[r] || [])[0]);
       if (name) pMap[name] = r;
     }
-    const cx = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
-    for (const [nl, ri] of Object.entries(pMap)) {
-      const p = params.find(x => normalizeCell(x.name) === nl);
-      if (!p) { toDelete.push(ri + 1); }
-      else {
-        colorUpdates.push({ url: `${base}/range(address='B${ri + 1}')/format/fill`, body: { color: cx[p.color||'none']||'#FFFFFF' } });
-        if (colResult >= 0 && p.value)            addCell(ri, colResult, p.value);
-        if (colPrepDT >= 0 && p.prepDT)           addCell(ri, colPrepDT, p.prepDT);
-        if (colAnalDT >= 0 && (p.analDT||p.time)) addCell(ri, colAnalDT, p.analDT || p.time);
-      }
+  }
+
+  const colorHex = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
+  const toDelete = [];
+
+  for (const [nameLow, ri] of Object.entries(pMap)) {
+    const p = params.find(x => normalizeCell(x.name) === nameLow);
+    if (!p) {
+      toDelete.push(ri + 1); // 1-based row number
+    } else {
+      // Color cell (col B = index 1)
+      colorUpdates.push({
+        url:  `${base}/range(address='B${ri + 1}')/format/fill`,
+        body: { color: colorHex[p.color || 'none'] || '#FFFFFF' },
+      });
+      if (colResult >= 0 && p.value)             addCell(ri, colResult, p.value);
+      if (colPrepDT >= 0 && p.prepDT)            addCell(ri, colPrepDT, p.prepDT);
+      if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT, p.analDT || p.time);
     }
   }
 
-  context.log(`[pdf] Updates: ${cellUpdates.length} cells, ${colorUpdates.length} colors, ${toDelete.length} deletes`);
-  context.log(`[pdf] colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT} hdrRow=${hdrRow}`);
+  context.log(`[pdf] ${cellUpdates.length} cells, ${colorUpdates.length} colors, ${toDelete.length} rows to delete`);
 
-  // Send cell + color updates in batches of 20
+  // Send updates in batches of 20
   for (let i = 0; i < cellUpdates.length; i += 20) {
     const resp = await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
-    const errs = resp.filter(r => r.status >= 400);
-    if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0,2)));
+    const errs = resp.filter(r => parseInt(r.status) >= 400);
+    if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
-  for (let i = 0; i < colorUpdates.length; i += 20) await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
+  for (let i = 0; i < colorUpdates.length; i += 20) {
+    await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
+  }
 
-  // Delete unused rows bottom-to-top (must be sequential)
+  // Delete unused rows bottom-to-top (sequential — order matters)
   for (const r of toDelete.sort((a, b) => b - a)) {
-    const addr = `A${r}:${colLetter((nc||10) - 1)}${r}`;
-    await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
+    const addr = `A${r}:${colLetter((nc || 10) - 1)}${r}`;
+    const dr = await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
+    if (!dr.ok) context.log(`[pdf] Delete row ${r} failed:`, dr.status);
   }
-  context.log(`[pdf] Sheet done: ${cellUpdates.length} cells, ${colorUpdates.length} colors, ${toDelete.length} deleted`);
-}
-
-async function hideSheet(siteId, itemId, wsId, token, sid) {
-  await gReq('PATCH', `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`,
-    token, { visibility: 'Hidden' }, sid);
 }
 
 app.http('render-report-pdf', {
@@ -191,114 +202,151 @@ app.http('render-report-pdf', {
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
-    // ── Download template ───────────────────────────────────────────────────
+    // ── Step 1: Download template ───────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
       '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
     const dp = toDrivePath(tmplPath);
 
-    let tmplBuffer, parentPath;
+    let tmplBuffer, folderPath;
     try {
-      const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id,parentReference`,
+      const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
         { headers: { Authorization: `Bearer ${token}` } });
       if (!metaR.ok) throw new Error(`Template not found (${metaR.status})`);
-      const metaD = await metaR.json();
-      parentPath = dp.replace(/\/[^/]+$/, ''); // strip filename to get folder path
+      const { id: tmplId } = await metaR.json();
 
-      const dlR = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${metaD.id}/content`,
+      folderPath = dp.replace(/\/[^/]+$/, '');
+
+      const dlR = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/content`,
         { headers: { Authorization: `Bearer ${token}` } });
       if (!dlR.ok) throw new Error(`Template download failed (${dlR.status})`);
       tmplBuffer = Buffer.from(await dlR.arrayBuffer());
       context.log('[pdf] Template downloaded:', tmplBuffer.length, 'bytes');
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
-    // ── Upload as temp file (synchronous — no polling!) ─────────────────────
+    // ── Step 2: Upload as temp copy ─────────────────────────────────────────
     const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
     let tempId;
     try {
-      const upR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${parentPath}/${encodeURIComponent(tempName)}:/content`, {
-        method:  'PUT',
-        headers: {
-          Authorization:  `Bearer ${token}`,
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-        body: tmplBuffer,
-      });
-      if (!upR.ok) throw new Error(`Upload failed (${upR.status}): ${await upR.text().catch(()=>'')}`);
-      const upD = await upR.json();
-      tempId = upD.id;
-      context.log('[pdf] Uploaded temp:', tempId);
+      const upR = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}/${encodeURIComponent(tempName)}:/content`, {
+          method:  'PUT',
+          headers: {
+            Authorization:  `Bearer ${token}`,
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body: tmplBuffer,
+        });
+      if (!upR.ok) throw new Error(`Upload failed (${upR.status})`);
+      tempId = (await upR.json()).id;
+      context.log('[pdf] Temp uploaded:', tempId);
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
-    // ── Open Workbook session ───────────────────────────────────────────────
+    // ── Step 3: Open Workbook session ───────────────────────────────────────
     let sid = null;
-    try {
-      const sr = await gReq('POST',
-        `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
-        token, { persistChanges: true });
-      if (sr.ok) sid = (await sr.json()).id || null;
-      context.log('[pdf] Session:', sid ? 'OK' : 'none');
-    } catch(e) { context.log('Session warn:', e.message); }
+    const sr = await gReq('POST',
+      `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
+      token, { persistChanges: true });
+    if (sr.ok) sid = (await sr.json()).id || null;
+    context.log('[pdf] Session:', sid ? 'OK' : 'none');
 
-    // ── Get sheets ──────────────────────────────────────────────────────────
-    let sheets = [];
-    const wr = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
-    if (wr.ok) sheets = (await wr.json()).value || [];
+    // ── Step 4: Get all sheets ──────────────────────────────────────────────
+    const wr     = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+    const sheets = wr.ok ? (await wr.json()).value || [] : [];
     context.log('[pdf] Sheets:', sheets.map(s => s.name).join(', '));
     const ws = name => sheets.find(s => s.name === name);
 
-    // Enforce proper page layout: fit to 1 page wide, allow tall as needed
-    for (const sheet of sheets) {
-      await gReq('PATCH',
-        `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/pageLayout`,
-        token, {
-          orientation:  'portrait',
-          fitToPage:    true,
-          fitToWidth:   1,
-          fitToHeight:  0,
-          paperSize:    1,
-        }, sid
-      ).catch(() => {});
+    // ── Step 5: Delete unneeded sheets ──────────────────────────────────────
+    const sheetsToDelete = [];
+    if (isRadon) {
+      if (ws(TMPL_LAB))   sheetsToDelete.push(ws(TMPL_LAB));
+      if (ws(TMPL_FHA))   sheetsToDelete.push(ws(TMPL_FHA));
+    } else {
+      if (ws(TMPL_RADON)) sheetsToDelete.push(ws(TMPL_RADON));
+      if (!needsFHA || !fhaParams.length) {
+        if (ws(TMPL_FHA)) sheetsToDelete.push(ws(TMPL_FHA));
+      }
+    }
+    for (const sheet of sheetsToDelete) {
+      const dr = await gReq('DELETE',
+        `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`,
+        token, undefined, sid);
+      context.log(`[pdf] Deleted sheet "${sheet.name}": ${dr.status}`);
     }
 
-    // ── Fill sheets ─────────────────────────────────────────────────────────
-    if (isRadon) {
-      const lab = ws(SHEET_LAB), fha = ws(SHEET_FHA);
-      if (lab) await hideSheet(siteId, tempId, lab.id, token, sid);
-      if (fha) await hideSheet(siteId, tempId, fha.id, token, sid);
-    } else {
-      const radon = ws(SHEET_RADON);
-      if (radon) await hideSheet(siteId, tempId, radon.id, token, sid);
+    // ── Step 6: Rename remaining sheets (remove "- Template") ──────────────
+    const remainingWr = await gReq('GET',
+      `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`,
+      token, undefined, sid);
+    const remaining = remainingWr.ok ? (await remainingWr.json()).value || [] : [];
 
-      const lab = ws(SHEET_LAB);
-      if (lab) await fillSheet(siteId, tempId, lab.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
-
-      const fha = ws(SHEET_FHA);
-      if (fha) {
-        if (needsFHA && fhaParams.length)
-          await fillSheet(siteId, tempId, fha.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
-        else
-          await hideSheet(siteId, tempId, fha.id, token, sid);
+    for (const sheet of remaining) {
+      const newName = sheet.name.replace(/\s*-\s*Template\s*$/i, '').trim();
+      if (newName !== sheet.name) {
+        await gReq('PATCH',
+          `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`,
+          token, { name: newName }, sid);
+        context.log(`[pdf] Renamed "${sheet.name}" → "${newName}"`);
       }
     }
 
-    // ── Close session + wait ────────────────────────────────────────────────
-    if (sid) await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}, sid).catch(()=>{});
+    // ── Step 7: Fill sheets ─────────────────────────────────────────────────
+    // Re-fetch sheets after rename
+    const finalWr    = await gReq('GET',
+      `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`,
+      token, undefined, sid);
+    const finalSheets = finalWr.ok ? (await finalWr.json()).value || [] : [];
+    context.log('[pdf] Final sheets:', finalSheets.map(s => s.name).join(', '));
+
+    const labSheet   = finalSheets.find(s => /^lab report$/i.test(s.name) || /^lab report/i.test(s.name));
+    const fhaSheet   = finalSheets.find(s => /^fha/i.test(s.name));
+    const radonSheet = finalSheets.find(s => /^radon/i.test(s.name));
+
+    const fitOnePage = async (wsId) => {
+      await gReq('PATCH',
+        `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${wsId}/pageLayout`,
+        token, { fitToPage: true, fitToWidth: 1, fitToHeight: 1, orientation: 'portrait', paperSize: 1 }, sid
+      ).catch(() => {});
+    };
+
+    if (isRadon && radonSheet) {
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fitOnePage(radonSheet.id);
+    } else if (labSheet) {
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fitOnePage(labSheet.id);
+    }
+
+    if (fhaSheet && needsFHA && fhaParams.length) {
+      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fitOnePage(fhaSheet.id);
+    }
+
+    // ── Step 8: Close session + wait ────────────────────────────────────────
+    if (sid) {
+      await gReq('POST',
+        `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
+        token, {}, sid).catch(() => {});
+    }
     await new Promise(r => setTimeout(r, 3000));
 
-    // ── Export PDF ──────────────────────────────────────────────────────────
+    // ── Step 9: Export as PDF ───────────────────────────────────────────────
     let pdfBase64;
     try {
-      const pr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
+      const pr = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
         { headers: { Authorization: `Bearer ${token}` } });
       if (!pr.ok) throw new Error(`PDF export (${pr.status})`);
       pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
       context.log('[pdf] PDF size:', pdfBase64.length);
     } catch(e) {
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(()=>{});
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
       return { status: 500, jsonBody: { error: e.message } };
     }
 
-    await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(()=>{});
+    // ── Step 10: Delete temp file ───────────────────────────────────────────
+    await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+    context.log('[pdf] Temp file deleted');
+
     return { status: 200, jsonBody: { success: true, pdfBase64, fileName: `${labId}_COA.pdf` } };
   }
 });
