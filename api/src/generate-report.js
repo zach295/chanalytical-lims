@@ -41,6 +41,15 @@ const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','L
 const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Ensure time values have a colon: "1402" → "14:02", "14:02" → "14:02"
+function ensureColon(dt) {
+  if (!dt) return dt;
+  const s = String(dt).trim();
+  // Match "MM/DD/YY 1402" or "MM/DD/YY 1402" (no colon in time)
+  return s.replace(/(\d{2}\/\d{2}\/\d{2})\s+(\d{2})(\d{2})$/, '$1 $2:$3')
+          .replace(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{2})(\d{2})$/, '$1 $2:$3');
+}
 function formatCustomerName(name) {
   if (!name) return '';
   if (!name.startsWith('Public-')) return name;
@@ -215,10 +224,17 @@ app.http('generate-report', {
         log.push(`cache: NOT FOUND for baseId=${baseId}`);
       }
 
-      const clientInfo = await getClientInfo(
-        formatCustomerName(meta.customer || ''),
-        token
-      ).catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' }));
+      // Look up client — try formatted name first, then Public- format for walk-ins
+      const formattedName = formatCustomerName(meta.customer || '');
+      const rawName       = meta.customer || '';
+      const clientInfo = await getClientInfo(formattedName, token)
+        .then(async c => {
+          if (c.email) return c;
+          // Try raw Public-Last, First format if formatted didn't find email
+          if (rawName !== formattedName) return getClientInfo(rawName, token).catch(() => c);
+          return c;
+        })
+        .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' }));
 
       // ── Determine test types ────────────────────────────────────────────────
       const services = meta.services
@@ -280,9 +296,9 @@ app.http('generate-report', {
           epa:      p.epa !== null && p.epa !== undefined ? String(p.epa) : '',
           unit:     p.unit,
           method:   p.method,
-          prepDT,
-          analDT,
-          time:     analDT,
+          prepDT:   ensureColon(prepDT),
+          analDT:   ensureColon(analDT),
+          time:     ensureColon(analDT),
           color:    resultColor(p.name, display, p.epa),
           source:   p.source,
         };
