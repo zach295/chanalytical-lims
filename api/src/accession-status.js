@@ -90,7 +90,7 @@ app.http('accession-status', {
           const siteId = process.env.SP_SITE_ID;
           // Use same field names as clients-read.js (Title=name, Email=email)
           const cRes   = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,Email,Aliases)&$top=500`,
+            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,Email)&$top=500`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (cRes.ok) {
@@ -98,17 +98,13 @@ app.http('accession-status', {
             const emailMap = {};
             for (const item of (cData.value || [])) {
               const f    = item.fields || {};
-              const name = (f.Title || '').trim();
+              const name  = (f.Title || '').trim();
               const email = (f.Email || '').trim();
               if (name && email) {
                 emailMap[name.toLowerCase()] = email;
-                // Also index by formatted version of Public- names
+                // Also index by formatted Public- name e.g. "Zach Chandler"
                 const fmt = formatCustomerName(name).toLowerCase();
                 if (fmt !== name.toLowerCase()) emailMap[fmt] = email;
-                // Index by aliases too
-                for (const alias of (f.Aliases || '').split(',').map(a => a.trim()).filter(Boolean)) {
-                  emailMap[alias.toLowerCase()] = email;
-                }
               }
             }
             // Add email to each pending entry — try all name variants
