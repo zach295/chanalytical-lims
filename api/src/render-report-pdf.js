@@ -86,31 +86,64 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     body: { values: [[String(val || '')]] },
   });
 
-  // Header labels → scan right for first empty input cell
-  const hdrs = {
-    'attention:':           meta.customer || '',
+  // ── Clear all conditional formatting so our fills show correctly ──────────
+  const cfRes = await gReq('GET',
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/conditionalFormats`,
+    token, undefined, sid);
+  if (cfRes.ok) {
+    const cfs = (await cfRes.json()).value || [];
+    for (const cf of cfs) {
+      await gReq('DELETE',
+        `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/conditionalFormats/${cf.id}`,
+        token, undefined, sid).catch(() => {});
+    }
+    context.log(`[pdf] Cleared ${cfs.length} conditional formats`);
+  }
+
+  // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
+  // These labels have their value cells to the right — try col+1 through col+4
+  const rightHdrs = {
     'lab id number:':       labId,
     'date/time collected:': meta.dtCollected || '',
     'date/time received:':  meta.dtReceived  || '',
     'date reported:':       today,
-    'authorized by:':       authorizedBy,
-    'review date:':         reviewDate,
   };
-
-  for (const [lbl, val] of Object.entries(hdrs)) {
+  for (const [lbl, val] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
-    if (!f) { context.log(`[pdf] Label not found: "${lbl}"`); continue; }
-    // Scan right up to 8 cols to find the empty input cell
-    let targetCol = f.c + 1;
-    for (let dc = 1; dc <= 8; dc++) {
-      const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
-      if (!cv) { targetCol = f.c + dc; break; }
+    if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
+    // Try col+1 through col+4 — send all, whichever succeeds wins
+    for (let dc = 1; dc <= 4; dc++) {
+      addCell(f.r, f.c + dc, val);
     }
-    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r + 1} = "${val}"`);
-    addCell(f.r, targetCol, val);
+    context.log(`[pdf] "${lbl}" → cols ${f.c+1}-${f.c+4} row ${f.r+1} = "${val}"`);
   }
 
-  // Location — below the "Location:" label
+  // ── Attention block — name + address + email below ────────────────────────
+  const attF = findLabel(rows, 'attention:');
+  if (attF) {
+    addCell(attF.r, attF.c + 1, meta.customer || '');
+    // Rows below attention: address, city/state/zip, email
+    const addrLine = meta.location || '';
+    const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+    const emailLine = meta.email || '';
+    if (addrLine)  addCell(attF.r + 1, attF.c + 1, addrLine);
+    if (cityLine)  addCell(attF.r + 2, attF.c + 1, cityLine);
+    if (emailLine) addCell(attF.r + 3, attF.c + 1, emailLine);
+  }
+
+  // ── Left-side fields ──────────────────────────────────────────────────────
+  const leftHdrs = {
+    'date reported:': today,
+    'authorized by:': authorizedBy,
+    'review date:':   reviewDate,
+  };
+  for (const [lbl, val] of Object.entries(leftHdrs)) {
+    const f = findLabel(rows, lbl);
+    if (!f) continue;
+    addCell(f.r, f.c + 1, val);
+  }
+
+  // ── Location — property address below "Location:" label ──────────────────
   const lf = findLabel(rows, 'location:');
   if (lf) {
     addCell(lf.r + 1, lf.c, meta.location || '');
@@ -302,9 +335,11 @@ app.http('render-report-pdf', {
     const radonSheet = finalSheets.find(s => /^radon/i.test(s.name));
 
     const fitOnePage = async (wsId) => {
+      // fitToWidth:1 ensures all columns fit on 1 page wide
+      // fitToHeight:0 means unlimited rows (template already designed to fit 1 page)
       await gReq('PATCH',
         `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${wsId}/pageLayout`,
-        token, { fitToPage: true, fitToWidth: 1, fitToHeight: 1, orientation: 'portrait', paperSize: 1 }, sid
+        token, { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'portrait', paperSize: 1 }, sid
       ).catch(() => {});
     };
 
