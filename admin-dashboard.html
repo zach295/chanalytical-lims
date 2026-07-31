@@ -5449,18 +5449,18 @@ document.addEventListener('DOMContentLoaded', function() {
           const bg = val ? colorHex(color) : '#E0E0E0';
           const prepDT = res.prepDT || '';
           const analDT = res.analDT || res.time || '';
-          return \`<tr>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${p.name}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;background:\${bg};text-align:center;font-weight:600;">\${val}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">\${p.epa || ''}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">\${p.unit || ''}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${p.method || ''}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${prepDT}</td>
-            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">\${analDT}</td>
-          </tr>\`;
+          return `<tr>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">${p.name}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;background:${bg};text-align:center;font-weight:600;">${val}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">${p.epa || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">${p.unit || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">${p.method || ''}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">${prepDT}</td>
+            <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">${analDT}</td>
+          </tr>`;
         };
 
-        const paramTable = (rows) => \`
+        const paramTable = (rows) => `
           <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;">
             <thead>
               <tr style="background:#1F3864;color:white;">
@@ -5473,13 +5473,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 <th style="padding:6px 8px;text-align:center;border:1px solid #333;width:16%;">Analysis Date/Time</th>
               </tr>
             </thead>
-            <tbody>\${rows.map(p => paramRow(p)).join('')}</tbody>
-          </table>\`;
+            <tbody>${rows.map(p => paramRow(p)).join('')}</tbody>
+          </table>`;
 
         const today = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
 
-        printWindow.document.write(\`<!DOCTYPE html>
-<html><head><title>\${labId} COA</title>
+        printWindow.document.write(`<!DOCTYPE html>
+<html><head><title>${labId} COA</title>
 <style>
   * { box-sizing:border-box; margin:0; padding:0; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#000; padding:16px; }
@@ -5506,7 +5506,7 @@ document.addEventListener('DOMContentLoaded', function() {
   <!-- Header -->
   <div class="hdr">
     <div class="logo">Chanalytical Laboratories, Inc.<span>347 Main St., Unit 1B &nbsp; Gorham, ME 04038<br>Phone: 207-747-1815 &nbsp; Email: Labs@chanalytical.com</span></div>
-    <div class="hdr-right" style="font-size:10px;color:#555;">\${today} &nbsp;&nbsp; \${labId} COA</div>
+    <div class="hdr-right" style="font-size:10px;color:#555;">${today} &nbsp;&nbsp; ${labId} COA</div>
   </div>
 
   <h1>Certificate of Analysis</h1>
@@ -5514,18 +5514,18 @@ document.addEventListener('DOMContentLoaded', function() {
   <!-- Info + Legend -->
   <div style="display:flex;gap:20px;margin-bottom:14px;">
     <div style="flex:1;font-size:11px;">
-      <div class="info-row"><span class="info-label">Attention:</span> <span>\${m.customer || ''}</span></div>
-      <div style="font-size:10px;color:#555;margin-left:0;margin-bottom:4px;">\${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</div>
-      <div class="info-row"><span class="info-label">Date/Time Collected:</span> <span>\${m.dtCollected || ''}</span></div>
-      <div class="info-row"><span class="info-label">Date Reported:</span> <span>\${today}</span></div>
-      <div class="info-row" style="margin-top:4px;"><span class="info-label">Location:</span> <span>\${m.location || ''}</span></div>
-      <div class="info-row"><span class="info-label" style="opacity:0;">.</span><span>\${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</span></div>
+      <div class="info-row"><span class="info-label">Attention:</span> <span>${m.customer || ''}</span></div>
+      <div style="font-size:10px;color:#555;margin-left:0;margin-bottom:4px;">${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</div>
+      <div class="info-row"><span class="info-label">Date/Time Collected:</span> <span>${m.dtCollected || ''}</span></div>
+      <div class="info-row"><span class="info-label">Date Reported:</span> <span>${today}</span></div>
+      <div class="info-row" style="margin-top:4px;"><span class="info-label">Location:</span> <span>${m.location || ''}</span></div>
+      <div class="info-row"><span class="info-label" style="opacity:0;">.</span><span>${[m.city,m.state,m.zip].filter(Boolean).join(', ')}</span></div>
       <div class="info-row"><span class="info-label">Sample Type:</span> <span>Potability</span></div>
     </div>
     <div style="width:220px;">
       <div style="float:right;text-align:right;margin-bottom:8px;font-size:11px;">
-        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Lab ID Number:</span> <span>\${labId}</span></div>
-        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Date/Time Received:</span> <span>\${m.dtReceived || ''}</span></div>
+        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Lab ID Number:</span> <span>${labId}</span></div>
+        <div class="info-row" style="justify-content:flex-end;"><span class="info-label">Date/Time Received:</span> <span>${m.dtReceived || ''}</span></div>
       </div>
       <div style="clear:both;"></div>
       <div class="legend">
@@ -5538,19 +5538,19 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 
   <!-- Parameter Table -->
-  \${paramTable(params)}
+  ${paramTable(params)}
 
   <!-- Comments -->
   <div><strong>Comments:</strong></div>
-  <div class="comments">\${currentReportData._comments || ''}</div>
+  <div class="comments">${currentReportData._comments || ''}</div>
 
-  \${needsFHA ? \`
+  ${needsFHA ? `
   <div style="page-break-before:always;padding-top:20px;">
-    <div class="hdr"><div class="logo">Chanalytical Laboratories, Inc.</div><div class="hdr-right" style="font-size:10px;">\${today} &nbsp;&nbsp; \${labId} COA</div></div>
+    <div class="hdr"><div class="logo">Chanalytical Laboratories, Inc.</div><div class="hdr-right" style="font-size:10px;">${today} &nbsp;&nbsp; ${labId} COA</div></div>
     <h1>Certificate of Analysis — FHA</h1>
     <div style="font-size:11px;margin-bottom:10px;"><strong>Sample Type:</strong> Potability (FHA)</div>
-    \${paramTable(fhaParams)}
-  </div>\` : ''}
+    ${paramTable(fhaParams)}
+  </div>` : ''}
 
   <!-- Notations -->
   <div class="notations">
@@ -5569,11 +5569,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   <!-- Footer -->
   <div class="footer-line">
-    <strong>Authorized By:</strong> \${authorizedBy} &nbsp;&nbsp;&nbsp;&nbsp;
-    <strong>Review Date:</strong> \${reviewDate}
+    <strong>Authorized By:</strong> ${authorizedBy} &nbsp;&nbsp;&nbsp;&nbsp;
+    <strong>Review Date:</strong> ${reviewDate}
   </div>
 </div>
-</body></html>\`);
+</body></html>`);
         printWindow.document.close();
         printWindow.focus();
         setTimeout(() => { printWindow.print(); }, 500);
