@@ -149,8 +149,10 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, val] of Object.entries(leftHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
-    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+1)}${f.r+1} = "${val}"`);
-    addCell(f.r, f.c + 1, val);
+    // "Authorized By:" value goes in the 2nd cell to the right (col+2)
+    const offset = lbl.includes('authorized') ? 2 : 1;
+    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+offset)}${f.r+1} = "${val}"`);
+    addCell(f.r, f.c + offset, val);
   }
 
   // ── Location — address to the RIGHT of "Location:" label, city/state/zip below ──
