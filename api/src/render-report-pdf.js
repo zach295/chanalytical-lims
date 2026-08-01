@@ -142,13 +142,14 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // ── Left-side fields ──────────────────────────────────────────────────────
   const leftHdrs = {
-    'date reported:': today,
-    'authorized by:': authorizedBy,
-    'review date:':   reviewDate,
+    'date reported':  today,
+    'authorized by':  authorizedBy,
+    'review date':    reviewDate,
   };
   for (const [lbl, val] of Object.entries(leftHdrs)) {
     const f = findLabel(rows, lbl);
-    if (!f) continue;
+    if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
+    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+1)}${f.r+1} = "${val}"`);
     addCell(f.r, f.c + 1, val);
   }
 
@@ -415,6 +416,7 @@ app.http('render-report-pdf', {
     await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
     context.log('[pdf] Temp file deleted');
 
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: `${labId}_COA.pdf` } };
+    const reportFileName = `${labId} Report.pdf`;
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
 });
