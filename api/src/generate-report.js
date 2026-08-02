@@ -281,9 +281,14 @@ app.http('generate-report', {
         .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' }));
 
       // ── Determine test types ────────────────────────────────────────────────
+      // meta.services = "Alkalinity | pH" (string from Archived Intake)
+      // frontendMeta.tests = ["Alkalinity | pH"] (array from accession-status)
+      // Both need splitting on | to get individual service names
       const services = meta.services
         ? meta.services.split(/[|;]/).map(s=>s.trim()).filter(Boolean)
-        : (frontendMeta?.tests || []);
+        : (frontendMeta?.tests || []).flatMap(t =>
+            String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
+          );
 
       const isRadon  = services.some(s => /radon/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
