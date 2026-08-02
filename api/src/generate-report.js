@@ -37,6 +37,34 @@ const PARAM_CONFIG = [
   { name:'E. Coli',                      rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_3' },
 ];
 
+// Maps service names (from approve-scan) to PARAM_CONFIG names where they differ
+const PARAM_SERVICE_ALIASES = {
+  'pH':                    ['pH Electrometric'],
+  'Nitrate':               ['Nitrate-Nitrogen, Total'],
+  'Nitrite':               ['Nitrite-Nitrogen, Total'],
+  'Fluoride':              ['Fluoride, Total'],
+  'Hardness':              ['Hardness by calculation'],
+  'Total Hardness':        ['Hardness by calculation'],
+  'Bacteria':              ['Total Coliform', 'E. Coli'],
+  'Total Coliform':        ['Total Coliform'],
+  'E. Coli':               ['E. Coli'],
+  'Chloride':              ['Chloride, Total'],
+  'Arsenic':               ['Arsenic, Total'],
+  'Lead':                  ['Lead, Total'],
+  'Uranium':               ['Uranium, Total'],
+  'Copper':                ['Copper, Total'],
+  'Iron':                  ['Iron, Total'],
+  'Manganese':             ['Manganese, Total'],
+  'Sodium':                ['Sodium, Total'],
+  'Calcium':               ['Calcium, Total'],
+  'Magnesium':             ['Magnesium, Total'],
+  'Antimony':              ['Antimony, Total'],
+  'Cadmium':               ['Cadmium, Total'],
+  'Chromium':              ['Chromium, Total'],
+  'Cobalt':                ['Cobalt'],
+};
+
+
 const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'];
 const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive'];
 
@@ -275,8 +303,13 @@ app.http('generate-report', {
           // Package or element test with SP definition — use its element list
           testTypeElements[svc].forEach(e => needed.add(e));
         } else {
-          // No SP entry — try direct parameter name match (single element fallback)
-          needed.add(svc);
+          // No SP entry — use alias map first, then direct name match
+          const aliases = PARAM_SERVICE_ALIASES[svc];
+          if (aliases) {
+            aliases.forEach(a => needed.add(a));
+          } else {
+            needed.add(svc); // direct match (service name == param name)
+          }
         }
       }
 
