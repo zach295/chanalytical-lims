@@ -202,12 +202,13 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     }
   }
   const paramNames = params.map(p => normalizeCell(p.name));
-  context.log(`[pdf] Template param rows found: ${JSON.stringify(Object.keys(pMap))}`);
-  context.log(`[pdf] Looking for params: ${JSON.stringify(paramNames)}`);
-  const matched = Object.keys(pMap).filter(n => paramNames.includes(n));
-  const willDelete = Object.keys(pMap).filter(n => !paramNames.includes(n));
-  context.log(`[pdf] Will KEEP: ${JSON.stringify(matched)}`);
-  context.log(`[pdf] Will DELETE: ${JSON.stringify(willDelete)}`);
+  context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} nc=${nc}`);
+  context.log(`[pdf] Template param rows (col A): ${JSON.stringify(Object.keys(pMap))}`);
+  context.log(`[pdf] Looking for (from params): ${JSON.stringify(paramNames)}`);
+  // Also log what's in cols 0,1,2 of the first few rows after header
+  for (let r = hdrRow+1; r < Math.min(hdrRow+5, rows.length); r++) {
+    context.log(`[pdf] Row ${r}: col0="${(rows[r]||[])[0]}" col1="${(rows[r]||[])[1]}" col2="${(rows[r]||[])[2]}"`);
+  }
 
   const colorHex = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
   const toDelete = [];
