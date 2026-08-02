@@ -151,12 +151,10 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
     let targetCol;
     if (lbl.includes('authorized')) {
-      // Write to col+1, col+2, col+3, col+4 — only the correct anchor cell will accept
-      // the write; merge interiors and protected cells fail silently
-      context.log(`[pdf] "authorized by" value="${val}" — writing to cols ${f.c+1}-${f.c+4} on row ${f.r+1}`);
-      for (let dc = 1; dc <= 4; dc++) {
-        addCell(f.r, f.c + dc, val);
-      }
+      // col+1 lands before the underline — write to col+2 and col+3 only
+      context.log(`[pdf] "authorized by" value="${val}" — writing to cols ${f.c+2}-${f.c+3} on row ${f.r+1}`);
+      addCell(f.r, f.c + 2, val);
+      addCell(f.r, f.c + 3, val);
       continue; // skip the single-cell write below
     } else {
       targetCol = f.c + 1;
