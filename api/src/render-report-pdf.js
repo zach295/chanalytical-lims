@@ -238,13 +238,30 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Delete unused rows bottom-to-top BEFORE setting colors
-  // (so color row addresses are correct for the final sheet layout)
-  const toDeleteSorted = toDelete.sort((a, b) => b - a);
-  for (const r of toDeleteSorted) {
-    const addr = `A${r}:${colLetter((nc || 10) - 1)}${r}`;
-    const dr = await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
-    if (!dr.ok) context.log(`[pdf] Delete row ${r} failed:`, dr.status);
+  // Delete unused rows — group consecutive rows into ranges for speed
+  // e.g. rows [17,18,19,22,23] → delete A17:J19 then A22:J23 (2 calls not 5)
+  const toDeleteSorted = toDelete.sort((a, b) => b - a); // descending for correct shift
+  if (toDeleteSorted.length > 0) {
+    // Build ranges of consecutive rows (ascending order first, then reverse for deletion)
+    const ascending = [...toDeleteSorted].sort((a, b) => a - b);
+    const ranges = [];
+    let rangeStart = ascending[0], rangeEnd = ascending[0];
+    for (let i = 1; i < ascending.length; i++) {
+      if (ascending[i] === rangeEnd + 1) {
+        rangeEnd = ascending[i]; // extend current range
+      } else {
+        ranges.push([rangeStart, rangeEnd]);
+        rangeStart = rangeEnd = ascending[i];
+      }
+    }
+    ranges.push([rangeStart, rangeEnd]);
+    context.log(`[pdf] Deleting ${toDeleteSorted.length} rows as ${ranges.length} ranges`);
+    // Delete ranges bottom-to-top so row numbers stay valid
+    for (const [start, end] of ranges.reverse()) {
+      const addr = `A${start}:${colLetter((nc || 10) - 1)}${end}`;
+      const dr = await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
+      if (!dr.ok) context.log(`[pdf] Delete range ${addr} failed:`, dr.status);
+    }
   }
 
   // Re-build color updates with FINAL row numbers (after deletions shifted rows up)
