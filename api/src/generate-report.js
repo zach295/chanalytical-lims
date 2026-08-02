@@ -147,7 +147,7 @@ async function getSampleMeta(baseId) {
       state:        merged.state        || 'ME',
       zip:          merged.zip          || '',
       approvedBy:   merged.approvedBy   || '',
-      services:     tests.join(', '),
+      services:     tests.join(' | '),
     };
   } catch(e) { console.error('getSampleMeta:', e.message); return null; }
 }
@@ -282,6 +282,7 @@ app.http('generate-report', {
 
       const activeParams = PARAM_CONFIG.filter(p => needed.has(p.name));
       const fhaParams    = PARAM_CONFIG.filter(p => FHA_PARAM_NAMES.includes(p.name));
+      context.log(`[generate-report] services=${JSON.stringify(services)} needed=${JSON.stringify([...needed])} activeParams=${activeParams.map(p=>p.name).join('|')}`);
 
       // ── Build param rows from Results Cache ─────────────────────────────────
       const c = cache || {};
