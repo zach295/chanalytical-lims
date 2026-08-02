@@ -192,6 +192,20 @@ function getAbbrev(name) {
   return name.split(/\s+/).map(w=>w[0]?.toUpperCase()||'').join('').slice(0,5)||'UNK';
 }
 
+// Format public client name: "Public-Chandler, Zach" → "Zach Chandler"
+function formatCustomerName(name) {
+  if (!name) return '';
+  if (!name.startsWith('Public-')) return name;
+  const inner = name.slice('Public-'.length).trim();
+  const commaIdx = inner.indexOf(',');
+  if (commaIdx > 0) {
+    const last  = inner.slice(0, commaIdx).trim();
+    const first = inner.slice(commaIdx + 1).trim();
+    return first ? `${first} ${last}` : last;
+  }
+  return inner;
+}
+
 // ── Get client info from SharePoint Clients list ───────────────────────────────
 async function getClientInfo(token, customerName) {
   try {
@@ -245,10 +259,12 @@ async function moveSpFile(itemId, destFolderPath, token) {
 async function loadDynamicTestTypes(token) {
   let dynamicSuffixMap  = { ...SUFFIX_MAP };
   let dynamicPackageSet = new Set([...PACKAGE_SET]);
+  let dynamicCoverage   = { ...PACKAGE_COVERAGE }; // what elements each test includes
+  let dynamicPricing    = {};                       // pricing per test type
   try {
     const siteId = process.env.SP_SITE_ID;
     const res = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Test Types/items?$expand=fields($select=Title,Suffix,Category,Active)&$top=200`,
+      `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,Elements,WQPrice,InspectorPrice,PublicPrice,Active)&$top=200`,
       { headers: { Authorization:`Bearer ${token}` } }
     );
     if (res.ok) {
@@ -259,10 +275,23 @@ async function loadDynamicTestTypes(token) {
         if (f.Title && f.Suffix) dynamicSuffixMap[f.Title] = f.Suffix;
         if (f.Title) dynamicPackageSet.add(f.Title);
         if (f.Title) TEST_NORMALIZE[f.Title.toLowerCase()] = f.Title;
+        // Elements: pipe-separated list of included parameters
+        if (f.Title && f.Elements) {
+          dynamicCoverage[f.Title] = f.Elements
+            .split('|').map(s => s.trim()).filter(Boolean);
+        }
+        // Pricing
+        if (f.Title) {
+          dynamicPricing[f.Title] = {
+            wq:        f.WQPrice        || null,
+            inspector: f.InspectorPrice || null,
+            public:    f.PublicPrice    || null,
+          };
+        }
       }
     }
   } catch(e) { console.warn('[approve] Could not load dynamic test types:', e.message); }
-  return { dynamicSuffixMap, dynamicPackageSet };
+  return { dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing };
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────────
@@ -283,7 +312,7 @@ app.http('approve-scan', {
       const token = await getToken();
 
       // Load dynamic test types from SP
-      const { dynamicSuffixMap, dynamicPackageSet } = await loadDynamicTestTypes(token);
+      const { dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing } = await loadDynamicTestTypes(token);
 
       // Normalize test names
       const normalizedTests = tests.map(normalizeTest);
@@ -301,7 +330,7 @@ app.http('approve-scan', {
 
       // Validate: block if element already covered by package
       if (selectedPackage) {
-        const covered   = PACKAGE_COVERAGE[selectedPackage] || [];
+        const covered   = dynamicCoverage[selectedPackage] || PACKAGE_COVERAGE[selectedPackage] || [];
         const redundant = selectedElements.filter(e => covered.includes(e));
         if (redundant.length > 0) {
           return { status:400, jsonBody:{
