@@ -296,26 +296,33 @@ app.http('generate-report', {
         }
       } catch(e) { /* fall through to direct name matching below */ }
 
-      // Build the set of parameter names needed for this report
+      // Build the set of parameter names needed for this report.
+      // Priority: aliases map FIRST (handles single elements + known name mismatches),
+      // then SP list (handles package-level tests), then direct name match.
       const needed = new Set();
       for (const svc of services) {
-        if (testTypeElements[svc]) {
-          // Package or element test with SP definition — use its element list
+        const aliases = PARAM_SERVICE_ALIASES[svc];
+        if (aliases) {
+          // Alias map wins — resolves name mismatches (pH→pH Electrometric, etc.)
+          aliases.forEach(a => needed.add(a));
+          context.log(`[gen] svc="${svc}" → alias ${JSON.stringify(aliases)}`);
+        } else if (testTypeElements[svc] && testTypeElements[svc].length > 0) {
+          // SP list entry for package-level tests (Standard Safety, Expanded Safety, etc.)
           testTypeElements[svc].forEach(e => needed.add(e));
+          context.log(`[gen] svc="${svc}" → SP list ${JSON.stringify(testTypeElements[svc])}`);
         } else {
-          // No SP entry — use alias map first, then direct name match
-          const aliases = PARAM_SERVICE_ALIASES[svc];
-          if (aliases) {
-            aliases.forEach(a => needed.add(a));
-          } else {
-            needed.add(svc); // direct match (service name == param name)
-          }
+          // Direct name match (service name == PARAM_CONFIG name)
+          needed.add(svc);
+          context.log(`[gen] svc="${svc}" → direct add`);
         }
       }
 
       const activeParams = PARAM_CONFIG.filter(p => needed.has(p.name));
       const fhaParams    = PARAM_CONFIG.filter(p => FHA_PARAM_NAMES.includes(p.name));
-      context.log(`[generate-report] services=${JSON.stringify(services)} needed=${JSON.stringify([...needed])} activeParams=${activeParams.map(p=>p.name).join('|')}`);
+      context.log(`[gen] services=${JSON.stringify(services)}`);
+      context.log(`[gen] needed=${JSON.stringify([...needed])}`);
+      context.log(`[gen] activeParams=${activeParams.map(p=>p.name).join(' | ') || 'EMPTY'}`);
+      context.log(`[gen] meta.services raw="${meta.services}"`);
 
       // ── Build param rows from Results Cache ─────────────────────────────────
       const c = cache || {};
