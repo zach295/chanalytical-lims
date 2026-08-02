@@ -201,6 +201,13 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (name) pMap[name] = r;
     }
   }
+  const paramNames = params.map(p => normalizeCell(p.name));
+  context.log(`[pdf] Template param rows found: ${JSON.stringify(Object.keys(pMap))}`);
+  context.log(`[pdf] Looking for params: ${JSON.stringify(paramNames)}`);
+  const matched = Object.keys(pMap).filter(n => paramNames.includes(n));
+  const willDelete = Object.keys(pMap).filter(n => !paramNames.includes(n));
+  context.log(`[pdf] Will KEEP: ${JSON.stringify(matched)}`);
+  context.log(`[pdf] Will DELETE: ${JSON.stringify(willDelete)}`);
 
   const colorHex = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
   const toDelete = [];
