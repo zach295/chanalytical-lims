@@ -277,67 +277,93 @@ app.http('generate-report', {
       // ── Load which parameters each test type includes from SharePoint ─────
       let testTypeElements = {};
       try {
-        const token2 = await getToken();
-        const siteId = process.env.SP_SITE_ID;
-        // Fetch all fields — no $select so we get every column including Description
-        // regardless of its internal name
-        const ttRes  = await fetch(
-          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
-          { headers: { Authorization: `Bearer ${token2}` } }
+        const token2  = await getToken();
+        const siteId  = process.env.SP_SITE_ID;
+        const GRAPH   = 'https://graph.microsoft.com/v1.0';
+        const authHdr = { Authorization: `Bearer ${token2}` };
+
+        // Find the list by display name (more reliable than URL encoding)
+        const listSearchRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists?$select=id,displayName&$top=100`,
+          { headers: authHdr }
         );
-        if (ttRes.ok) {
-          const ttData = await ttRes.json();
-          // Log first item's field keys so we can see the real internal names
-          if (ttData.value && ttData.value[0]) {
-            context.log('[gen] SP field keys:', JSON.stringify(Object.keys(ttData.value[0].fields || {})));
-          }
-          for (const item of (ttData.value || [])) {
-            const f = item.fields || {};
-            // Try all possible internal names for Description column
-            const descVal = f.Description || f.Description0 || f.Elements || '';
-            const titleVal = f.Title || f.Service || '';
-            if (!titleVal || !descVal) continue;
-            // Strip HTML tags, split on newline/pipe, clean stray commas
-            const rawElems = descVal
-              .replace(/<[^>]+>/gi, '|')
-              .split(/[\r\n|]+/)
-              .map(s => s.trim().replace(/^,+|,+$/g, '').trim())
-              .filter(Boolean);
-            // Resolve aliases (Fluoride → Fluoride, Total, pH → pH Electrometric)
-            const resolved = [];
-            for (const elem of rawElems) {
-              const aliased = PARAM_SERVICE_ALIASES[elem];
-              if (aliased) aliased.forEach(a => resolved.push(a));
-              else resolved.push(elem);
+        let listId = null;
+        if (listSearchRes.ok) {
+          const listData = await listSearchRes.json();
+          const found = (listData.value || []).find(l =>
+            l.displayName === 'Current Pricing-V1' ||
+            l.displayName === 'Current Pricing V1' ||
+            (l.displayName||'').toLowerCase().includes('current pricing')
+          );
+          listId = found?.id;
+          context.log('[gen] Pricing list found:', found?.displayName, 'id:', listId);
+        }
+
+        if (listId) {
+          const ttRes = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=200`,
+            { headers: authHdr }
+          );
+          if (ttRes.ok) {
+            const ttData = await ttRes.json();
+            if (ttData.value?.[0]) {
+              context.log('[gen] SP field keys:', JSON.stringify(Object.keys(ttData.value[0].fields || {})));
             }
-            testTypeElements[titleVal] = resolved;
+            for (const item of (ttData.value || [])) {
+              const f = item.fields || {};
+              // Description column (try multiple internal names SP might use)
+              const descVal = f.Description || f.Description0 || f.Elements || '';
+              const titleVal = f.Title || f.Service || '';
+              if (!titleVal || !descVal) continue;
+              const rawElems = descVal
+                .replace(/<[^>]+>/gi, '|')
+                .split(/[\r\n|]+/)
+                .map(s => s.trim().replace(/^,+|,+$/g, '').trim())
+                .filter(Boolean);
+              const resolved = [];
+              for (const elem of rawElems) {
+                const aliased = PARAM_SERVICE_ALIASES[elem];
+                if (aliased) aliased.forEach(a => resolved.push(a));
+                else resolved.push(elem);
+              }
+              if (resolved.length > 0) testTypeElements[titleVal] = resolved;
+            }
+            context.log('[gen] SP loaded', Object.keys(testTypeElements).length, 'entries');
+          } else {
+            context.log('[gen] Items fetch failed:', ttRes.status);
           }
-          context.log('[gen] testTypeElements keys:', JSON.stringify(Object.keys(testTypeElements)));
         } else {
-          context.log('[gen] SP list fetch failed:', ttRes.status, await ttRes.text().catch(()=>''));
+          context.log('[gen] Pricing list not found — using fallback only');
         }
       } catch(e) {
-        context.log('[gen] SP list error:', e.message);
+        context.log('[gen] SP error:', e.message);
       }
 
       // Build the set of parameter names needed for this report.
-      // Priority: aliases map FIRST (handles single elements + known name mismatches),
-      // then SP list (handles package-level tests), then direct name match.
+      // Priority:
+      //   1. PARAM_SERVICE_ALIASES  — single element name mismatches (pH→pH Electrometric)
+      //   2. SP list (Current Pricing-V1) — dynamic package coverage
+      //   3. PACKAGE_COVERAGE_FALLBACK  — hardcoded fallback (always works)
+      //   4. Direct name match — element name == PARAM_CONFIG name
       const needed = new Set();
       for (const svc of services) {
         const aliases = PARAM_SERVICE_ALIASES[svc];
         if (aliases) {
-          // Alias map wins — resolves name mismatches (pH→pH Electrometric, etc.)
+          // Single element alias (pH→pH Electrometric, Fluoride→Fluoride, Total, etc.)
           aliases.forEach(a => needed.add(a));
-          context.log(`[gen] svc="${svc}" → alias ${JSON.stringify(aliases)}`);
+          context.log(`[gen] svc="${svc}" → alias [${aliases.join(', ')}]`);
         } else if (testTypeElements[svc] && testTypeElements[svc].length > 0) {
-          // SP list entry for package-level tests (Standard Safety, Expanded Safety, etc.)
+          // SP list has this package/service with elements defined
           testTypeElements[svc].forEach(e => needed.add(e));
-          context.log(`[gen] svc="${svc}" → SP list ${JSON.stringify(testTypeElements[svc])}`);
+          context.log(`[gen] svc="${svc}" → SP list (${testTypeElements[svc].length} params)`);
+        } else if (PACKAGE_COVERAGE_FALLBACK[svc]) {
+          // Hardcoded fallback for known packages
+          PACKAGE_COVERAGE_FALLBACK[svc].forEach(e => needed.add(e));
+          context.log(`[gen] svc="${svc}" → fallback (${PACKAGE_COVERAGE_FALLBACK[svc].length} params)`);
         } else {
-          // Direct name match (service name == PARAM_CONFIG name)
+          // Direct name match — element name already matches PARAM_CONFIG name
           needed.add(svc);
-          context.log(`[gen] svc="${svc}" → direct add`);
+          context.log(`[gen] svc="${svc}" → direct`);
         }
       }
 
