@@ -1775,7 +1775,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const qty=parseInt(document.getElementById('adjust-qty').value);
     const notes=document.getElementById('adjust-notes').value.trim();
     if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
-    const date=new Date().toISOString().split('T')[0];
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     if (type==='add') inventory[key].inStock=(inventory[key].inStock||0)+qty;
     else inventory[key].inStock=Math.max(0,(inventory[key].inStock||0)-qty);
     inventory[key].lastActivity=date;
@@ -1802,7 +1802,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!bottles[key]) bottles[key] = {label:key, count:0};
     if (action==='add') bottles[key].count=(bottles[key].count||0)+qty;
     else bottles[key].count=Math.max(0,(bottles[key].count||0)-qty);
-    const date=new Date().toISOString().split('T')[0];
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const label = bottles[key].label || key;
     const entry={date,client:label,type:action==='add'?'bottle_add':'bottle_remove',qty,notes:notes||label,by:getAdminName()};
     logActivity(entry);
@@ -1828,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (bottles.metals) bottles.metals.count=Math.max(0,(bottles.metals.count||0)-(qty*2));
     if (bottles.radon) bottles.radon.count=Math.max(0,(bottles.radon.count||0)-qty);
     if (bottles.unmade_kits) bottles.unmade_kits.count=Math.max(0,(bottles.unmade_kits.count||0)-qty);
-    const date=new Date().toISOString().split('T')[0];
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const entry={date,client:'Lab',type:'assemble',qty,notes:`${qty} kits assembled`,by:getAdminName()};
     logActivity(entry);
     closeModal('assemble');render();writeInventory();writeBottles();
@@ -1911,7 +1911,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!qty || qty < 1) { showToast('Enter a valid quantity.'); return; }
     if (!kitBoxes[key]) kitBoxes[key] = { label: key, count: 0 };
     const label = kitBoxes[key].label || key;
-    const date = new Date().toISOString().split('T')[0];
+    const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
     if (action === 'assemble') {
       // Check we have enough bottles + unmade boxes
@@ -3234,7 +3234,7 @@ document.addEventListener('DOMContentLoaded', function() {
       showToast(`✅ ${data.quantity} COC forms downloaded!`);
       // Log COC batch generation
       logActivity({
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         client: clientKey,
         type: 'coc_batch',
         qty: data.quantity,
@@ -4478,7 +4478,7 @@ document.addEventListener('DOMContentLoaded', function() {
       barcodeId,
       customer: '',
       email: '',
-      dateDrawn: new Date().toISOString().split('T')[0],
+      dateDrawn: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
       timeDrawn: '',
       location: '',
       city: '',
@@ -4601,7 +4601,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!markRes.ok) throw new Error(await markRes.text());
 
       logActivity({
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         client: record.customer,
         type: 'received',
         qty: 1,
@@ -4899,7 +4899,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!currentManualLabId) { showToast('Enter a Lab ID first.'); return; }
     document.getElementById('gr-labid-display').textContent = `Lab ID: ${currentManualLabId}`;
     document.getElementById('gr-authorized-by').value = getAdminName();
-    document.getElementById('gr-review-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('gr-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     document.getElementById('gr-status').textContent = '';
     openModal('generate-report');
   }
@@ -5191,7 +5191,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Set authorization fields
       document.getElementById('rpt-authorized-by').value = getAdminName();
-      document.getElementById('rpt-review-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('rpt-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
@@ -5488,7 +5488,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast('✅ PDF saved');
         // These lines prevent the print fallback from running
         const rLabId3 = currentReportData.labId || '';
-        logActivity({ date: new Date().toISOString().split('T')[0], client: currentReportData.meta?.customer || rLabId3, type: 'report_saved', qty: 1, notes: 'PDF — ' + rLabId3, by: authorizedBy });
+        logActivity({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }), client: currentReportData.meta?.customer || rLabId3, type: 'report_saved', qty: 1, notes: 'PDF — ' + rLabId3, by: authorizedBy });
         reportHistory.unshift({ labId: rLabId3, emailed: false, by: authorizedBy, time: new Date().toLocaleTimeString() });
         renderReportHistory();
         return;
@@ -5669,7 +5669,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const rLabId    = currentReportData.labId || currentReportData.meta?.labId || '';
       const rCustomer = currentReportData.meta?.customer || '';
       logActivity({
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
         client: rCustomer || rLabId,
         type: sendEmail ? 'report_sent' : 'report_saved',
         qty: 1,
