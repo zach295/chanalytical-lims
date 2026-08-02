@@ -149,10 +149,19 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, val] of Object.entries(leftHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
-    // "Authorized By:" value goes in the 2nd cell to the right (col+2)
-    const offset = lbl.includes('authorized') ? 2 : 1;
-    context.log(`[pdf] "${lbl}" → ${colLetter(f.c+offset)}${f.r+1} = "${val}"`);
-    addCell(f.r, f.c + offset, val);
+    let targetCol;
+    if (lbl.includes('authorized')) {
+      // Authorized By: scan from col+2 (col+1 is merge interior, col+2+ is value area)
+      targetCol = f.c + 2;
+      for (let dc = 2; dc <= 6; dc++) {
+        const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
+        if (!cv) { targetCol = f.c + dc; break; }
+      }
+    } else {
+      targetCol = f.c + 1;
+    }
+    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${val}"`);
+    addCell(f.r, targetCol, val);
   }
 
   // ── Location — address to the RIGHT of "Location:" label, city/state/zip below ──
@@ -265,7 +274,7 @@ app.http('render-report-pdf', {
     const fhaParams = reportData.fhaParams    || reportData.fhaRows   || [];
     const needsFHA  = reportData.needsFHA;
     const isRadon   = reportData.isRadon;
-    const today     = new Date().toLocaleDateString('en-US', { month:'2-digit', day:'2-digit', year:'2-digit' });
+    const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
     let token;
     try { token = await getToken(); }
