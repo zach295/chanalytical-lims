@@ -64,6 +64,20 @@ const PARAM_SERVICE_ALIASES = {
   'Cobalt':                ['Cobalt'],
 };
 
+// Hardcoded fallback — reports always work even when SP list is unreachable
+const PACKAGE_COVERAGE_FALLBACK = {
+  'Basic Safety (FHA)':              ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
+  'Basic Safety':                    ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
+  'Standard Safety':                 ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Calcium, Total','Magnesium, Total','pH Electrometric','Total Coliform','E. Coli'],
+  'Expanded Safety (Mortgage Test)': ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Calcium, Total','Magnesium, Total','pH Electrometric','Total Coliform','E. Coli'],
+  'WW - Expanded Safety':            ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Alkalinity','Calcium, Total','Magnesium, Total','pH Electrometric','Total Coliform','E. Coli'],
+  'Comprehensive':                   ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Antimony, Total','Cadmium, Total','Chromium, Total','pH Electrometric','Alkalinity','Sulfate','Total Coliform','E. Coli'],
+  'Pro Plus':                        ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Alkalinity','Sulfate','Tannins','Total Dissolved Solids (TDS)','Bromide','pH Electrometric','Total Coliform','E. Coli'],
+  'Bacteria':                        ['Total Coliform','E. Coli'],
+  'Radon Water':                     [],
+};
+
+
 
 const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'];
 const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive'];
