@@ -280,7 +280,7 @@ app.http('generate-report', {
         const token2 = await getToken();
         const siteId = process.env.SP_SITE_ID;
         const ttRes  = await fetch(
-          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Elements,Active)&$top=200`,
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Description,Active)&$top=200`,
           { headers: { Authorization: `Bearer ${token2}` } }
         );
         if (ttRes.ok) {
@@ -288,9 +288,11 @@ app.http('generate-report', {
           for (const item of (ttData.value || [])) {
             const f = item.fields || {};
             if (f.Active === false || f.Active === 'FALSE') continue;
-            if (f.Title && f.Elements) {
-              testTypeElements[f.Title] = f.Elements
-                .split('|').map(s => s.trim()).filter(Boolean);
+            // Description column holds element list (newline or pipe separated)
+            const descVal = f.Description || f.Elements || '';
+            if (f.Title && descVal) {
+              testTypeElements[f.Title] = descVal
+                .split(/[\r\n|]+/).map(s => s.trim()).filter(Boolean);
             }
           }
         }
