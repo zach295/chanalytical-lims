@@ -279,24 +279,46 @@ app.http('generate-report', {
       try {
         const token2 = await getToken();
         const siteId = process.env.SP_SITE_ID;
+        // Fetch all fields — no $select so we get every column including Description
+        // regardless of its internal name
         const ttRes  = await fetch(
-          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Description,Active)&$top=200`,
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
           { headers: { Authorization: `Bearer ${token2}` } }
         );
         if (ttRes.ok) {
           const ttData = await ttRes.json();
+          // Log first item's field keys so we can see the real internal names
+          if (ttData.value && ttData.value[0]) {
+            context.log('[gen] SP field keys:', JSON.stringify(Object.keys(ttData.value[0].fields || {})));
+          }
           for (const item of (ttData.value || [])) {
             const f = item.fields || {};
-            if (f.Active === false || f.Active === 'FALSE') continue;
-            // Description column holds element list (newline or pipe separated)
-            const descVal = f.Description || f.Elements || '';
-            if (f.Title && descVal) {
-              testTypeElements[f.Title] = descVal
-                .split(/[\r\n|]+/).map(s => s.trim()).filter(Boolean);
+            // Try all possible internal names for Description column
+            const descVal = f.Description || f.Description0 || f.Elements || '';
+            const titleVal = f.Title || f.Service || '';
+            if (!titleVal || !descVal) continue;
+            // Strip HTML tags, split on newline/pipe, clean stray commas
+            const rawElems = descVal
+              .replace(/<[^>]+>/gi, '|')
+              .split(/[\r\n|]+/)
+              .map(s => s.trim().replace(/^,+|,+$/g, '').trim())
+              .filter(Boolean);
+            // Resolve aliases (Fluoride → Fluoride, Total, pH → pH Electrometric)
+            const resolved = [];
+            for (const elem of rawElems) {
+              const aliased = PARAM_SERVICE_ALIASES[elem];
+              if (aliased) aliased.forEach(a => resolved.push(a));
+              else resolved.push(elem);
             }
+            testTypeElements[titleVal] = resolved;
           }
+          context.log('[gen] testTypeElements keys:', JSON.stringify(Object.keys(testTypeElements)));
+        } else {
+          context.log('[gen] SP list fetch failed:', ttRes.status, await ttRes.text().catch(()=>''));
         }
-      } catch(e) { /* fall through to direct name matching below */ }
+      } catch(e) {
+        context.log('[gen] SP list error:', e.message);
+      }
 
       // Build the set of parameter names needed for this report.
       // Priority: aliases map FIRST (handles single elements + known name mismatches),
