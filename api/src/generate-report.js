@@ -9,32 +9,32 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 // ── Parameter config ──────────────────────────────────────────────────────────
 const PARAM_CONFIG = [
-  { name:'Chloride, Total',              rl:2.00,    epa:250,       unit:'mg/L', method:'SM4500Cl',         source:'gallery', cacheField:'field_6',  cacheDT:'field_7',  packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Pro Plus','Chloride, Total'] },
-  { name:'Fluoride, Total',              rl:0.20,    epa:4,         unit:'mg/L', method:'SM4500F',          source:'gallery', cacheField:'field_8',  cacheDT:'field_9',  packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Fluoride'] },
-  { name:'Nitrite-Nitrogen, Total',      rl:0.20,    epa:1,         unit:'mg/L', method:'EPA 354.1',        source:'gallery', cacheField:'field_10', cacheDT:'field_11', packages:['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Nitrite'] },
-  { name:'Nitrate-Nitrogen, Total',      rl:1.00,    epa:10,        unit:'mg/L', method:'SM4500NO3',        source:'gallery', cacheField:'field_12', cacheDT:'field_13', packages:['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Nitrate'] },
-  { name:'Arsenic, Total',               rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Arsenic_x0028_As75_x0029_',    packages:['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Arsenic, Total'] },
-  { name:'Lead, Total',                  rl:1.00,    epa:15,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Lead_x0028_Pb208_x0029_',      packages:['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Lead, Total'] },
-  { name:'Uranium, Total',               rl:1.00,    epa:30,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Uranium_x0028_U238_x0029_',    packages:['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Uranium, Total'] },
-  { name:'Copper, Total',                rl:0.001,   epa:1.3,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Copper_x0028_Cu63_x0029_',     packages:['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Copper, Total'] },
-  { name:'Iron, Total',                  rl:0.05,    epa:0.3,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Iron_x0028_Fe54_x0029_',       packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Iron, Total'] },
-  { name:'Manganese, Total',             rl:0.001,   epa:0.05,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Manganese_x0028_Mn55_x0029_',  packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Manganese, Total'] },
-  { name:'Sodium, Total',                rl:1.00,    epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Sodium_x0028_Na23_x0029_',     packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Sodium, Total'] },
-  { name:'Hardness by calculation',      rl:0.91,    epa:null,      unit:'mg/L', method:'',                 source:'calc',                                                packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Total Hardness'] },
-  { name:'Calcium, Total',               rl:0.2,     epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Calcium_x0028_Ca43_x0029_',    packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Calcium, Total'] },
-  { name:'Magnesium, Total',             rl:0.1,     epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Magnesium_x0028_Mg24_x0029_',  packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Magnesium, Total'] },
-  { name:'Antimony, Total',              rl:0.0005,  epa:0.006,     unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Antimony_x0028_Sb121_x0029_',  packages:['Comprehensive','Antimony'] },
-  { name:'Cadmium, Total',               rl:0.002,   epa:0.005,     unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Cadmium_x0028_Cd111_x0029_',   packages:['Comprehensive','Cadmium, Total'] },
-  { name:'Chromium, Total',              rl:0.002,   epa:0.1,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Chromium_x0028_Cr52_x0029_',   packages:['Comprehensive','Chromium'] },
-  { name:'Cobalt',                       rl:null,    epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Cobalt_x0028_Co59_x0029_',     packages:['Comprehensive','Cobalt'] },
-  { name:'pH Electrometric',             rl:null,    epa:'6.5-8.5', unit:'',     method:'SM4500H+B',        source:'ph',      decimals:2,                                 packages:['Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Pro Plus','pH'] },
-  { name:'Alkalinity',                   rl:40.00,   epa:null,      unit:'mg/L', method:'',                 source:'gallery', cacheField:'field_14', cacheDT:'field_15', packages:['WW - Expanded Safety','Comprehensive','Pro Plus','Alkalinity'] },
-  { name:'Sulfate',                      rl:40.00,   epa:250,       unit:'mg/L', method:'SM4500-SO4',       source:'gallery', cacheField:'field_16', cacheDT:'field_17', packages:['Comprehensive','Sulfate'] },
-  { name:'Tannins',                      rl:null,    epa:null,      unit:'',     method:'Hach Method 8193', source:'gallery', cacheField:'field_18', cacheDT:'field_19', packages:['Pro Plus','Tannins'] },
-  { name:'Total Dissolved Solids (TDS)', rl:null,    epa:null,      unit:'ppm',  method:'SM4500C1E',        source:'gallery', cacheField:'field_20', cacheDT:'field_21', packages:['Pro Plus','Total Dissolved Solids (TDS)'] },
-  { name:'Bromide',                      rl:null,    epa:null,      unit:'mg/L', method:'HI 93716',         source:'gallery', cacheField:'field_22', cacheDT:'field_23', packages:['Pro Plus','Bromide'] },
-  { name:'Total Coliform',               rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_2',                       packages:['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Bacteria'] },
-  { name:'E. Coli',                      rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_3',                       packages:['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Bacteria'] },
+  { name:'Chloride, Total',              rl:2.00,    epa:250,       unit:'mg/L', method:'SM4500Cl',         source:'gallery', cacheField:'field_6',  cacheDT:'field_7' },
+  { name:'Fluoride, Total',              rl:0.20,    epa:4,         unit:'mg/L', method:'SM4500F',          source:'gallery', cacheField:'field_8',  cacheDT:'field_9' },
+  { name:'Nitrite-Nitrogen, Total',      rl:0.20,    epa:1,         unit:'mg/L', method:'EPA 354.1',        source:'gallery', cacheField:'field_10', cacheDT:'field_11' },
+  { name:'Nitrate-Nitrogen, Total',      rl:1.00,    epa:10,        unit:'mg/L', method:'SM4500NO3',        source:'gallery', cacheField:'field_12', cacheDT:'field_13' },
+  { name:'Arsenic, Total',               rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Arsenic_x0028_As75_x0029_' },
+  { name:'Lead, Total',                  rl:1.00,    epa:15,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Lead_x0028_Pb208_x0029_' },
+  { name:'Uranium, Total',               rl:1.00,    epa:30,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Uranium_x0028_U238_x0029_' },
+  { name:'Copper, Total',                rl:0.001,   epa:1.3,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Copper_x0028_Cu63_x0029_' },
+  { name:'Iron, Total',                  rl:0.05,    epa:0.3,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Iron_x0028_Fe54_x0029_' },
+  { name:'Manganese, Total',             rl:0.001,   epa:0.05,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Manganese_x0028_Mn55_x0029_' },
+  { name:'Sodium, Total',                rl:1.00,    epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Sodium_x0028_Na23_x0029_' },
+  { name:'Hardness by calculation',      rl:0.91,    epa:null,      unit:'mg/L', method:'',                 source:'calc' },
+  { name:'Calcium, Total',               rl:0.2,     epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Calcium_x0028_Ca43_x0029_' },
+  { name:'Magnesium, Total',             rl:0.1,     epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Magnesium_x0028_Mg24_x0029_' },
+  { name:'Antimony, Total',              rl:0.0005,  epa:0.006,     unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Antimony_x0028_Sb121_x0029_' },
+  { name:'Cadmium, Total',               rl:0.002,   epa:0.005,     unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Cadmium_x0028_Cd111_x0029_' },
+  { name:'Chromium, Total',              rl:0.002,   epa:0.1,       unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Chromium_x0028_Cr52_x0029_' },
+  { name:'Cobalt',                       rl:null,    epa:null,      unit:'mg/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Cobalt_x0028_Co59_x0029_' },
+  { name:'pH Electrometric',             rl:null,    epa:'6.5-8.5', unit:'',     method:'SM4500H+B',        source:'ph',      decimals:2 },
+  { name:'Alkalinity',                   rl:40.00,   epa:null,      unit:'mg/L', method:'',                 source:'gallery', cacheField:'field_14', cacheDT:'field_15' },
+  { name:'Sulfate',                      rl:40.00,   epa:250,       unit:'mg/L', method:'SM4500-SO4',       source:'gallery', cacheField:'field_16', cacheDT:'field_17' },
+  { name:'Tannins',                      rl:null,    epa:null,      unit:'',     method:'Hach Method 8193', source:'gallery', cacheField:'field_18', cacheDT:'field_19' },
+  { name:'Total Dissolved Solids (TDS)', rl:null,    epa:null,      unit:'ppm',  method:'SM4500C1E',        source:'gallery', cacheField:'field_20', cacheDT:'field_21' },
+  { name:'Bromide',                      rl:null,    epa:null,      unit:'mg/L', method:'HI 93716',         source:'gallery', cacheField:'field_22', cacheDT:'field_23' },
+  { name:'Total Coliform',               rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_2' },
+  { name:'E. Coli',                      rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_3' },
 ];
 
 const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'];
@@ -246,10 +246,42 @@ app.http('generate-report', {
       const isRadon  = services.some(s => /radon/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
 
-      const activeParams = PARAM_CONFIG.filter(p =>
-        p.packages.some(pkg => services.includes(pkg))
-      );
-      const fhaParams = PARAM_CONFIG.filter(p => FHA_PARAM_NAMES.includes(p.name));
+      // ── Load which parameters each test type includes from SharePoint ─────
+      let testTypeElements = {};
+      try {
+        const token2 = await getToken();
+        const siteId = process.env.SP_SITE_ID;
+        const ttRes  = await fetch(
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Elements,Active)&$top=200`,
+          { headers: { Authorization: `Bearer ${token2}` } }
+        );
+        if (ttRes.ok) {
+          const ttData = await ttRes.json();
+          for (const item of (ttData.value || [])) {
+            const f = item.fields || {};
+            if (f.Active === false || f.Active === 'FALSE') continue;
+            if (f.Title && f.Elements) {
+              testTypeElements[f.Title] = f.Elements
+                .split('|').map(s => s.trim()).filter(Boolean);
+            }
+          }
+        }
+      } catch(e) { /* fall through to direct name matching below */ }
+
+      // Build the set of parameter names needed for this report
+      const needed = new Set();
+      for (const svc of services) {
+        if (testTypeElements[svc]) {
+          // Package or element test with SP definition — use its element list
+          testTypeElements[svc].forEach(e => needed.add(e));
+        } else {
+          // No SP entry — try direct parameter name match (single element fallback)
+          needed.add(svc);
+        }
+      }
+
+      const activeParams = PARAM_CONFIG.filter(p => needed.has(p.name));
+      const fhaParams    = PARAM_CONFIG.filter(p => FHA_PARAM_NAMES.includes(p.name));
 
       // ── Build param rows from Results Cache ─────────────────────────────────
       const c = cache || {};
