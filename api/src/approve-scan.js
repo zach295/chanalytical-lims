@@ -264,7 +264,7 @@ async function loadDynamicTestTypes(token) {
   try {
     const siteId = process.env.SP_SITE_ID;
     const res = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,Elements,WQPrice,InspectorPrice,PublicPrice,Active)&$top=200`,
+      `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,Description,WQPrice,InspectorPrice,PublicPrice,Active)&$top=200`,
       { headers: { Authorization:`Bearer ${token}` } }
     );
     if (res.ok) {
@@ -275,10 +275,11 @@ async function loadDynamicTestTypes(token) {
         if (f.Title && f.Suffix) dynamicSuffixMap[f.Title] = f.Suffix;
         if (f.Title) dynamicPackageSet.add(f.Title);
         if (f.Title) TEST_NORMALIZE[f.Title.toLowerCase()] = f.Title;
-        // Elements: pipe-separated list of included parameters
-        if (f.Title && f.Elements) {
-          dynamicCoverage[f.Title] = f.Elements
-            .split('|').map(s => s.trim()).filter(Boolean);
+        // Description column: element list (newline or pipe separated)
+        const descVal = f.Description || f.Elements || '';
+        if (f.Title && descVal) {
+          dynamicCoverage[f.Title] = descVal
+            .split(/[\r\n|]+/).map(s => s.trim()).filter(Boolean);
         }
         // Pricing
         if (f.Title) {
