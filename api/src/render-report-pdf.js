@@ -238,48 +238,31 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Delete unused rows — group consecutive rows into ranges for speed
-  // e.g. rows [17,18,19,22,23] → delete A17:J19 then A22:J23 (2 calls not 5)
-  const toDeleteSorted = toDelete.sort((a, b) => b - a); // descending for correct shift
-  if (toDeleteSorted.length > 0) {
-    // Build ranges of consecutive rows (ascending order first, then reverse for deletion)
-    const ascending = [...toDeleteSorted].sort((a, b) => a - b);
+  // Hide unused rows by setting rowHeight=0 — no row shifting, no address adjustment needed
+  // Group consecutive rows into ranges to minimize API calls
+  if (toDelete.length > 0) {
+    const ascending = [...toDelete].sort((a, b) => a - b);
     const ranges = [];
-    let rangeStart = ascending[0], rangeEnd = ascending[0];
+    let rs = ascending[0], re = ascending[0];
     for (let i = 1; i < ascending.length; i++) {
-      if (ascending[i] === rangeEnd + 1) {
-        rangeEnd = ascending[i]; // extend current range
-      } else {
-        ranges.push([rangeStart, rangeEnd]);
-        rangeStart = rangeEnd = ascending[i];
-      }
+      if (ascending[i] === re + 1) { re = ascending[i]; }
+      else { ranges.push([rs, re]); rs = re = ascending[i]; }
     }
-    ranges.push([rangeStart, rangeEnd]);
-    context.log(`[pdf] Deleting ${toDeleteSorted.length} rows as ${ranges.length} ranges`);
-    // Delete ranges bottom-to-top so row numbers stay valid
-    for (const [start, end] of ranges.reverse()) {
-      const addr = `A${start}:${colLetter((nc || 10) - 1)}${end}`;
-      const dr = await gReq('POST', `${base}/range(address='${addr}')/delete`, token, { shift: 'Up' }, sid);
-      if (!dr.ok) context.log(`[pdf] Delete range ${addr} failed:`, dr.status);
+    ranges.push([rs, re]);
+    context.log(`[pdf] Hiding ${toDelete.length} rows as ${ranges.length} ranges`);
+    // Hide each range (rowHeight=0 makes rows invisible in PDF export)
+    const hideRequests = ranges.map(([start, end]) => ({
+      url:    `${base}/range(address='A${start}:${colLetter((nc||10)-1)}${end}')/format`,
+      body:   { rowHeight: 0 },
+    }));
+    for (let i = 0; i < hideRequests.length; i += 20) {
+      await graphBatch(hideRequests.slice(i, i + 20), token, sid);
     }
   }
 
-  // Re-build color updates with FINAL row numbers (after deletions shifted rows up)
-  // Count how many rows were deleted ABOVE each color row and adjust
-  const finalColorUpdates = colorUpdates.map(cu => {
-    // Extract row number from URL like .../range(address='B17')/...
-    const m = cu.url.match(/address='B(\d+)'/);
-    if (!m) return cu;
-    const origRow = parseInt(m[1]);
-    // Count deleted rows above this row
-    const deletedAbove = toDeleteSorted.filter(d => d < origRow).length;
-    const newRow = origRow - deletedAbove;
-    return { ...cu, url: cu.url.replace(`B${origRow}`, `B${newRow}`) };
-  });
-
-  // Set colors LAST — after row deletions and after CF was cleared
-  for (let i = 0; i < finalColorUpdates.length; i += 20) {
-    await graphBatch(finalColorUpdates.slice(i, i + 20), token, sid);
+  // Set colors — rows haven't shifted so original addresses are still correct
+  for (let i = 0; i < colorUpdates.length; i += 20) {
+    await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
   }
 }
 
