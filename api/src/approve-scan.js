@@ -275,11 +275,14 @@ async function loadDynamicTestTypes(token) {
         if (f.Title && f.Suffix) dynamicSuffixMap[f.Title] = f.Suffix;
         if (f.Title) dynamicPackageSet.add(f.Title);
         if (f.Title) TEST_NORMALIZE[f.Title.toLowerCase()] = f.Title;
-        // Description column: element list (newline or pipe separated)
+        // Description column: element list (newline, pipe, or <br> separated)
         const descVal = f.Description || f.Elements || '';
         if (f.Title && descVal) {
           dynamicCoverage[f.Title] = descVal
-            .split(/[\r\n|]+/).map(s => s.trim()).filter(Boolean);
+            .replace(/<[^>]+>/gi, '|')
+            .split(/[\r\n|]+/)
+            .map(s => s.trim().replace(/^,+|,+$/g, '').trim())
+            .filter(Boolean);
         }
         // Pricing
         if (f.Title) {
