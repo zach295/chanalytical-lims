@@ -203,8 +203,10 @@ app.http('import-icpms', {
       // Step 1: Get Results Cache — find IDs needing ICP-MS data
       const cacheItems = await listItems('Results Cache', { top: 500 });
       // Always process all rows — find ones missing ANY element data
+      // Results Cache "Lab ID" column may have internal name LabID OR Lab_x0020_ID
+      const getLabId = r => String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
       const needsIcpms = cacheItems.filter(r => {
-        const hasId = !!(r.LabID || '').trim();
+        const hasId = !!getLabId(r);
         if (!hasId) return false;
         // Skip only if ALL element fields are already populated
         const elementsFilled = Object.values({
@@ -224,7 +226,7 @@ app.http('import-icpms', {
       // Group IDs by date portion (MMDDYY)
       const byDate = {};
       for (const item of needsIcpms) {
-        const baseId   = String(item.LabID || '').split(' ')[0].trim();
+        const baseId   = getLabId(item).split(' ')[0].trim();
         const datePart = getDatePart(baseId);
         if (!datePart) continue;
         if (!byDate[datePart]) byDate[datePart] = new Set();
@@ -290,8 +292,8 @@ app.http('import-icpms', {
         }
 
         const existing = cacheItems.find(r => {
-          const storedBase = String(r.LabID || '').split(' ')[0].trim();
-          return storedBase === baseId || r.LabID === baseId;
+          const storedBase = getLabId(r).split(' ')[0].trim();
+          return storedBase === baseId || getLabId(r) === baseId;
         });
 
         if (existing) {
