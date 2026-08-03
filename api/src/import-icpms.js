@@ -53,6 +53,15 @@ function getDatePart(baseId) {
   return m ? m[1] : '';
 }
 
+// Detect Arsenic Speciation ICP-MS suffixes
+// TAs = Total Arsenic row, As3 = Arsenic III row
+function getSpecSuffix(id) {
+  const s = String(id || '').trim();
+  if (/ TAs$/i.test(s)) return 'TAs';
+  if (/ As3$/i.test(s)) return 'As3';
+  return null;
+}
+
 function isCellRed(cell) {
   if (!cell || !cell.s) return false;
   const fg = String(cell.s.fgColor?.rgb || '').toUpperCase();
@@ -114,7 +123,7 @@ function parseIcpmsFile(buffer, targetIds) {
       elements[elemKey] = { value, rejected };
     }
 
-    rows.push({ sampleId, baseId, dilution: getDilution(sampleId), acqTime, elements });
+    rows.push({ sampleId, baseId, specSuffix: getSpecSuffix(sampleId), dilution: getDilution(sampleId), acqTime, elements });
   }
 
   return rows;
@@ -129,10 +138,16 @@ function mergeResults(rows) {
 
   const merged = {};
   for (const [baseId, baseRows] of Object.entries(byBase)) {
-    baseRows.sort((a, b) => a.dilution - b.dilution);
-    const result = { baseId, acqTime: baseRows[0]?.acqTime || '', elements: {} };
+    // Separate As3 (Arsenic III speciation) rows from regular/TAs rows
+    const as3Rows     = baseRows.filter(r => r.specSuffix === 'As3');
+    const regularRows = baseRows.filter(r => r.specSuffix !== 'As3');
+    regularRows.sort((a, b) => a.dilution - b.dilution);
+
+    const result = { baseId, acqTime: regularRows[0]?.acqTime || baseRows[0]?.acqTime || '', elements: {}, arsenicIII: null };
+
+    // Fill elements from regular/TAs rows only
     for (const elemKey of Object.keys(ELEMENT_MAP)) {
-      for (const row of baseRows) {
+      for (const row of regularRows) {
         const el = row.elements[elemKey];
         if (!el) continue;
         if (!el.rejected && el.value !== null && el.value !== undefined) {
@@ -141,6 +156,22 @@ function mergeResults(rows) {
         }
       }
     }
+
+    // Capture Arsenic III + its acquisition time from As3 row (As 75 column)
+    if (as3Rows.length > 0) {
+      for (const row of as3Rows.sort((a,b) => a.dilution - b.dilution)) {
+        const as75 = row.elements['As 75'];
+        if (as75 && !as75.rejected && as75.value !== null) {
+          const num = typeof as75.value === 'number' ? as75.value : parseFloat(as75.value);
+          if (!isNaN(num)) {
+            result.arsenicIII        = num < 0 ? 0 : Math.round(num * 10000) / 10000;
+            result.arsenicIIIAcqTime = row.acqTime || '';
+            break;
+          }
+        }
+      }
+    }
+
     merged[baseId] = result;
   }
   return merged;
@@ -238,6 +269,16 @@ app.http('import-icpms', {
             const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
             fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
           }
+        }
+        // Write Arsenic III fields for speciation tests
+        // Column display names: "ArsenicIII" and "ArsenicIII Acquisition time"
+        // SP internal names encode spaces as _x0020_
+        if (result.arsenicIII !== null && result.arsenicIII !== undefined) {
+          fields['ArsenicIII'] = String(result.arsenicIII);
+        }
+        if (result.arsenicIIIAcqTime) {
+          // Try the most common SP internal name formats for "ArsenicIII Acquisition time"
+          fields['ArsenicIII_x0020_Acquisition_x0020_time'] = result.arsenicIIIAcqTime;
         }
 
         const existing = cacheItems.find(r => {
