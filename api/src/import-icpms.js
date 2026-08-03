@@ -280,16 +280,7 @@ app.http('import-icpms', {
             fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
           }
         }
-        // Write Arsenic III fields for speciation tests
-        // Column display names: "ArsenicIII" and "ArsenicIII Acquisition time"
-        // SP internal names encode spaces as _x0020_
-        if (result.arsenicIII !== null && result.arsenicIII !== undefined) {
-          fields['ArsenicIII'] = String(result.arsenicIII);
-        }
-        if (result.arsenicIIIAcqTime) {
-          // Try the most common SP internal name formats for "ArsenicIII Acquisition time"
-          fields['ArsenicIII_x0020_Acquisition_x0020_Time'] = result.arsenicIIIAcqTime;
-        }
+        // ArsenicIII written separately to avoid blocking main update if field name is wrong
 
         const existing = cacheItems.find(r => {
           const storedBase = getLabId(r).split(' ')[0].trim();
@@ -300,6 +291,27 @@ app.http('import-icpms', {
           await updateItem('Results Cache', existing._id, fields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
             .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
+          // Separately write ArsenicIII — try multiple possible internal field names
+          // so this doesn't block the main update if the name is wrong
+          if (result.arsenicIII !== null && result.arsenicIII !== undefined) {
+            const asIIIVal = String(result.arsenicIII);
+            const asIIITime = result.arsenicIIIAcqTime || '';
+            const fieldVariants = [
+              { Arsenic3: asIIIVal }, // SP internal name for "ArsenicIII" column
+              { ArsenicIII: asIIIVal }, // fallback attempts
+              { ArsenicIII0: asIIIVal },
+            ];
+            for (const variant of fieldVariants) {
+              try {
+                await updateItem('Results Cache', existing._id, variant);
+                log.push(`ArsenicIII written for ${baseId}: ${asIIIVal}`);
+                break;
+              } catch(e) {
+                if (!e.message?.includes('not recognized') && !e.message?.includes('400')) throw e;
+                // Try next variant
+              }
+            }
+          }
         } else {
           await createItem('Results Cache', { LabID: baseId, ...fields })
             .then(() => { created++; log.push(`Created: ${baseId}`); })
