@@ -122,7 +122,7 @@ function resultColor(paramName, displayVal, epa) {
     const n = parseFloat(s);
     return isNaN(n) ? 'none' : (n >= 6.5 && n <= 8.5) ? 'green' : 'red';
   }
-  if (epa === null || epa === undefined || epa === '') return 'blue';
+  if (epa === null || epa === undefined || epa === '') return 'none'; // no EPA limit = no color indicator
   const n = parseFloat(s);
   if (isNaN(n)) return 'blue';
   return n <= parseFloat(epa) ? 'green' : 'red';
