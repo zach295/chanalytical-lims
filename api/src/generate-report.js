@@ -439,7 +439,7 @@ app.http('generate-report', {
           case 'spec_iii':
             // Arsenic III — from ArsenicIII Results Cache field (As3 ICP-MS row)
             // Uses its own acquisition time from the As3 ICP-MS run
-            rawVal = String(c.ArsenicIII || '');
+            rawVal = String(c.Arsenic3 || c.ArsenicIII || '');
             analDT = String(
               c['ArsenicIII_x0020_Acquisition_x0020_Time'] ||  // "ArsenicIII Acquisition Time"
               c['ArsenicIIIAcquisitionTime'] ||                 // fallback no-space version
@@ -450,7 +450,7 @@ app.http('generate-report', {
           case 'spec_v': {
             // Arsenic V = Arsenic Total (TAs) minus Arsenic III (As3) — calculated
             const asTotal = parseFloat(c['Arsenic_x0028_As75_x0029_'] || '');
-            const asIII   = parseFloat(c.ArsenicIII || '');
+            const asIII   = parseFloat(c.Arsenic3 || c.ArsenicIII || '');
             if (!isNaN(asTotal) && !isNaN(asIII)) {
               rawVal = String(Math.max(0, Math.round((asTotal - asIII) * 10000) / 10000));
             }
