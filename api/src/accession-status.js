@@ -46,6 +46,15 @@ app.http('accession-status', {
         for (const r of items) {
           const fullId   = (r.field_1  || '').trim();
           const coaTest  = (r.Test || r.field_2 || r['Test0'] || '').trim();
+          // TEMP DEBUG: log all field names on the first item
+          if (r._id === '161') {
+            context.log('[debug-161] All fields:', JSON.stringify(Object.keys(r)));
+            context.log('[debug-161] field values:', JSON.stringify({
+              field_2: r.field_2, Test: r.Test, Test0: r.Test0,
+              coaTest: r.coaTest, TestType: r.TestType,
+              field_3: r.field_3, field_4: r.field_4,
+            }));
+          }
           const customer = (r.field_3  || '').trim();
           const status   = (r.field_14 || 'Pending').trim();
           if (!fullId) continue;
