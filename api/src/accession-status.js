@@ -144,6 +144,21 @@ app.http('accession-status', {
           await updateItem(LISTS.ARCHIVED_INTAKE, itemId, { [field]: value });
           return { status: 200, jsonBody: { success: true, itemId, field, value } };
         }
+
+        // Read raw fields from a specific item — for debugging
+        if (action === 'read-raw') {
+          const { itemId } = body2;
+          const siteId = process.env.SP_SITE_ID;
+          const tkn    = await getToken();
+          const lists  = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName`,
+            { headers: { Authorization: `Bearer ${tkn}` } }).then(r=>r.json());
+          const lst    = (lists.value||[]).find(l => l.displayName === 'Archived Intake');
+          if (!lst) return { status: 404, jsonBody: { error: 'list not found' } };
+          const item   = await fetch(
+            `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${lst.id}/items/${itemId}/fields`,
+            { headers: { Authorization: `Bearer ${tkn}` } }).then(r=>r.json());
+          return { status: 200, jsonBody: { fields: item } };
+        }
         if (!baseId) return { status: 400, body: JSON.stringify({ error: 'baseId required' }) };
 
         const newStatus = action === 'mark-reported' ? 'Reported' : 'Pending';
