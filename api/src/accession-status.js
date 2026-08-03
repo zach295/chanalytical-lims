@@ -84,6 +84,9 @@ app.http('accession-status', {
           byBase[baseId]._ids.push(r._id);
           if (fullId  && !byBase[baseId].fullIds.includes(fullId))  byBase[baseId].fullIds.push(fullId);
           if (coaTest && !byBase[baseId].tests.includes(coaTest))   byBase[baseId].tests.push(coaTest);
+          // TEMP: store raw coaTest source for debugging
+          if (!byBase[baseId]._coaTestDebug) byBase[baseId]._coaTestDebug = [];
+          byBase[baseId]._coaTestDebug.push({ _id: r._id, field_2: r.field_2, Test: r.Test, coaTest });
           if (status === 'Sent' || status === 'Reported')            byBase[baseId].status = 'Sent';
           if (!byBase[baseId].customer && customer)                  byBase[baseId].customer = customer;
           if (!byBase[baseId].rawCustomer && rawCustomer)             byBase[baseId].rawCustomer = rawCustomer;
