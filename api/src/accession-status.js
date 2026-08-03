@@ -45,7 +45,7 @@ app.http('accession-status', {
         const byBase = {};
         for (const r of items) {
           const fullId   = (r.field_1  || '').trim();
-          const coaTest  = (r.field_2  || '').trim();
+          const coaTest  = (r.Test || r.field_2 || r['Test0'] || '').trim();
           const customer = (r.field_3  || '').trim();
           const status   = (r.field_14 || 'Pending').trim();
           if (!fullId) continue;
@@ -84,25 +84,31 @@ app.http('accession-status', {
         const pending  = all.filter(r => r.status !== 'Sent' && r.status !== 'Reported');
         const reported = all.filter(r => r.status === 'Sent' || r.status === 'Reported');
 
-        // Fetch client emails using listItems (known working)
+        // Fetch client emails — direct Graph API call using same pattern as clients-read
         try {
-          const clients = await listItems('Clients', { top: 500 });
-          // Build emailMap indexed by every name variant
+          const token2 = await getToken();
+          const siteId2 = process.env.SP_SITE_ID;
+          const cRes = await fetch(
+            `${GRAPH}/sites/${siteId2}/lists/Clients/items?$expand=fields&$top=500`,
+            { headers: { Authorization: `Bearer ${token2}` } }
+          );
+          if (!cRes.ok) throw new Error(`Clients fetch: ${cRes.status}`);
+          const cJson = await cRes.json();
           const emailMap = {};
-          for (const c of clients) {
-            const name  = (c.Title || c.ClientName || '').trim();
-            const email = (c.Email || '').trim();
+          for (const item of (cJson.value || [])) {
+            const f = item.fields || {};
+            const name  = String(f.Title || f.ClientName || '').trim();
+            const email = String(f.Email || '').trim();
             if (!name || !email) continue;
+            // Index by raw name and formatted name
             emailMap[name.toLowerCase()] = email;
-            // Also index formatted version: "Public-Chandler, Zach" → "Zach Chandler"
             const fmt = formatCustomerName(name).toLowerCase();
             if (fmt !== name.toLowerCase()) emailMap[fmt] = email;
           }
-          // Match each pending entry — re-read raw customer from intakeItems
+          // Build raw customer map from intake items
           const rawByBase = {};
           for (const r of intakeItems) {
-            const fid = (r.field_1 || '').trim();
-            const bid = fid.split(' ')[0].trim();
+            const bid = (r.field_1 || '').split(' ')[0].trim();
             if (bid && r.field_3 && !rawByBase[bid]) rawByBase[bid] = r.field_3.trim();
           }
           for (const entry of pending) {
