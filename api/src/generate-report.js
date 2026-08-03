@@ -13,6 +13,8 @@ const PARAM_CONFIG = [
   { name:'Fluoride, Total',              rl:0.20,    epa:4,         unit:'mg/L', method:'SM4500F',          source:'gallery', cacheField:'field_8',  cacheDT:'field_9' },
   { name:'Nitrite-Nitrogen, Total',      rl:0.20,    epa:1,         unit:'mg/L', method:'EPA 354.1',        source:'gallery', cacheField:'field_10', cacheDT:'field_11' },
   { name:'Nitrate-Nitrogen, Total',      rl:1.00,    epa:10,        unit:'mg/L', method:'SM4500NO3',        source:'gallery', cacheField:'field_12', cacheDT:'field_13' },
+  { name:'Arsenic, III',                 rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'spec_iii', cacheField:'ArsenicIII' },
+  { name:'Arsenic, V',                   rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'spec_v',   cacheField:null },
   { name:'Arsenic, Total',               rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Arsenic_x0028_As75_x0029_' },
   { name:'Lead, Total',                  rl:1.00,    epa:15,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Lead_x0028_Pb208_x0029_' },
   { name:'Uranium, Total',               rl:1.00,    epa:30,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Uranium_x0028_U238_x0029_' },
@@ -50,6 +52,8 @@ const PARAM_SERVICE_ALIASES = {
   'E. Coli':               ['E. Coli'],
   'Chloride':              ['Chloride, Total'],
   'Arsenic':               ['Arsenic, Total'],
+  'Arsenic III':          ['Arsenic, III'],
+  'Arsenic V':            ['Arsenic, V'],
   'Lead':                  ['Lead, Total'],
   'Uranium':               ['Uranium, Total'],
   'Copper':                ['Copper, Total'],
@@ -73,6 +77,7 @@ const PACKAGE_COVERAGE_FALLBACK = {
   'WW - Expanded Safety':            ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Alkalinity','Calcium, Total','Magnesium, Total','pH Electrometric','Total Coliform','E. Coli'],
   'Comprehensive':                   ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Antimony, Total','Cadmium, Total','Chromium, Total','pH Electrometric','Alkalinity','Sulfate','Total Coliform','E. Coli'],
   'Pro Plus':                        ['Chloride, Total','Fluoride, Total','Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Arsenic, Total','Lead, Total','Uranium, Total','Copper, Total','Iron, Total','Manganese, Total','Sodium, Total','Hardness by calculation','Alkalinity','Sulfate','Tannins','Total Dissolved Solids (TDS)','Bromide','pH Electrometric','Total Coliform','E. Coli'],
+  'Arsenic, Speciation':             ['Arsenic, III', 'Arsenic, V', 'Arsenic, Total'],
   'Bacteria':                        ['Total Coliform','E. Coli'],
   'Radon Water':                     [],
 };
@@ -290,7 +295,8 @@ app.http('generate-report', {
             String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
           );
 
-      const isRadon  = services.some(s => /radon/i.test(s));
+      const isRadon      = services.some(s => /radon/i.test(s));
+      const isArsenicSpec = services.some(s => /arsenic.*spec/i.test(s) || /spec.*arsenic/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
 
       // ── Load which parameters each test type includes from SharePoint ─────
@@ -430,6 +436,28 @@ app.http('generate-report', {
             prepDT = acidPrepDT;
             break;
           }
+          case 'spec_iii':
+            // Arsenic III — from ArsenicIII Results Cache field (As3 ICP-MS row)
+            // Uses its own acquisition time from the As3 ICP-MS run
+            rawVal = String(c.ArsenicIII || '');
+            analDT = String(
+              c['ArsenicIII_x0020_Acquisition_x0020_time'] ||
+              c['ArsenicIIIAcquisitiontime'] ||
+              icpmsAcqTime || ''
+            );
+            prepDT = acidPrepDT;
+            break;
+          case 'spec_v': {
+            // Arsenic V = Arsenic Total (TAs) minus Arsenic III (As3) — calculated
+            const asTotal = parseFloat(c['Arsenic_x0028_As75_x0029_'] || '');
+            const asIII   = parseFloat(c.ArsenicIII || '');
+            if (!isNaN(asTotal) && !isNaN(asIII)) {
+              rawVal = String(Math.max(0, Math.round((asTotal - asIII) * 10000) / 10000));
+            }
+            analDT = icpmsAcqTime;
+            prepDT = acidPrepDT;
+            break;
+          }
         }
 
         const display = formatResult(rawVal, p.rl, p.decimals);
@@ -463,6 +491,7 @@ app.http('generate-report', {
           success:    true,
           labId:      baseId,
           isRadon,
+        isArsenicSpec,
           needsFHA,
           reportType: isRadon ? 'RW' : 'COA',
           today:      todayStr,
