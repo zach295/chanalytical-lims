@@ -278,7 +278,7 @@ app.http('import-icpms', {
         }
         if (result.arsenicIIIAcqTime) {
           // Try the most common SP internal name formats for "ArsenicIII Acquisition time"
-          fields['ArsenicIII_x0020_Acquisition_x0020_time'] = result.arsenicIIIAcqTime;
+          fields['ArsenicIII_x0020_Acquisition_x0020_Time'] = result.arsenicIIIAcqTime;
         }
 
         const existing = cacheItems.find(r => {
