@@ -441,8 +441,8 @@ app.http('generate-report', {
             // Uses its own acquisition time from the As3 ICP-MS run
             rawVal = String(c.ArsenicIII || '');
             analDT = String(
-              c['ArsenicIII_x0020_Acquisition_x0020_time'] ||
-              c['ArsenicIIIAcquisitiontime'] ||
+              c['ArsenicIII_x0020_Acquisition_x0020_Time'] ||  // "ArsenicIII Acquisition Time"
+              c['ArsenicIIIAcquisitionTime'] ||                 // fallback no-space version
               icpmsAcqTime || ''
             );
             prepDT = acidPrepDT;
