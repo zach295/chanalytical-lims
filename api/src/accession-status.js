@@ -45,7 +45,7 @@ app.http('accession-status', {
         const byBase = {};
         for (const r of items) {
           const fullId   = (r.field_1  || '').trim();
-          const coaTest  = (r.Test || r.field_2 || r['Test0'] || '').trim();
+          const coaTest  = (r.field_2 || r.Test || r['Test0'] || '').trim();
           // TEMP DEBUG: log all field names on the first item
           if (r._id === '161') {
             context.log('[debug-161] All fields:', JSON.stringify(Object.keys(r)));
