@@ -15,7 +15,8 @@ app.http('sync-results-cache', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const dry = request.query.get('dry') === 'true';
+      const dryParam = request.query.get('dry');
+      const dry = dryParam === 'true'; // only dry if explicitly ?dry=true
 
       // Get all Archived Intake base IDs
       const intakeItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
@@ -31,8 +32,10 @@ app.http('sync-results-cache', {
       const cacheItems = await listItems('Results Cache', { top: 500 });
       const cacheIds   = new Set();
       for (const r of cacheItems) {
-        const id = String(r.LabID || '').split(' ')[0].trim();
+        // Column may be "LabID" or "Lab_x0020_ID" depending on how it was created
+        const id = String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').split(' ')[0].trim();
         if (id) cacheIds.add(id);
+        context.log(`[sync] cache row: LabID="${r.LabID}" Lab_x0020_ID="${r['Lab_x0020_ID']}"`);
       }
 
       // Find missing IDs
