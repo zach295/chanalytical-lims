@@ -647,6 +647,18 @@ document.addEventListener('DOMContentLoaded', function() {
             <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">Or type Lab ID manually</label>
             <input type="text" id="rpt-labid-manual" aria-label="Type Lab ID manually" placeholder="e.g. 070726-009" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;" />
           </div>
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">Override Test Type</label>
+            <select id="rpt-test-override" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
+              <option value="">— Auto-detect —</option>
+              <option value="Arsenic, Speciation">Arsenic, Speciation</option>
+              <option value="Basic Safety (FHA)">Basic Safety (FHA)</option>
+              <option value="Standard Safety">Standard Safety</option>
+              <option value="Expanded Safety (Mortgage Test)">Expanded Safety (Mortgage Test)</option>
+              <option value="Bacteria">Bacteria</option>
+              <option value="Radon Water">Radon Water</option>
+            </select>
+          </div>
           <button class="btn-ok" style="padding:11px 24px;height:42px;" onclick="generateReportPreview()">Generate Report</button>
         </div>
         <div id="rpt-labid-detail" style="font-size:12px;color:var(--slate);min-height:16px;"></div>
@@ -5096,6 +5108,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const sel = document.getElementById('rpt-labid-select');
     const manual = document.getElementById('rpt-labid-manual');
     const labId = (sel?.value || manual?.value || '').trim().toUpperCase();
+    const testOverride = document.getElementById('rpt-test-override')?.value || '';
     const statusEl = document.getElementById('rpt-gen-status');
 
     if (!labId) { showToast('Select or enter a Lab ID first.'); return; }
@@ -5113,6 +5126,7 @@ document.addEventListener('DOMContentLoaded', function() {
         body: JSON.stringify({
           labId,
           meta: _pendingLabIds.find(r => r.baseId === labId) || null,
+          testOverride: testOverride || undefined,
         }),
       });
       if (!res.ok) {
