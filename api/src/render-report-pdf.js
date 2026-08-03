@@ -15,6 +15,7 @@ const GRAPH        = 'https://graph.microsoft.com/v1.0';
 const TMPL_LAB   = 'Lab Report - Template';
 const TMPL_FHA   = 'FHA Lab Report - Template';
 const TMPL_RADON = 'Radon Lab Report - Template';
+const TMPL_SPEC  = 'Arsenic Spec Report - Template';
 const TMPL_NOTES = 'Notations - Template';
 
 function toDrivePath(p) {
@@ -280,7 +281,8 @@ app.http('render-report-pdf', {
     const params    = reportData.activeParams || reportData.paramRows || [];
     const fhaParams = reportData.fhaParams    || reportData.fhaRows   || [];
     const needsFHA  = reportData.needsFHA;
-    const isRadon   = reportData.isRadon;
+    const isRadon       = reportData.isRadon;
+    const isArsenicSpec = reportData.isArsenicSpec;
     const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
     let token;
@@ -395,10 +397,25 @@ app.http('render-report-pdf', {
       ).catch(() => {});
     };
 
+    // Find Arsenic Spec sheet if present
+    const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
+
     if (isRadon && radonSheet) {
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(radonSheet.id);
+      // Hide Spec sheet if present
+      if (specSheet) await hideSheet(siteId, tempId, specSheet.id, token, sid);
+    } else if (isArsenicSpec && specSheet) {
+      // Arsenic Speciation: use the Arsenic Spec Report sheet
+      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fitOnePage(specSheet.id);
+      // Hide Lab Report and FHA sheets
+      if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
+      if (fhaSheet)   await hideSheet(siteId, tempId, fhaSheet.id,   token, sid);
+      if (radonSheet) await hideSheet(siteId, tempId, radonSheet.id, token, sid);
     } else if (labSheet) {
+      // Hide spec sheet if present (not a speciation test)
+      if (specSheet) await hideSheet(siteId, tempId, specSheet.id, token, sid);
       await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(labSheet.id);
     }
