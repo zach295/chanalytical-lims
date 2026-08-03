@@ -5284,8 +5284,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
       const color  = getResultColor(p.name, val, reportData);
-      // Color box: always show, green/blue/red when value present, light grey when empty
-      const boxBg  = color ? `#${color}` : '#e8e8e8';
+      // Color box: colored when value+limit, grey placeholder when no value, transparent when value but no limit
+      const boxBg  = color ? `#${color}` : (val ? 'transparent' : '#e8e8e8');
       const prepDT = res.prepDT || '';
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       const prepDTd = fmtDisplayDT(prepDT);
