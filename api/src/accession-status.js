@@ -135,7 +135,15 @@ app.http('accession-status', {
       }
 
       if (request.method === 'POST') {
-        const { action, baseId } = await request.json().catch(() => ({}));
+        const body2 = await request.json().catch(() => ({}));
+        const { action, baseId } = body2;
+
+        // Direct field patch action
+        if (action === 'fix-field') {
+          const { itemId, field, value } = body2;
+          await updateItem(LISTS.ARCHIVED_INTAKE, itemId, { [field]: value });
+          return { status: 200, jsonBody: { success: true, itemId, field, value } };
+        }
         if (!baseId) return { status: 400, body: JSON.stringify({ error: 'baseId required' }) };
 
         const newStatus = action === 'mark-reported' ? 'Reported' : 'Pending';
