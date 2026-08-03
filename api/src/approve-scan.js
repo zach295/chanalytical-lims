@@ -98,7 +98,7 @@ const TEST_NORMALIZE = {
   'radon water':'Radon Water','radon':'Radon Water',
   'aio fha':'AIO FHA','aio portability':'AIO Portability','portability':'AIO Portability',
   'alkalinity':'Alkalinity','antimony':'Antimony','antimony, total':'Antimony',
-  'arsenic':'Arsenic, Total','arsenic, total':'Arsenic, Total','arsenic, speciation':'Arsenic, Speciation',
+  'arsenic':'Arsenic, Total','arsenic speciation':'Arsenic, Speciation','arsenic, speciation':'Arsenic, Speciation','arsenic spec':'Arsenic, Speciation','speciation':'Arsenic, Speciation','arsenic, total':'Arsenic, Total','arsenic, speciation':'Arsenic, Speciation',
   'bacteria':'Bacteria','total coliform':'Bacteria','e. coli':'Bacteria','coliform':'Bacteria',
   'bromide':'Bromide','cadmium':'Cadmium, Total','cadmium, total':'Cadmium, Total',
   'calcium':'Calcium, Total','calcium, total':'Calcium, Total',
