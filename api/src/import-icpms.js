@@ -55,10 +55,11 @@ function getDatePart(baseId) {
 
 // Detect Arsenic Speciation ICP-MS suffixes
 // TAs = Total Arsenic row, As3 = Arsenic III row
+// Handles both "072326-014 TAs" and "072326-014TAs" formats
 function getSpecSuffix(id) {
   const s = String(id || '').trim();
-  if (/ TAs$/i.test(s)) return 'TAs';
-  if (/ As3$/i.test(s)) return 'As3';
+  if (/[\s-]?TAs$/i.test(s)) return 'TAs';
+  if (/[\s-]?As3$/i.test(s)) return 'As3';
   return null;
 }
 
@@ -123,7 +124,9 @@ function parseIcpmsFile(buffer, targetIds) {
       elements[elemKey] = { value, rejected };
     }
 
-    rows.push({ sampleId, baseId, specSuffix: getSpecSuffix(sampleId), dilution: getDilution(sampleId), acqTime, elements });
+    const specSuffix = getSpecSuffix(sampleId);
+    if (specSuffix) console.log(`[icpms] Speciation row detected: "${sampleId}" → ${specSuffix}`);
+    rows.push({ sampleId, baseId, specSuffix, dilution: getDilution(sampleId), acqTime, elements });
   }
 
   return rows;
@@ -155,6 +158,11 @@ function mergeResults(rows) {
           break;
         }
       }
+    }
+
+    // Log what was found for this baseId
+    if (as3Rows.length > 0 || regularRows.some(r => r.specSuffix === 'TAs')) {
+      console.log(`[icpms] Speciation rows for ${baseId}: as3=${as3Rows.length} TAs=${regularRows.filter(r=>r.specSuffix==='TAs').length}`);
     }
 
     // Capture Arsenic III + its acquisition time from As3 row (As 75 column)
