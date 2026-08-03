@@ -145,6 +145,17 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { success: true, itemId, field, value } };
         }
 
+        // List ALL Archived Intake rows matching a baseId
+        if (action === 'list-intake') {
+          const { baseId: searchId } = body2;
+          const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+          const matches  = allItems.filter(r => {
+            const fid = (r.field_1 || '').split(' ')[0].trim();
+            return fid === searchId;
+          }).map(r => ({ _id: r._id, field_1: r.field_1, field_2: r.field_2, Test: r.Test }));
+          return { status: 200, jsonBody: { matches, count: matches.length } };
+        }
+
         // Read raw fields from a specific item — for debugging
         if (action === 'read-raw') {
           const { itemId } = body2;
