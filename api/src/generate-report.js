@@ -295,6 +295,13 @@ app.http('generate-report', {
             String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
           );
 
+      // Allow dashboard to override the detected test type
+      const testOverride = body.testOverride || '';
+      if (testOverride) {
+        services.length = 0;
+        services.push(testOverride);
+      }
+
       const isRadon      = services.some(s => /radon/i.test(s));
       const isArsenicSpec = services.some(s => /arsenic.*spec/i.test(s) || /spec.*arsenic/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
@@ -441,8 +448,8 @@ app.http('generate-report', {
             // Uses its own acquisition time from the As3 ICP-MS run
             rawVal = String(c.Arsenic3 || c.ArsenicIII || '');
             analDT = String(
-              c['ArsenicIII_x0020_Acquisition_x0020_Time'] ||  // "ArsenicIII Acquisition Time"
-              c['ArsenicIIIAcquisitionTime'] ||                 // fallback no-space version
+              c.Arsenic3AcquisitionTime ||  // "ArsenicIII Acquisition Time"
+              c.Arsenic3AcquisitionTime ||                 // fallback no-space version
               icpmsAcqTime || ''
             );
             prepDT = acidPrepDT;
