@@ -255,6 +255,33 @@ async function moveSpFile(itemId, destFolderPath, token) {
   } catch(e) { console.warn('[moveSpFile]', e.message); }
 }
 
+// ── Ensure nested folder path exists, create if missing ─────────────────────────
+async function ensureFolderPath(basePath, subFolders, token) {
+  const siteId = process.env.SP_SITE_ID;
+  let currentPath = basePath;
+  for (const folderName of subFolders) {
+    // Resolve parent to get its drive item ID
+    const marker = 'Shared Documents/';
+    const idx = currentPath.indexOf(marker);
+    const rel = idx >= 0 ? currentPath.slice(idx + marker.length) : currentPath.replace(/^\/+/, '');
+    const dp  = rel.split('/').map(s => encodeURIComponent(s)).join('/');
+    const pRes = await fetch(
+      `${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!pRes.ok) { console.warn('[ensureFolder] Parent not found:', currentPath); return currentPath; }
+    const parentId = (await pRes.json()).id;
+    // Create subfolder — if 409 Conflict it already exists, which is fine
+    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${parentId}/children`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name: folderName, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+    });
+    currentPath = `${currentPath}/${folderName}`;
+  }
+  return currentPath;
+}
+
 // ── Load dynamic test types from SP list ───────────────────────────────────────
 async function loadDynamicTestTypes(token) {
   let dynamicSuffixMap  = { ...SUFFIX_MAP };
@@ -506,11 +533,18 @@ app.http('approve-scan', {
         await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
       }
 
-      // ── Move and rename scan file to Archive ─────────────────────────────────
+      // ── Move and rename scan file to Archive (organized by Month/Day) ──────────
       const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
       if (fileId) {
-        // Move to Archive first
-        await moveSpFile(fileId, SCAN_ARCHIVE, token).catch(e => context.log('[Archive move]', e.message));
+        // Build month/day subfolder path: Archived/August 2026/3/
+        const archiveDate  = new Date();
+        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const dayFolder    = String(archiveDate.getDate());
+        const archiveDest  = await ensureFolderPath(SCAN_ARCHIVE, [monthFolder, dayFolder], token)
+          .catch(e => { context.log('[Archive folder]', e.message); return SCAN_ARCHIVE; });
+        context.log(`[Archive] Destination: ${archiveDest}`);
+        // Move to month/day subfolder
+        await moveSpFile(fileId, archiveDest, token).catch(e => context.log('[Archive move]', e.message));
 
         // Rename PDF to [LabID]_[ClientAbbrev]_[Address].pdf
         // For radon: [LabID] RW_[ClientAbbrev]_[Address].pdf
@@ -540,8 +574,8 @@ app.http('approve-scan', {
             try {
               const rwName = `${radonItem.baseId} RW_${abbrevPart}_${addrPart}.pdf`;
               const marker = 'Shared Documents/';
-              const idx    = SCAN_ARCHIVE.indexOf(marker);
-              const rel    = idx >= 0 ? SCAN_ARCHIVE.slice(idx + marker.length) : SCAN_ARCHIVE.replace(/^\/+/,'');
+              const idx    = archiveDest.indexOf(marker);
+              const rel    = idx >= 0 ? archiveDest.slice(idx + marker.length) : archiveDest.replace(/^\/+/,'');
               const dp     = rel.split('/').map(s => encodeURIComponent(s)).join('/');
               const fRes   = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
                 { headers: { Authorization: `Bearer ${token}` } });
