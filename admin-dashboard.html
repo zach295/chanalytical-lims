@@ -5259,7 +5259,7 @@ document.addEventListener('DOMContentLoaded', function() {
       return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '00FF00' : 'FF0000';
     }
     const epa = param.epa || param.limit || '';
-    if (!epa) return '0000FF'; // No EPA limit → blue (See Notation)
+    if (!epa) return null; // No EPA limit → no color indicator
     const n = parseFloat(s);
     if (isNaN(n)) return '0000FF';
     return n <= parseFloat(epa) ? '00FF00' : 'FF0000';
