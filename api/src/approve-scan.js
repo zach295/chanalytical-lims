@@ -456,6 +456,7 @@ app.http('approve-scan', {
           Title:    ts,
           field_1:  item.fullId,
           field_2:  item.coaTest,
+          Test:     item.coaTest,
           field_3:  formalName || customer || '',
           field_4:  fmt(dateDrawn) || '',
           field_5:  to24h(timeDrawn) || '',
