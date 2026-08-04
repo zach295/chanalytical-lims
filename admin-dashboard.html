@@ -2261,14 +2261,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const todayData = await todayRes.json();
         // Merge server data with in-memory session cache
         const serverApproved = todayData.approved || [];
+        const serverTotal    = todayData.total    || serverApproved.length;
         const allApproved    = [...recentlyApprovedCache];
         for (const s of serverApproved) {
           if (!allApproved.some(a => a.fullId === s.fullId)) allApproved.push(s);
         }
-        allApproved.sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+        // Sort by lab ID descending (largest/latest first)
+        allApproved.sort((a,b) => (b.fullId||'').localeCompare(a.fullId||''));
 
-        // Approved Today counter
-        if (todayEl) todayEl.textContent = allApproved.length;
+        // Approved Today counter — use server total (reads all of Archived Intake for today)
+        if (todayEl) todayEl.textContent = Math.max(serverTotal, allApproved.length);
 
         // Approved Today breakdown — top clients by volume
         const clientCounts = {};
