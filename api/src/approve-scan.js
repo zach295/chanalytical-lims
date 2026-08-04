@@ -211,26 +211,39 @@ async function getClientInfo(token, customerName) {
   try {
     const siteId = process.env.SP_SITE_ID;
     const res = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Phone)&$top=500`,
+      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,ClientCode,Abbrev,Email,Phone,Active,Aliases,Notes,BillingAddress,PricingCategory,BillingFrequency)&$top=500`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!res.ok) return { formalName: customerName||'', clientCode:'', email:'', abbrev:'' };
+    if (!res.ok) return { formalName: customerName||'', clientCode:'', email:'', reportEmail:'', billingEmail:'', phone:'', dbaName:'', abbrev:'', billingAddress:'', pricingCategory:'', billingFrequency:'' };
     const data = await res.json();
     const clients = (data.value||[]).map(item => ({
-      name:    item.fields?.Title      || '',
-      code:    item.fields?.ClientCode || '',
-      email:   item.fields?.Email      || '',
-      abbrev:  item.fields?.Abbrev     || '',
-      aliases: item.fields?.Aliases    || '',
+      name:            item.fields?.ClientName      || item.fields?.Title || '',
+      code:            item.fields?.ClientCode      || '',
+      reportEmail:     item.fields?.Aliases         || '',  // Report Email Address
+      billingEmail:    item.fields?.Notes           || '',  // Billing Email Address
+      email:           item.fields?.Aliases         || '',  // compatibility alias
+      phone:           item.fields?.Active          || '',  // Phone #
+      dbaName:         item.fields?.Phone           || '',  // DBA Name
+      abbrev:          item.fields?.Abbrev          || '',
+      billingAddress:  item.fields?.BillingAddress  || '',
+      pricingCategory: item.fields?.PricingCategory || '',
+      billingFrequency: item.fields?.BillingFrequency || '',
     }));
     const match = matchClient(customerName||'', clients);
     return {
-      formalName:  match ? match.name  : customerName || '',
-      clientCode:  match ? match.code  : '',
-      email:       match ? match.email : '',
-      abbrev:      match ? match.abbrev: '',
+      formalName:       match ? match.name           : customerName || '',
+      clientCode:       match ? match.code           : '',
+      email:            match ? match.email          : '',
+      reportEmail:      match ? match.reportEmail    : '',
+      billingEmail:     match ? match.billingEmail   : '',
+      phone:            match ? match.phone          : '',
+      dbaName:          match ? match.dbaName        : '',
+      abbrev:           match ? match.abbrev         : '',
+      billingAddress:   match ? match.billingAddress : '',
+      pricingCategory:  match ? match.pricingCategory: '',
+      billingFrequency: match ? match.billingFrequency: '',
     };
-  } catch { return { formalName: customerName||'', clientCode:'', email:'', abbrev:'' }; }
+  } catch { return { formalName: customerName||'', clientCode:'', email:'', reportEmail:'', billingEmail:'', phone:'', dbaName:'', abbrev:'', billingAddress:'', pricingCategory:'', billingFrequency:'' }; }
 }
 
 // ── Move SP file to Archive folder ─────────────────────────────────────────────
@@ -519,11 +532,19 @@ app.http('approve-scan', {
           const existing = await findItem(LISTS.CLIENTS, 'Title', formalClientName).catch(()=>null);
           if (!existing) {
             await createItem(LISTS.CLIENTS, {
-              Title:      formalClientName,
-              ClientName: formalClientName,
-              Email:      email || '',
-              Abbrev:     isPublicName ? 'PUBLIC' : getAbbrev(formalClientName),
-              Active:     'Yes',
+              ClientName:       formalClientName,
+              Aliases:          clientInfo.reportEmail || email || '',   // Report Email Address
+              Notes:            clientInfo.billingEmail || email || '',  // Billing Email Address
+              Active:           clientInfo.phone || '',                  // Phone #
+              Phone:            clientInfo.dbaName || '',                // DBA Name
+              BillingAddress:   clientInfo.billingAddress || '',
+              ClientCode:       '',
+              Abbrev:           isPublicName ? 'PUBLIC' : getAbbrev(formalClientName),
+              BillingFrequency: isPublicName ? 'Pre-Pay' : '',
+              PricingCategory:  isPublicName ? 'Public Pricing' : '',
+              StartDate:        new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+              Status:           'Active',
+              RadonLic_x0023_:  '',
             }).catch(e => context.log('[AddClient]', e.message));
           }
         } catch(e) { context.log('[AddClient] Failed:', e.message); }
