@@ -3535,7 +3535,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     const clientTestRule = matchedClient ? _CLIENT_TEST_RULES[matchedClient] : null;
     const clientOptions = ['<option value="">— Select or type below —</option>',
-      ..._ALL_CLIENTS.map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
+      ..._ALL_CLIENTS.filter(c => !c.startsWith('Public-')).map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
     ].join('');
 
     const testCheckboxes =
