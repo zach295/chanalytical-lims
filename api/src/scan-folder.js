@@ -151,16 +151,20 @@ async function lookupBarcode(barcodeId, token) {
 async function getQueuedFileIds(token) {
   try {
     const siteId = process.env.SP_SITE_ID;
+    // Only check files still pending review — not already approved/archived ones
     const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Review Queue/items?$expand=fields($select=FileID)&$top=2000`,
+      `${GRAPH}/sites/${siteId}/lists/Review Queue/items?$expand=fields($select=FileID,ReviewStatus)&$top=2000`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return new Set();
     const data = await res.json();
     const ids  = new Set();
     (data.value || []).forEach(item => {
-      const fid = item.fields?.FileID;
-      if (fid) ids.add(String(fid).trim());
+      const fid    = item.fields?.FileID;
+      const status = (item.fields?.ReviewStatus || '').toLowerCase();
+      // Only block if still pending — not if approved/archived/discarded
+      const isPending = !status || status.includes('ready') || status.includes('pending') || status.includes('review');
+      if (fid && isPending) ids.add(String(fid).trim());
     });
     return ids;
   } catch { return new Set(); }
