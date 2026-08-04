@@ -4045,7 +4045,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function discardScanCard(fileId, rowIndex) {
-    if (!confirm('Delete this scan? It will be removed from the queue and Google Drive.')) return;
+    if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
 
     // Remove card from UI immediately
     const card = document.getElementById(`scan-card-${fileId}`);
