@@ -590,11 +590,15 @@ app.http('approve-scan', {
       }
 
       // ── Write Archived Intake ────────────────────────────────────────────────
-      // Field mapping: Title=timestamp, field_1=fullId, field_2=coaTest,
-      // field_3=clientName, field_4=dateDrawn, field_5=timeDrawn,
-      // field_6=receivedDate, field_7=receivedTime, field_8=address,
-      // field_9=city, field_10=state, field_11=zip, field_12=approvedBy,
-      // field_13=notes, field_14=status
+      // Use direct Graph API to avoid LISTS constant dependency issues
+      const archivedIntakeListId = await (async () => {
+        const r = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        const d = await r.json();
+        return (d.value||[]).find(l=>l.displayName==='Archived Intake')?.id || null;
+      })();
+      if (!archivedIntakeListId) context.log('[ArchivedIntake] WARNING: list not found!');
+
       for (const item of labItems) {
         const intakeFields = {
           Title:    ts,
@@ -614,9 +618,21 @@ app.http('approve-scan', {
           field_14: 'Pending',
         };
         if (notes && notes.trim()) intakeFields.field_13 = notes;
-        const intakeResult = await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
-          .catch(e => { context.log('[ArchivedIntake] Error:', e.message); return null; });
-        if (intakeResult) context.log('[ArchivedIntake] ✓', item.fullId);
+        let intakeResult = null;
+        if (archivedIntakeListId) {
+          const ir = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${archivedIntakeListId}/items`,
+            { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: intakeFields }) }
+          );
+          intakeResult = ir.ok ? await ir.json() : null;
+          if (!ir.ok) context.log('[ArchivedIntake] FAILED', ir.status, await ir.text().catch(()=>''));
+          else context.log('[ArchivedIntake] ✓ wrote', item.fullId);
+        } else {
+          // Fallback to createItem helper
+          intakeResult = await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
+            .catch(e => { context.log('[ArchivedIntake] fallback error:', e.message); return null; });
+        }
       }
 
       // ── Write Rejected items ─────────────────────────────────────────────────
@@ -625,13 +641,22 @@ app.http('approve-scan', {
         const rType   = item.rejType || (item.isRejected && !item.isRadon ? 'WQ - Reject' : item.isRejected ? 'RW - Reject' : 'Rejected');
         const rReason = notes || `${rType} — approved via Review Queue`;
         await createItem(LISTS.REJECTED, {
-          Title:         item.fullId,
-          LabId:         item.fullId,
-          RejectionType: rType,
-          Reason:        rReason,
-          RejectedBy:    reviewedBy || 'Lab Staff',
-          Timestamp:     ts,
+          Title:   ts,
+          field_1: item.fullId,
+          field_2: rType,
+          field_3: rReason,
+          field_4: reviewedBy || 'Lab Staff',
         }).catch(e => context.log('[Rejected]', e.message));
+        // Also write to Activity Log
+        const actNow2  = new Date();
+        const logDate2 = actNow2.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const logTime2 = actNow2.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${logDate2} ${item.fullId}`,
+          Client: item.fullId, ActivityType: rType,
+          Notes: rReason, By: reviewedBy || 'Lab Staff',
+          LogDate: logDate2, LogTime: logTime2, Quantity: 0,
+        }).catch(e => context.log('[ActivityLog/Rejected]', e.message));
       }
 
       // ── Write Results Cache ──────────────────────────────────────────────────
