@@ -141,7 +141,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Attention block — name + address + email below ────────────────────────
   const attF = findLabel(rows, 'attention:');
   if (attF) {
-    addCell(attF.r, attF.c + 1, meta.customer || '');
+    addCell(attLbl.r, attLbl.c + 1, meta.clientName || meta.customer || '');
     // Row below name: client email
     const emailLine = meta.email || '';
     if (emailLine) addCell(attF.r + 1, attF.c + 1, emailLine);
