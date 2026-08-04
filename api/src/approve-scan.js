@@ -8,6 +8,19 @@ const { createItem, updateItem, deleteItem, findItem, listItems, getToken, LISTS
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Module-level cache for list IDs (avoids repeated lookups per approval)
+const _listIdCache = {};
+async function getListId(displayName, token) {
+  if (_listIdCache[displayName]) return _listIdCache[displayName];
+  const siteId = process.env.SP_SITE_ID;
+  const res  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName&$top=50`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const id = ((await res.json()).value||[]).find(l=>l.displayName===displayName)?.id||null;
+  if (id) _listIdCache[displayName] = id;
+  return id;
+}
+
 // ── ET Time helpers ────────────────────────────────────────────────────────────
 const TZ = 'America/New_York';
 function etParts(d) {
@@ -703,8 +716,11 @@ app.http('approve-scan', {
 
       const token = await getToken();
 
-      // Load dynamic test types from SP
-      const { dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing } = await loadDynamicTestTypes(token);
+      // Parallelize independent startup reads
+      const [{ dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing }, clientInfo] = await Promise.all([
+        loadDynamicTestTypes(token),
+        getClientInfo(token, customer),
+      ]);
 
       // Normalize test names
       const normalizedTests = tests.map(normalizeTest);
@@ -787,7 +803,7 @@ app.http('approve-scan', {
         return { status:400, jsonBody:{ error:'No tests selected' } };
 
       // Get client info from SP Clients list
-      const clientInfo   = await getClientInfo(token, customer);
+      // clientInfo loaded in parallel above
       const clientCode   = clientInfo.clientCode;
       const formalName   = clientInfo.formalName || customer;
       const isPublicClient = formalName.startsWith('Public-');
@@ -915,10 +931,10 @@ app.http('approve-scan', {
         }).catch(e => context.log('[ResultsCache]', e.message));
       }
 
-      // ── Write to Reports to be Billed ────────────────────────────────────────
-      for (const item of labItems) {
-        if (item.isRejection) continue; // skip rejected — no billing needed
-        const rtbResult = await writeReportsToBilled(_siteId, _token, {
+      // ── Write RCS and RTB in parallel ────────────────────────────────────────
+      const rtbPromises = labItems
+        .filter(item => !item.isRejection)
+        .map(item => writeReportsToBilled(_siteId, _token, {
           labId:           item.fullId,
           suffix:          item.suffix      || '',
           customer:        formalName       || customer || '',
@@ -933,9 +949,9 @@ app.http('approve-scan', {
           state:           state            || 'ME',
           zip:             zip ? String(zip).padStart(5,'0') : '',
           testName:        item.coaTest     || '',
-        }, context).catch(e => ({ success:false, error:e.message }));
-        context.log('[RTB]', item.fullId, rtbResult.success ? `row ${rtbResult.row}` : rtbResult.error);
-      }
+        }, context).catch(e => ({ success:false, error:e.message })));
+      const rtbResults = await Promise.all(rtbPromises);
+      rtbResults.forEach((r,i) => context.log('[RTB]', labItems.filter(l=>!l.isRejection)[i]?.fullId, r.success ? `row ${r.row}` : r.error));
 
       // ── Auto-add new client if not in Clients list ───────────────────────────
       if (customer) {
