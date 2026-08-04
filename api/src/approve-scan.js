@@ -397,8 +397,19 @@ async function writeReportsToBilled(siteId, token, params, context) {
     const qty  = 1;
     const rate = parseFloat((params.rate || '').toString().replace(/[$,]/g, '')) || 0;
     const amt  = rate ? parseFloat((qty * rate).toFixed(2)) : null;
-    // Try writing - first attempt with all fields, fallback to Title only if it fails
-    // SharePoint internal field names for user-created columns vary
+    // First: get actual internal field names from the list
+    const colsRes = await fetch(
+      `${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=50`,
+      { headers: authHdr }
+    );
+    const colMap = {}; // displayName → internalName
+    if (colsRes.ok) {
+      const colData = await colsRes.json();
+      (colData.value || []).forEach(c => { colMap[c.displayName] = c.name; });
+      if (context) context.log('[RTB] Column map:', JSON.stringify(colMap));
+    }
+    params._colMap = colMap; // pass back for debugging
+
     const fields = {
       Title:           (params.labId || '').split(' ')[0].trim(), // Lab #
       Customer:         params.customer    || '',
