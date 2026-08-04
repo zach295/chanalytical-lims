@@ -4103,7 +4103,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
       showToast(found > 0 ? `✅ Found ${found} new scan(s) — refreshing queue` : '✅ Drive checked — no new scans');
       // Refresh the review queue and scan list
-      await Promise.all([loadScanQueue().then(renderScanQueue), loadScans()]);
+      await loadScanQueue().then(renderScanQueue);
+      await loadScans();
     } catch(e) {
       showToast('⚠️ ' + e.message);
     } finally {
@@ -4115,14 +4116,15 @@ document.addEventListener('DOMContentLoaded', function() {
   async function loadScans() {
     const grid = document.getElementById('scans-grid');
     if (!grid) return;
-    grid.innerHTML = '<div class="empty-state">Loading scans...</div>';
+    // list-scans endpoint may not be deployed — skip silently
     try {
       const res = await fetch('/api/list-scans');
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) { scansData = []; renderScans(); return; }
       const data = await res.json();
       scansData = data.unprocessed || [];
       renderScans();
     } catch (err) {
+      scansData = []; renderScans();
       console.error('Failed to load scans:', err);
       grid.innerHTML = '<div class="empty-state">⚠️ Could not load scans. Check Drive connection.</div>';
     }
