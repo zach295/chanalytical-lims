@@ -1153,6 +1153,7 @@ app.http('approve-scan', {
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
           rcsStatus,
+          rtbDebug:   rtbResults?.[0] || null,
 
         },
       };
