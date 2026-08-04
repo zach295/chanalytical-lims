@@ -594,7 +594,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
       // Step B: Find the test row in Current Pricing V1
       // Try both possible list names
       let pricingRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Service,Suffix,WQ_x0020_Pricing,Inspector_x0020_Pricing,Public_x0020_Pricing)&$top=200`,
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
         { headers: authHdr }
       );
       if (!pricingRes.ok) {
