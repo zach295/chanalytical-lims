@@ -141,33 +141,21 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     }
   }
 
-  // ── Attention block — name + address + email below ────────────────────────
-  const attF = findLabel(rows, 'attention:');
-  if (attF) {
-    addCell(attLbl.r, attLbl.c + 1, meta.clientName || meta.customer || '');
-    // Row below name: client email
-    const emailLine = meta.email || '';
-    if (emailLine) addCell(attF.r + 1, attF.c + 1, emailLine);
-  }
-
   // ── Left-side fields ──────────────────────────────────────────────────────
   const leftHdrs = {
     'date reported':  today,
     'authorized by':  authorizedBy,
     'review date':    reviewDate,
   };
-  // Fill attention address/phone/email in rows below the Attention label
+  // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
   if (attLbl) {
-    const m = meta || {};
-    // Clients list: BillingAddress is a combined "Street, City, State Zip" field
-    const addrLine  = m.billingAddress || '';
-    const phoneLine = m.phone         || '';
-    const emailLine = m.reportEmail   || m.email || '';
-    // Write address at row+1, phone at row+2, email at row+3 (same col as name)
-    const attCol = attLbl.c + 1; // same column as the name value
-    if (addrLine)   addCell(attLbl.r + 1, attCol, addrLine);
-    if (emailLine)  addCell(attLbl.r + 2, attCol, emailLine);
+    const m      = meta || {};
+    const attCol = attLbl.c + 1;
+    addCell(attLbl.r,     attCol, m.clientName || m.customer || '');
+    if (m.billingAddress)                    addCell(attLbl.r + 1, attCol, m.billingAddress);
+    const emailLine = m.reportEmail || m.email || '';
+    if (emailLine)                           addCell(attLbl.r + 2, attCol, emailLine);
   }
 
   for (const [lbl, val] of Object.entries(leftHdrs)) {
