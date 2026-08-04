@@ -394,9 +394,43 @@ async function writeReportsToBilled(siteId, token, params, context) {
   try {
     const listId = await getListId('Reports to be Billed', token);
     if (!listId) throw new Error('"Reports to be Billed" list not found');
-    const qty  = 1;
-    const rate = parseFloat((params.rate || '').toString().replace(/[$,]/g, '')) || 0;
-    const amt  = rate ? parseFloat((qty * rate).toFixed(2)) : null;
+    const qty = 1;
+    // Look up rate from Current Pricing-V1 based on client pricing category
+    let rate = 0;
+    try {
+      let pricingCategory = params.pricingCategory || '';
+      if (!pricingCategory && params.customer) {
+        const cRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,PricingCategory)&$top=500`,
+          { headers: authHdr });
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          const cLow  = params.customer.toLowerCase().trim();
+          const found = (cData.value||[]).find(i => (i.fields?.ClientName||'').toLowerCase().trim() === cLow);
+          pricingCategory = found?.fields?.PricingCategory || '';
+        }
+      }
+      const catLow = pricingCategory.toLowerCase();
+      const priceCol = catLow.includes('inspector') ? 'InspectorPricing'
+                     : catLow.includes('wq')        ? 'WQPricing'
+                     : 'PublicPricing';
+      const pRes = await fetch(
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
+        { headers: authHdr });
+      if (pRes.ok) {
+        const pData  = await pRes.json();
+        const tLow   = (params.testName||'').toLowerCase().trim();
+        const sLow   = (params.suffix||'').toLowerCase().trim();
+        const match  = (pData.value||[]).find(i => {
+          const svc = (i.fields?.Service||'').toLowerCase().trim();
+          const abbr = (i.fields?.CoreAbbr_x002f_Symbol||'').toLowerCase().trim();
+          return svc === tLow || abbr === sLow || svc.includes(tLow) || tLow.includes(svc);
+        });
+        if (match) rate = parseFloat(String(match.fields?.[priceCol]||'').replace(/[$,]/g,'')) || 0;
+      }
+    } catch(e) { if(context) context.log('[RTB] Rate lookup failed:', e.message); }
+
+    const amt = rate ? parseFloat((qty * rate).toFixed(2)) : null;
     // First: get actual internal field names from the list
     const colsRes = await fetch(
       `${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=50`,
@@ -409,8 +443,8 @@ async function writeReportsToBilled(siteId, token, params, context) {
       if (context) context.log('[RTB] Column map:', JSON.stringify(colMap));
     }
 
+    const labNum = (params.labId || '').split(' ')[0].trim();
     const fields = {
-      Title:           (params.labId || '').split(' ')[0].trim(), // Lab #
       Customer:         params.customer    || '',
       State:            params.state       || '',
       Zip:              params.zip ? String(params.zip).replace(/[^0-9]/g,'').padStart(5,'0') : '',
@@ -450,6 +484,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
         mappedFields[internalName] = value;
       }
     }
+    mappedFields['Title'] = labNum; // always write Title directly
     if (context) context.log('[RTB] Writing keys:', Object.keys(mappedFields).join(','));
 
     const res = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items`,
