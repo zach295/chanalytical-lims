@@ -434,19 +434,28 @@ async function writeReportsToBilled(siteId, token, params, context) {
     fields["Test Type SKU"]      = params.suffix || '';
     fields["RW Results"]         = '';
     fields["Statement/Inv Date"] = '';
+
+    // Remap display names → internal names using colMap
+    const mappedFields = {};
+    for (const [displayName, value] of Object.entries(fields)) {
+      const internalName = colMap[displayName] || displayName;
+      mappedFields[internalName] = value;
+    }
+    if (context) context.log('[RTB] Writing keys:', Object.keys(mappedFields).join(','));
+
     const res = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items`,
       { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields }) });
+        body: JSON.stringify({ fields: mappedFields }) });
     if (!res.ok) {
       const err = await res.text().catch(()=>'');
-      throw new Error(`List write failed (${res.status}): ${err.slice(0,300)}`);
+      return { success: false, error: `List write failed (${res.status}): ${err.slice(0,200)}`, colMap };
     }
     const written = await res.json();
-    if (context) context.log(`[RTB] Wrote ${fields.Title} rate=${rate} id=${written.id}`);
-    return { success: true, id: written.id, rate: String(rate) };
+    if (context) context.log(`[RTB] Wrote ${mappedFields.Title || mappedFields.title} rate=${rate} id=${written.id}`);
+    return { success: true, id: written.id, rate: String(rate), colMap };
   } catch(e) {
     if (context) context.log('[RTB] Error:', e.message);
-    return { success: false, error: e.message };
+    return { success: false, error: e.message, colMap: params._colMap };
   }
 }
 
