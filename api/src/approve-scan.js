@@ -951,8 +951,10 @@ app.http('approve-scan', {
       }
 
       // ── Write RCS and RTB in parallel ────────────────────────────────────────
-      const rtbPromises = labItems
-        .map(item => writeReportsToBilled(_siteId, _token, {
+      // Run RTB writes sequentially to prevent race condition on row finding
+      const rtbResults = [];
+      for (const item of labItems) {
+        const rtbResult = await writeReportsToBilled(_siteId, _token, {
           labId:           item.fullId,
           suffix:          item.suffix      || '',
           customer:        formalName       || customer || '',
@@ -967,9 +969,10 @@ app.http('approve-scan', {
           state:           state            || 'ME',
           zip:             zip ? String(zip).padStart(5,'0') : '',
           testName:        item.coaTest     || '',
-        }, context).catch(e => ({ success:false, error:e.message })));
-      const rtbResults = await Promise.all(rtbPromises);
-      rtbResults.forEach((r,i) => context.log('[RTB]', labItems[i]?.fullId, r.success ? `row ${r.row}` : r.error));
+        }, context).catch(e => ({ success:false, error:e.message }));
+        rtbResults.push(rtbResult);
+        context.log('[RTB]', item.fullId, rtbResult.success ? `row ${rtbResult.row}` : rtbResult.error);
+      }
 
       // ── Auto-add new client ONLY if not already in Clients list ─────────────
       // STRICT RULE: if clientInfo found a match, skip creation entirely
@@ -1118,13 +1121,20 @@ app.http('approve-scan', {
                 nextRow2 = i+2;
               }
               const newIds = allFullIds.filter(id => !existing.has(id.trim()));
+              context.log(`[CS] existing=${existing.size} toWrite=${newIds.length} nextRow=${nextRow2}`);
               if (newIds.length) {
                 const endRow2 = nextRow2 + newIds.length - 1;
-                await fetch(`${wbBase2}/worksheets/${wsId2}/range(address='A${nextRow2}:A${endRow2}')`, {
+                const patchRes2 = await fetch(`${wbBase2}/worksheets/${wsId2}/range(address='A${nextRow2}:A${endRow2}')`, {
                   method:'PATCH', headers:wbHdr2,
                   body: JSON.stringify({ values: newIds.map(id=>[id]) }),
                 });
-                context.log(`[CS] Wrote ${newIds.length} IDs to ${csFileName} starting row ${nextRow2}`);
+                if (!patchRes2.ok) {
+                  context.log(`[CS] PATCH failed ${patchRes2.status}: ${await patchRes2.text().catch(()=>'')}`);
+                } else {
+                  context.log(`[CS] ✓ Wrote ${newIds.join(',')} to ${csFileName} rows ${nextRow2}-${endRow2}`);
+                }
+              } else {
+                context.log(`[CS] All IDs already present`);
               }
             }
           } finally {
