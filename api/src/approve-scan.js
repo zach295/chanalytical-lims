@@ -31,6 +31,18 @@ function nextWorkdayET(from) {
   return `${p.month}-${p.day}-${p.year.slice(-2)}`;
 }
 
+function fmtExcel(dateStr) {
+  // Convert any date format to MM/DD/YYYY for Excel
+  if (!dateStr) return '';
+  // Handle MM-DD-YY format
+  const mmddyy = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+  if (mmddyy) return `${mmddyy[1].padStart(2,'0')}/${mmddyy[2].padStart(2,'0')}/20${mmddyy[3]}`;
+  // Handle ISO YYYY-MM-DD
+  const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  return dateStr;
+}
+
 function fmt(iso) {
   if (!iso) return '';
   try { const [y,m,d]=iso.split('-'); return `${m}-${d}-${y.slice(-2)}`; } catch { return iso; }
@@ -568,10 +580,10 @@ async function writeReportsToBilled(siteId, token, params, context) {
       // P=Qty, Q=Rate, R=Amt, S=QB, T=Disc, U=Stmt/Inv Date,
       // V=Pd, W=Amt Pd, X=Date Pd
       const row = [
-        params.receivedDate || '',  // A Date Rec'd
-        params.receivedTime || '',  // B Time Rec'd
-        params.dateDrawn    || '',  // C Date Drawn
-        params.timeDrawn    || '',  // D Time Drawn
+        fmtExcel(params.receivedDate) || '',  // A Date Rec'd
+        params.receivedTime || '',              // B Time Rec'd
+        fmtExcel(params.dateDrawn) || '',       // C Date Drawn
+        params.timeDrawn    || '',              // D Time Drawn
         params.customer     || '',  // E Customer
         params.clientCode   || '',  // F Client Code
         '',                         // G Report Date (blank, filled when reported)
