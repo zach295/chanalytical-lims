@@ -2698,15 +2698,15 @@ document.addEventListener('DOMContentLoaded', function() {
       // Use first match (primary sample row)
       const raw = matches[0];
       const found = {
-        labId:        raw.field_1 || '',
-        tests:        raw.field_2 ? [raw.field_2] : [],
-        customer:     raw.field_3 || '',
-        dateDrawn:    raw.field_4 || '',
-        timeDrawn:    raw.field_5 || '',
-        receivedDate: raw.field_6 || '',
-        receivedTime: raw.field_7 || '',
-        location:     raw.field_8 || '',
-        city:         raw.field_9 || '',
+        labId:        raw.field_1  || '',
+        coaTest:      raw.field_2  || '',
+        customer:     raw.field_3  || '',
+        dateDrawn:    raw.field_4  || '',
+        timeDrawn:    raw.field_5  || '',
+        receivedDate: raw.field_6  || '',
+        receivedTime: raw.field_7  || '',
+        location:     raw.field_8  || '',
+        city:         raw.field_9  || '',
         state:        raw.field_10 || 'ME',
         zip:          raw.field_11 || '',
         notes:        raw.field_13 || '',
@@ -2715,7 +2715,7 @@ document.addEventListener('DOMContentLoaded', function() {
       _scCurrentData = { ...found, baseId };
 
       // Populate fields from raw Archived Intake fields
-      scSetCheckboxes(raw.field_2 || '');
+      scSetCheckboxes(found.coaTest || '');
       document.getElementById('sc-edit-customer').value     = raw.field_3  || '';
       document.getElementById('sc-edit-dateDrawn').value    = raw.field_4  || '';
       document.getElementById('sc-edit-timeDrawn').value    = raw.field_5  || '';
@@ -2760,10 +2760,17 @@ document.addEventListener('DOMContentLoaded', function() {
       notes:        g('sc-edit-notes'),
     };
     const origMap = {
-      coaTest: orig.field_2, customer: orig.field_3, dateDrawn: orig.field_4,
-      timeDrawn: orig.field_5, receivedDate: orig.field_6, receivedTime: orig.field_7,
-      location: orig.field_8, city: orig.field_9, state: orig.field_10,
-      zip: String(orig.field_11||'').padStart(5,'0'), notes: orig.field_13,
+      coaTest:      orig.coaTest      || '',
+      customer:     orig.customer     || '',
+      dateDrawn:    orig.dateDrawn    || '',
+      timeDrawn:    orig.timeDrawn    || '',
+      receivedDate: orig.receivedDate || '',
+      receivedTime: orig.receivedTime || '',
+      location:     orig.location     || '',
+      city:         orig.city         || '',
+      state:        orig.state        || '',
+      zip:          orig.zip          || '',
+      notes:        orig.notes        || '',
     };
     const updates = {};
     for (const [k, v] of Object.entries(allFields)) {
