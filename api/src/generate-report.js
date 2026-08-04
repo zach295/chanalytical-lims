@@ -212,12 +212,12 @@ async function getResultsCache(baseId) {
 
 // ── Get client email from Clients list ────────────────────────────────────────
 async function getClientInfo(customerName, token) {
-  const empty = { email:'', phone:'', clientCode:'', abbrev:'' };
+  const empty = { email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' };
   if (!customerName) return empty;
   try {
     const siteId = process.env.SP_SITE_ID;
     const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Phone)&$top=500`,
+      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Phone,Address,BillingAddress,City,State,Zip,BillingCity,BillingState,BillingZip)&$top=500`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return empty;
@@ -233,7 +233,16 @@ async function getClientInfo(customerName, token) {
     });
     if (!match) return empty;
     const f = match.fields || {};
-    return { email: f.Email||'', clientCode: f.ClientCode||'', abbrev: f.Abbrev||'', phone: f.Phone||'' };
+    return {
+      email:          f.Email          || '',
+      clientCode:     f.ClientCode     || '',
+      abbrev:         f.Abbrev         || '',
+      phone:          f.Phone          || '',
+      billingAddress: f.BillingAddress || f.Address || '',
+      billingCity:    f.BillingCity    || f.City    || '',
+      billingState:   f.BillingState   || f.State   || '',
+      billingZip:     f.BillingZip     || f.Zip     || '',
+    };
   } catch { return empty; }
 }
 
@@ -260,7 +269,7 @@ app.http('generate-report', {
         getToken().then(t => getClientInfo(
           formatCustomerName(frontendMeta?.customer || ''),
           t
-        )).catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' })),
+        )).catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' })),
       ]);
 
       // ── Resolve meta ────────────────────────────────────────────────────────
@@ -283,7 +292,7 @@ app.http('generate-report', {
           if (rawName !== formattedName) return getClientInfo(formattedName, token).catch(() => c);
           return c;
         })
-        .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'' }));
+        .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' }));
 
       // ── Determine test types ────────────────────────────────────────────────
       // meta.services = "Alkalinity | pH" (string from Archived Intake)
@@ -502,10 +511,14 @@ app.http('generate-report', {
           log,
           meta: {
             customer:     formatCustomerName(meta.customer || ''),
-            email:        clientInfo.email       || '',
-            phone:        clientInfo.phone        || '',
-            clientCode:   clientInfo.clientCode   || '',
-            abbrev:       clientInfo.abbrev       || '',
+            email:          clientInfo.email          || '',
+            phone:          clientInfo.phone          || '',
+            clientCode:     clientInfo.clientCode     || '',
+            abbrev:         clientInfo.abbrev         || '',
+            billingAddress: clientInfo.billingAddress || '',
+            billingCity:    clientInfo.billingCity    || '',
+            billingState:   clientInfo.billingState   || '',
+            billingZip:     clientInfo.billingZip     || '',
             location:     meta.location     || '',
             city:         meta.city         || '',
             state:        meta.state        || 'ME',
