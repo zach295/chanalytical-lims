@@ -358,6 +358,8 @@ document.addEventListener('DOMContentLoaded', function() {
             <th>Billing Email</th>
             <th>Phone #</th>
             <th>Billing Address</th>
+            <th>Billing Pref</th>
+            <th>Frequency</th>
             <th>Pricing</th>
             <th>Status</th>
             <th>Actions</th>
@@ -2903,6 +2905,8 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="font-size:12px;">${c.billingEmail || ''}</td>
         <td style="font-size:12px;">${c.phone || ''}</td>
         <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.billingAddress || ''}">${c.billingAddress || ''}</td>
+        <td style="font-size:11px;">${c.billingPreference || ''}</td>
+        <td style="font-size:11px;">${c.frequency || ''}</td>
         <td style="font-size:11px;">${c.pricingCategory || ''}</td>
         <td><span style="padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;
             background:${statusBg(c.status)};color:${statusColor(c.status)};">
