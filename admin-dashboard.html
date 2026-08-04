@@ -2318,8 +2318,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function renderScanQueue() {
+    // renderScanQueue handles pending lab ID badge only
+    // rq-approved-body is managed by loadReviewQueue → today-approved action
     const pending  = scanQueueData.pending  || [];
-    const approved = scanQueueData.approved || [];
+    const badge    = document.getElementById('rq-badge');
+    if (badge) {
+      badge.style.display = pending.length ? 'inline-block' : 'none';
+      badge.textContent   = pending.length;
+    }
+  }
     // Pending section
     const pendingEl = document.getElementById('rq-pending-list');
     if (pendingEl) {
@@ -2333,19 +2340,6 @@ document.addEventListener('DOMContentLoaded', function() {
           pendingEl.appendChild(card.firstElementChild);
         });
       }
-    }
-    // Recently approved
-    const approvedBody = document.getElementById('rq-approved-body');
-    if (approvedBody) {
-      const recent = approved.slice(0, 5);
-      approvedBody.innerHTML = recent.length
-        ? recent.map(a => `<tr>
-            <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.labId||a.fullIds?.[0]||'—'}</td>
-            <td class="client-name">${a.customer||'—'}</td>
-            <td style="font-size:12px;">${a.tests?.[0]||'—'}</td>
-            <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
-          </tr>`).join('')
-        : '<tr><td colspan="4"><div class="empty-state">No approvals today yet.</div></td></tr>';
     }
   }
 
