@@ -343,15 +343,15 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
-    <!-- Top scrollbar mirrors the table scroll so you can scroll from any position -->
-    <div id="clients-top-scroll" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px;">
-      <div id="clients-top-scroll-inner" style="height:1px;"></div>
+    <!-- Top scrollbar: always visible, syncs with table -->
+    <div id="clients-top-scroll" style="overflow-x:scroll;overflow-y:hidden;margin-bottom:4px;border-radius:4px;">
+      <div id="clients-top-scroll-inner" style="height:1px;min-height:1px;"></div>
     </div>
     <div id="clients-table-wrap" style="overflow-x:auto;border-radius:10px;border:1px solid var(--border);">
       <table id="clients-table" style="min-width:1400px;width:100%;border-collapse:collapse;">
         <thead>
           <tr>
-            <th>Client Name</th>
+            <th style="position:sticky;left:0;z-index:3;background:var(--navy);">Client Name</th>
             <th>Code</th>
             <th>Abbrev</th>
             <th>Report Email</th>
@@ -2838,15 +2838,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Sync top scrollbar with table scroll ──────────────────────────────────
   function initClientsScroll() {
-    const wrap = document.getElementById('clients-table-wrap');
-    const top  = document.getElementById('clients-top-scroll');
+    const wrap  = document.getElementById('clients-table-wrap');
+    const top   = document.getElementById('clients-top-scroll');
     const inner = document.getElementById('clients-top-scroll-inner');
     if (!wrap || !top || !inner) return;
-    // Set inner width to match table width
     inner.style.width = wrap.scrollWidth + 'px';
-    // Sync scroll positions
-    top.addEventListener('scroll', () => { wrap.scrollLeft = top.scrollLeft; });
-    wrap.addEventListener('scroll', () => { top.scrollLeft = wrap.scrollLeft; });
+    let syncing = false;
+    top.addEventListener('scroll', () => {
+      if (syncing) return; syncing = true;
+      wrap.scrollLeft = top.scrollLeft;
+      requestAnimationFrame(() => { syncing = false; });
+    });
+    wrap.addEventListener('scroll', () => {
+      if (syncing) return; syncing = true;
+      top.scrollLeft = wrap.scrollLeft;
+      requestAnimationFrame(() => { syncing = false; });
+    });
   }
 
     async function loadClients() {
@@ -2889,7 +2896,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusBg    = s => s === 'Inactive' ? 'var(--error-light)' : 'var(--success-light)';
     tbody.innerHTML = _clientsData.map(c => `
       <tr id="client-row-${c._id}" style="${c.status === 'Inactive' ? 'opacity:0.6;' : ''}">
-        <td style="font-weight:600;">${c.clientName}</td>
+        <td style="font-weight:600;position:sticky;left:0;background:white;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.08);">${c.clientName}</td>
         <td style="font-family:monospace;font-size:12px;">${c.clientCode || ''}</td>
         <td style="font-family:monospace;font-size:12px;font-weight:600;color:var(--teal);">${c.abbrev || ''}</td>
         <td style="font-size:12px;">${c.reportEmail || ''}</td>
