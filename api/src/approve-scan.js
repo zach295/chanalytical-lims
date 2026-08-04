@@ -590,10 +590,19 @@ async function writeReportsToBilled(siteId, token, params, context) {
       if (context) context.log(`[RTB] Using price column: ${priceCol}`);
 
       // Step B: Find the test row in Current Pricing V1
-      const pricingRes = await fetch(
+      // Try both possible list names
+      let pricingRes = await fetch(
         `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice)&$top=200`,
         { headers: authHdr }
       );
+      if (!pricingRes.ok) {
+        // Try alternate name
+        pricingRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists/Current%20Pricing%20V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice)&$top=200`,
+          { headers: authHdr }
+        );
+        if (context) context.log(`[RTB] Tried alternate list name, status: ${pricingRes.status}`);
+      }
       if (pricingRes.ok) {
         const pricingData = await pricingRes.json();
         const testNameLow = (params.testName || '').toLowerCase().trim();
@@ -677,7 +686,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
         '',                         // O RW Results (blank until radon import)
         qty,                        // P Qty
         rate,                       // Q Rate
-        amt,                        // R Amt
+        '',                         // R Amt (left blank)
         '', '', '', '', '', '',     // S-X (QB, Disc, Stmt, Pd, Amt Pd, Date Pd)
       ];
 
@@ -933,7 +942,6 @@ app.http('approve-scan', {
 
       // ── Write RCS and RTB in parallel ────────────────────────────────────────
       const rtbPromises = labItems
-        .filter(item => !item.isRejection)
         .map(item => writeReportsToBilled(_siteId, _token, {
           labId:           item.fullId,
           suffix:          item.suffix      || '',
@@ -951,7 +959,7 @@ app.http('approve-scan', {
           testName:        item.coaTest     || '',
         }, context).catch(e => ({ success:false, error:e.message })));
       const rtbResults = await Promise.all(rtbPromises);
-      rtbResults.forEach((r,i) => context.log('[RTB]', labItems.filter(l=>!l.isRejection)[i]?.fullId, r.success ? `row ${r.row}` : r.error));
+      rtbResults.forEach((r,i) => context.log('[RTB]', labItems[i]?.fullId, r.success ? `row ${r.row}` : r.error));
 
       // ── Auto-add new client if not in Clients list ───────────────────────────
       if (customer) {
