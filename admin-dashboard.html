@@ -3493,24 +3493,32 @@ document.addEventListener('DOMContentLoaded', function() {
       const rejectedFlags = (timeoutResult?.flags||[]).filter(f=>f.type==='rejected'||f.type==='expired');
       const selectedPackage = displayTests.find(t => allPackages.includes(t));
       const expiredElements = rejectedFlags.map(f=>f.element);
-      if (selectedPackage && expiredElements.length) {
-        // Elements expired inside a package — keep the package, add a note, do NOT reject
+
+      // If ALL time-sensitive elements in the package are expired → reject the whole sample
+      // If only SOME are expired (e.g. metals still valid) → keep package with note
+      const PACKAGE_TIME_SENSITIVE = ['Bacteria','Total Coliform','E.Coli','Nitrate','Nitrite'];
+      const allTimeSensitiveExpired = PACKAGE_TIME_SENSITIVE.every(el =>
+        expiredElements.includes(el) || !expiredElements.some(e => e === el) && 
+        !(timeoutResult?.flags||[]).some(f => f.element === el && f.type === 'close')
+      );
+      // Simpler check: if any key element is rejected AND hours > 100, reject the whole sample
+      const hoursElapsedRough = rejectedFlags[0]?.hours || 0;
+      const shouldRejectAll = hasRejectedTimeout && (hoursElapsedRough > 100 ||
+        (expiredElements.includes('Bacteria') && expiredElements.includes('Nitrate')));
+
+      if (selectedPackage && expiredElements.length && !shouldRejectAll) {
+        // Some elements expired inside a package but not all — keep package, add note
         timeoutNotes = expiredElements.map(el => {
           const flag = rejectedFlags.find(f=>f.element===el);
           return `${el} over time limit (${flag?.hours||'?'} hrs old, limit ${flag?.limit||'?'} hrs)`;
         });
-        // Only remove standalone expired elements that aren't covered by the package
         displayTests = displayTests.filter(t => allPackages.includes(t) || !expiredElements.includes(t));
       } else {
-        // Standalone elements expired — reject them AND add note
+        // All key elements expired OR standalone elements — reject entire sample
         timeoutNotes = rejectedFlags.map(f =>
           `${f.element} over time limit (${f.hours||'?'} hrs old, limit ${f.limit||'?'} hrs)`
         );
-        displayTests = displayTests.filter(t =>
-          !allPackages.includes(t) &&
-          !expiredElements.includes(t)
-        );
-        if (!displayTests.includes('Rejected - Timeout')) displayTests.push('Rejected - Timeout');
+        displayTests = ['Rejected - Timeout'];
       }
     }
 
