@@ -615,10 +615,12 @@ async function writeReportsToBilled(siteId, token, params, context) {
           const suf     = (f.Suffix  || '').toLowerCase().trim();
           return service === testNameLow || suf === suffixLow;
         });
-        const listSample = (pricingData.value||[]).slice(0,8)
-          .map(i => ({t:i.fields?.Title, s:i.fields?.Suffix, keys:Object.keys(i.fields||{})}));
-        if (context) context.log('[RTB] List sample:', JSON.stringify(listSample));
-        if (context) context.log(`[RTB] Searching title="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}"`);
+        // Dump ALL field keys from first item so we know exact names
+        const firstItem = pricingData.value?.[0];
+        if (firstItem && context) {
+          context.log('[RTB] First item ALL fields:', JSON.stringify(firstItem.fields));
+        }
+        if (context) context.log(`[RTB] Searching service="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}" totalItems=${pricingData.value?.length}`);
         if (match) {
           rate = String(match.fields?.[priceCol] || '');
           params._matchFound = match.fields?.Service || match.fields?.Title;
@@ -626,6 +628,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
           if (context) context.log(`[RTB] Match: "${match.fields?.Service||match.fields?.Title}" ${priceCol}=${rate}`);
         } else {
           params._matchFound = 'NONE';
+          params._firstItemFields = Object.keys(firstItem?.fields || {}).join(',');
           params._priceColUsed = priceCol;
           if (context) context.log(`[RTB] No match for title="${testNameLow}" suffix="${suffixLow}"`);
         }
