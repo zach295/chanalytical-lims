@@ -31,6 +31,30 @@ function nextWorkdayET(from) {
   return `${p.month}-${p.day}-${p.year.slice(-2)}`;
 }
 
+function nextBusinessDay(dateStr) {
+  // Returns the next business day (Mon-Fri) after the given date as MM/DD/YYYY
+  if (!dateStr) return '';
+  try {
+    // Parse MM-DD-YY or MM/DD/YYYY or YYYY-MM-DD
+    let d;
+    const mmddyy = dateStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+    if (mmddyy) {
+      const yr = mmddyy[3].length === 2 ? 2000 + parseInt(mmddyy[3]) : parseInt(mmddyy[3]);
+      d = new Date(yr, parseInt(mmddyy[1]) - 1, parseInt(mmddyy[2]));
+    } else {
+      d = new Date(dateStr);
+    }
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + 1);
+    // Skip weekends
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  } catch { return ''; }
+}
+
 function fmtExcel(dateStr) {
   // Convert any date format to MM/DD/YYYY for Excel
   if (!dateStr) return '';
@@ -461,24 +485,28 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
     const wsId      = ((await sheetsRes.json()).value || [])[0]?.id;
     if (!wsId) throw new Error('No worksheets in RCS file');
 
-    // Read column A to find first empty row
-    const rangeRes = await fetch(`${wbBase}/worksheets/${wsId}/usedRange?$select=values`, { headers: wbHdr });
-    const rows     = (await rangeRes.json()).values || [];
-
-    // Find first empty row in column A (skip header row 1)
-    let targetRow = rows.length + 1; // default: after last used row
-    for (let i = 1; i < rows.length; i++) { // start at 1 to skip header
-      if (!String(rows[i][0] || '').trim()) { targetRow = i + 1; break; }
+    // Read column A directly to find first empty row
+    const colARes  = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A1:A200')?$select=values`, { headers: wbHdr });
+    const colAVals = (await colARes.json()).values || [];
+    let targetRow  = 2; // default: row 2 (after header)
+    for (let i = 1; i < colAVals.length; i++) {
+      if (!String(colAVals[i][0] || '').trim()) { targetRow = i + 1; break; }
+      targetRow = i + 2;
     }
+    if (context) context.log(`[RCS] colA rows=${colAVals.length} targetRow=${targetRow}`);
 
     // Write Lab Barcode # (col A), Date Drawn (col D), Time Drawn (col E)
-    await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:E${targetRow}')`, {
+    const writeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:E${targetRow}')`, {
       method: 'PATCH',
       headers: wbHdr,
       body: JSON.stringify({
         values: [[labId, '', '', dateDrawn || '', timeDrawn || '']],
       }),
     });
+    if (!writeRes.ok) {
+      const errText = await writeRes.text().catch(()=>'');
+      throw new Error(`RCS write failed (${writeRes.status}): ${errText.slice(0,200)}`);
+    }
 
     context.log(`[RCS] Wrote ${labId} to ${rcsName} row ${targetRow}`);
     return { success: true, file: rcsName, row: targetRow };
@@ -557,19 +585,21 @@ async function writeReportsToBilled(siteId, token, params, context) {
       const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
       if (!wsId) throw new Error('No worksheets found');
 
-      // 5. Find first empty row — scan column A, skip header row 1
-      const rangeRes = await fetch(
-        `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
+      // 5. Find first empty row — read column A directly (more reliable than usedRange)
+      const colARes  = await fetch(
+        `${wbBase}/worksheets/${wsId}/range(address='A1:A500')?$select=values`,
         { headers: wbHdr }
       );
-      const rangeData  = await rangeRes.json();
-      const usedValues = rangeData.values || [];
-      // Find first truly empty row in column A after header
-      let nextRow = 2; // default: row 2 (first data row)
-      if (usedValues.length > 1) {
-        // Find first row where column A is blank, starting from row 2
-        const emptyIdx = usedValues.slice(1).findIndex(row => !String(row[0] || '').trim());
-        nextRow = emptyIdx >= 0 ? emptyIdx + 2 : usedValues.length + 1;
+      const colAData = await colARes.json();
+      const colAVals = colAData.values || [];
+      // Find first empty cell in column A after header (row 1 = index 0)
+      let nextRow = 2; // default: row 2
+      for (let i = 1; i < colAVals.length; i++) {
+        if (!String(colAVals[i][0] || '').trim()) {
+          nextRow = i + 1; // convert to 1-based row number
+          break;
+        }
+        nextRow = i + 2; // all rows filled — append after last
       }
 
       // 6. Write the row
@@ -586,7 +616,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
         params.timeDrawn    || '',              // D Time Drawn
         params.customer     || '',  // E Customer
         params.clientCode   || '',  // F Client Code
-        '',                         // G Report Date (blank, filled when reported)
+        nextBusinessDay(params.receivedDate || params.dateDrawn), // G Report Date (next business day)
         params.labId        || '',  // H Lab #
         params.location     || '',  // I Location
         params.city         || '',  // J City/Town
@@ -1001,7 +1031,7 @@ app.http('approve-scan', {
         try {
           const rcsResult = await writeRadonControlSheet(
             _siteId, _token, radonLabItem.fullId,
-            fmt(dateDrawn) || dateDrawn || '',
+            dateDrawn || '',
             to24h(timeDrawn) || timeDrawn || '',
             context
           );
