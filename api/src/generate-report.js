@@ -212,12 +212,12 @@ async function getResultsCache(baseId) {
 
 // ── Get client email from Clients list ────────────────────────────────────────
 async function getClientInfo(customerName, token) {
-  const empty = { email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' };
+  const empty = { clientName:'', mainContact:'', reportEmail:'', billingEmail:'', email:'', phone:'', dbaName:'', clientCode:'', abbrev:'', billingAddress:'', billingPreference:'', frequency:'', pricingCategory:'', startDate:'', status:'', radonLic:'' };
   if (!customerName) return empty;
   try {
     const siteId = process.env.SP_SITE_ID;
     const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Phone,Address,BillingAddress,City,State,Zip,BillingCity,BillingState,BillingZip)&$top=500`,
+      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,ClientCode,Abbrev,Email,Phone,Active,Aliases,Notes,BillingAddress,BillingFrequency,Frequency,PricingCategory,StartDate,Status,RadonLic_x0023_)&$top=500`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return empty;
@@ -226,22 +226,32 @@ async function getClientInfo(customerName, token) {
     const formatted = formatCustomerName(customerName).toLowerCase().trim();
     const match = (data.value || []).find(item => {
       const f  = item.fields || {};
-      const cn = (f.Title || '').toLowerCase().trim();
-      const al = (f.Aliases || '').toLowerCase();
-      return cn === name || cn === formatted
-        || al.split(/[,;]/).map(s => s.trim().toLowerCase()).some(a => a && (a === name || a === formatted));
+      // ClientName is the primary name field in the new client list structure
+      const cn = (f.ClientName || f.Title || '').toLowerCase().trim();
+      return cn === name || cn === formatted;
     });
     if (!match) return empty;
     const f = match.fields || {};
+    // New Clients list field mapping (internal names differ from display names):
+    // Aliases = Report Email, Notes = Billing Email, Active = Phone #,
+    // Email = Main Contact (first name), Phone = DBA Name
     return {
-      email:          f.Email          || '',
-      clientCode:     f.ClientCode     || '',
-      abbrev:         f.Abbrev         || '',
-      phone:          f.Phone          || '',
-      billingAddress: f.BillingAddress || f.Address || '',
-      billingCity:    f.BillingCity    || f.City    || '',
-      billingState:   f.BillingState   || f.State   || '',
-      billingZip:     f.BillingZip     || f.Zip     || '',
+      clientName:      f.ClientName      || f.Title   || '',
+      mainContact:     f.Email           || '',          // display: "Main Contact"
+      reportEmail:     f.Aliases         || '',          // display: "Report Email Address"
+      billingEmail:    f.Notes           || '',          // display: "Billing Email Address"
+      email:           f.Aliases         || '',          // alias for compatibility
+      phone:           f.Active          || '',          // display: "Phone #"
+      dbaName:         f.Phone           || '',          // display: "DBA Name"
+      clientCode:      f.ClientCode      || '',
+      abbrev:          f.Abbrev          || '',
+      billingAddress:  f.BillingAddress  || '',
+      billingPreference: f.BillingFrequency || '',
+      frequency:       f.Frequency       || '',
+      pricingCategory: f.PricingCategory || '',
+      startDate:       f.StartDate       || '',
+      status:          f.Status          || '',
+      radonLic:        f.RadonLic_x0023_ || '',
     };
   } catch { return empty; }
 }
@@ -269,7 +279,7 @@ app.http('generate-report', {
         getToken().then(t => getClientInfo(
           formatCustomerName(frontendMeta?.customer || ''),
           t
-        )).catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' })),
+        )).catch(() => empty),
       ]);
 
       // ── Resolve meta ────────────────────────────────────────────────────────
@@ -292,7 +302,7 @@ app.http('generate-report', {
           if (rawName !== formattedName) return getClientInfo(formattedName, token).catch(() => c);
           return c;
         })
-        .catch(() => ({ email:'', phone:'', clientCode:'', abbrev:'', billingAddress:'', billingCity:'', billingState:'', billingZip:'' }));
+        .catch(() => empty);
 
       // ── Determine test types ────────────────────────────────────────────────
       // meta.services = "Alkalinity | pH" (string from Archived Intake)
@@ -511,14 +521,16 @@ app.http('generate-report', {
           log,
           meta: {
             customer:     formatCustomerName(meta.customer || ''),
-            email:          clientInfo.email          || '',
-            phone:          clientInfo.phone          || '',
-            clientCode:     clientInfo.clientCode     || '',
-            abbrev:         clientInfo.abbrev         || '',
-            billingAddress: clientInfo.billingAddress || '',
-            billingCity:    clientInfo.billingCity    || '',
-            billingState:   clientInfo.billingState   || '',
-            billingZip:     clientInfo.billingZip     || '',
+            email:            clientInfo.email            || '',
+            reportEmail:      clientInfo.reportEmail      || '',
+            billingEmail:     clientInfo.billingEmail     || '',
+            phone:            clientInfo.phone            || '',
+            clientCode:       clientInfo.clientCode       || '',
+            abbrev:           clientInfo.abbrev           || '',
+            billingAddress:   clientInfo.billingAddress   || '',
+            billingPreference: clientInfo.billingPreference || '',
+            pricingCategory:  clientInfo.pricingCategory  || '',
+            dbaName:          clientInfo.dbaName          || '',
             location:     meta.location     || '',
             city:         meta.city         || '',
             state:        meta.state        || 'ME',
