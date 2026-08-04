@@ -4094,10 +4094,16 @@ document.addEventListener('DOMContentLoaded', function() {
   async function triggerScanNow(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '⏳ Checking...';
+    btn.textContent = '⏳ Scanning drive...';
     try {
-      await loadScans();
-      showToast('✅ Scan list refreshed');
+      // Trigger OCR scan of incoming SharePoint folder
+      const res  = await fetch('/api/scan-folder', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Scan failed');
+      const found = data.newScans ?? data.processed ?? data.count ?? 0;
+      showToast(found > 0 ? `✅ Found ${found} new scan(s) — refreshing queue` : '✅ Drive checked — no new scans');
+      // Refresh the review queue and scan list
+      await Promise.all([loadScanQueue().then(renderScanQueue), loadScans()]);
     } catch(e) {
       showToast('⚠️ ' + e.message);
     } finally {
