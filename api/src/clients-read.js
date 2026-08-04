@@ -48,5 +48,5 @@ app.http('clients-read', {
       context.log('[clients-read] Error:', e.message);
       return { status: 500, jsonBody: { error: e.message } };
     }
-  }
+  } 
 });
