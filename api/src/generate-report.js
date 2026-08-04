@@ -289,18 +289,15 @@ app.http('generate-report', {
       // meta.services = "Alkalinity | pH" (string from Archived Intake)
       // frontendMeta.tests = ["Alkalinity | pH"] (array from accession-status)
       // Both need splitting on | to get individual service names
-      const services = meta.services
-        ? meta.services.split(/[|;]/).map(s=>s.trim()).filter(Boolean)
-        : (frontendMeta?.tests || []).flatMap(t =>
-            String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
-          );
-
-      // Allow dashboard to override the detected test type
-      const testOverride = body.testOverride || '';
-      if (testOverride) {
-        services.length = 0;
-        services.push(testOverride);
-      }
+      // testOverride from dashboard takes precedence over accession-status data
+      const testOverride = (body.testOverride || '').trim();
+      const services = testOverride
+        ? [testOverride]
+        : meta.services
+          ? meta.services.split(/[|;]/).map(s=>s.trim()).filter(Boolean)
+          : (frontendMeta?.tests || []).flatMap(t =>
+              String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
+            );
 
       const isRadon      = services.some(s => /radon/i.test(s));
       const isArsenicSpec = services.some(s => /arsenic.*spec/i.test(s) || /spec.*arsenic/i.test(s));
@@ -461,8 +458,8 @@ app.http('generate-report', {
             if (!isNaN(asTotal) && !isNaN(asIII)) {
               rawVal = String(Math.max(0, Math.round((asTotal - asIII) * 10000) / 10000));
             }
-            analDT = icpmsAcqTime;
-            prepDT = acidPrepDT;
+            analDT = ''; // calculated — no instrument date
+            prepDT = ''; // calculated — no prep date
             break;
           }
         }
