@@ -27,7 +27,7 @@ function formatCustomerName(name) {
   return inner;
 }
 
-// v202608040008 — force instance reload
+// v202608041130 — force instance reload
 // Archived Intake field mapping:
 // Title=timestamp, field_1=fullId, field_2=coaTest, field_3=clientName,
 // field_4=dateDrawn, field_5=timeDrawn, field_6=receivedDate, field_7=receivedTime,
@@ -170,8 +170,6 @@ app.http('accession-status', {
 
         // Return today's approved samples from Archived Intake (last 5, descending)
         if (action === 'today-approved') {
-          const tkn    = await getToken();
-          const sid    = process.env.SP_SITE_ID;
           const allI   = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
           const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
           const approved = allI
