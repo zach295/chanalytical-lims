@@ -1001,28 +1001,30 @@ document.addEventListener('DOMContentLoaded', function() {
         <div id="sc-lookup-status" style="font-size:13px;color:var(--slate);margin-bottom:12px;min-height:18px;"></div>
 
         <div id="sc-edit-form" style="display:none;">
-          <div style="margin-bottom:16px;">
-            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:8px;">
-              Test Type <span style="font-size:11px;font-weight:400;">(updates suffix &amp; full lab ID everywhere)</span>
-            </label>
-            <input type="text" id="sc-edit-coaTest" placeholder="e.g. Expanded Safety (Mortgage Test) | Arsenic, Total"
-              style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:8px;" />
-            <div style="display:flex;flex-wrap:wrap;gap:6px;">
-              <span style="font-size:11px;color:var(--slate);margin-right:4px;">Quick select:</span>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Basic Safety (FHA)'">Basic Safety (FHA)</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Standard Safety'">Standard Safety</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Expanded Safety (Mortgage Test)'">Expanded Safety</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='WW - Expanded Safety'">WW Expanded</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Comprehensive'">Comprehensive</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Bacteria'">Bacteria</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Radon Water'">Radon Water</button>
-              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Arsenic, Speciation'">Arsenic Spec</button>
+          <!-- Test Type Checkboxes — same style as Review Queue -->
+          <div style="margin-bottom:16px;padding:14px;border:1.5px solid var(--border);border-radius:8px;">
+            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">
+              Test Type <span style="font-size:11px;font-weight:400;color:var(--slate);">(check one package OR individual elements)</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;">
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Packages</div>
+                ${['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Pro Plus','Radon Water'].map(t=>
+                  `<label style="display:flex;align-items:center;gap:7px;margin-bottom:5px;cursor:pointer;font-size:13px;">
+                    <input type="checkbox" class="sc-test-cb" value="${t}" onchange="scEnforcePackage(this)" style="width:15px;height:15px;cursor:pointer;"/> ${t}
+                  </label>`).join('')}
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Individual Elements</div>
+                ${['Alkalinity','Antimony','Arsenic, Total','Arsenic, Speciation','Bacteria','Bromide','Cadmium, Total','Calcium, Total','Chloride, Total','Chromium','Cobalt','Copper, Total','Fluoride','Iron, Total','Lead, Total','Magnesium, Total','Manganese, Total','Nitrate','Nitrite','pH','Sodium, Total','Sulfate','Tannins','Total Dissolved Solids (TDS)','Total Hardness','Uranium, Total'].map(t=>
+                  `<label style="display:flex;align-items:center;gap:7px;margin-bottom:4px;cursor:pointer;font-size:12px;">
+                    <input type="checkbox" class="sc-test-cb sc-element-cb" value="${t}" onchange="scEnforcePackage(this)" style="width:14px;height:14px;cursor:pointer;"/> ${t}
+                  </label>`).join('')}
+              </div>
             </div>
           </div>
+          <input type="hidden" id="sc-edit-coaTest" />
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-            <div class="form-field" style="display:none;">
-              <input type="text" id="sc-edit-coaTest-hidden" />
-            </div>
             <div class="form-field" style="grid-column:1/-1;">
               <label>Customer / Company</label>
               <input type="text" id="sc-edit-customer" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
@@ -2592,6 +2594,40 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── SAMPLE CORRECTION TAB ────────────────────────────────────────────────
   let _scCurrentData = null; // holds the looked-up sample data
 
+  // ── Sample Correction test type helpers ────────────────────────────────────
+  const SC_PACKAGES = ['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)',
+    'WW - Expanded Safety','Comprehensive','Pro Plus','Radon Water'];
+
+  function scEnforcePackage(changed) {
+    const isPackage = SC_PACKAGES.includes(changed.value);
+    if (changed.checked && isPackage) {
+      // Uncheck all other packages when a package is selected
+      document.querySelectorAll('.sc-test-cb').forEach(cb => {
+        if (cb !== changed && SC_PACKAGES.includes(cb.value)) cb.checked = false;
+      });
+    }
+    // Update hidden field with pipe-separated value
+    scBuildCoaTest();
+  }
+
+  function scBuildCoaTest() {
+    const checked = [...document.querySelectorAll('.sc-test-cb:checked')].map(cb => cb.value);
+    document.getElementById('sc-edit-coaTest').value = checked.join(' | ');
+    return checked.join(' | ');
+  }
+
+  function scSetCheckboxes(coaTest) {
+    // Uncheck all first
+    document.querySelectorAll('.sc-test-cb').forEach(cb => cb.checked = false);
+    if (!coaTest) return;
+    const tests = coaTest.split(/[|,]/).map(t => t.trim()).filter(Boolean);
+    tests.forEach(t => {
+      const cb = [...document.querySelectorAll('.sc-test-cb')].find(el => el.value === t);
+      if (cb) cb.checked = true;
+    });
+    scBuildCoaTest();
+  }
+
   async function lookupSampleForCorrection() {
     const labIdRaw = document.getElementById('sc-lookup-id').value.trim();
     const statusEl = document.getElementById('sc-lookup-status');
@@ -2640,7 +2676,7 @@ document.addEventListener('DOMContentLoaded', function() {
       _scCurrentData = { ...found, baseId };
 
       // Populate fields from raw Archived Intake fields
-      document.getElementById('sc-edit-coaTest').value      = raw.field_2  || '';
+      scSetCheckboxes(raw.field_2 || '');
       document.getElementById('sc-edit-customer').value     = raw.field_3  || '';
       document.getElementById('sc-edit-dateDrawn').value    = raw.field_4  || '';
       document.getElementById('sc-edit-timeDrawn').value    = raw.field_5  || '';
@@ -2669,7 +2705,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const g = id => document.getElementById(id).value.trim();
     const updates = {
-      coaTest:      g('sc-edit-coaTest'),
+      coaTest:      scBuildCoaTest(),
       customer:     g('sc-edit-customer'),
       dateDrawn:    g('sc-edit-dateDrawn'),
       timeDrawn:    g('sc-edit-timeDrawn'),
