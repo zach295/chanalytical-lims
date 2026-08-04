@@ -173,19 +173,38 @@ async function getQueuedFileIds(token) {
 // Write one scan result row to the "Review Queue" SP list
 async function writeToReviewQueue(fields, token) {
   const siteId = process.env.SP_SITE_ID;
-  const res    = await fetch(
-    `${GRAPH}/sites/${siteId}/lists/Review Queue/items`,
-    {
-      method:  'POST',
-      headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-      body:    JSON.stringify({ fields }),
+
+  const tryWrite = async (f) => {
+    const res = await fetch(
+      `${GRAPH}/sites/${siteId}/lists/Review Queue/items`,
+      {
+        method:  'POST',
+        headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body:    JSON.stringify({ fields: f }),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`writeToReviewQueue: ${res.status} ${err}`);
     }
-  );
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`writeToReviewQueue: ${res.status} ${err}`);
+    return res.json();
+  };
+
+  try {
+    return await tryWrite(fields);
+  } catch(e) {
+    // Retry with core fields only if a column isn't recognised yet
+    if (e.message.includes('400') && e.message.includes('not recognized')) {
+      const core = {};
+      const coreKeys = ['Title','FileID','BarcodeID','ClientName','Email','Phone',
+        'SampleDate','SampleTime','ReceivedDate','ReceivedTime','Address','City',
+        'State','Zip','TestSelections','OCRConfidence','ProcessedDate','ReviewStatus',
+        'ValidationErrors','WaterType','ScannedBy','IsNewClient','BillingAddress'];
+      coreKeys.forEach(k => { if (fields[k] !== undefined) core[k] = fields[k]; });
+      return await tryWrite(core);
+    }
+    throw e;
   }
-  return res.json();
 }
 
 // ── Hard-coded alias fallbacks (v352) ────────────────────────────────────────
