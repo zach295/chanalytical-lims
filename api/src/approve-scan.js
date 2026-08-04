@@ -594,7 +594,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
       // Step B: Find the test row in Current Pricing V1
       // Try both possible list names
       let pricingRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQ_x0020_Pricing,Inspector_x0020_Pricing,Public_x0020_Pricing)&$top=200`,
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Service,Suffix,WQ_x0020_Pricing,Inspector_x0020_Pricing,Public_x0020_Pricing)&$top=200`,
         { headers: authHdr }
       );
       if (!pricingRes.ok) {
@@ -610,10 +610,10 @@ async function writeReportsToBilled(siteId, token, params, context) {
         const testNameLow = (params.testName || '').toLowerCase().trim();
         const suffixLow   = (params.suffix   || '').toLowerCase().trim();
         const match = (pricingData.value || []).find(item => {
-          const f     = item.fields || {};
-          const title = (f.Title  || '').toLowerCase().trim();
-          const suf   = (f.Suffix || '').toLowerCase().trim();
-          return title === testNameLow || suf === suffixLow;
+          const f       = item.fields || {};
+          const service = (f.Service || f.Title || '').toLowerCase().trim();
+          const suf     = (f.Suffix  || '').toLowerCase().trim();
+          return service === testNameLow || suf === suffixLow;
         });
         const listSample = (pricingData.value||[]).slice(0,8)
           .map(i => ({t:i.fields?.Title, s:i.fields?.Suffix, keys:Object.keys(i.fields||{})}));
@@ -621,9 +621,9 @@ async function writeReportsToBilled(siteId, token, params, context) {
         if (context) context.log(`[RTB] Searching title="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}"`);
         if (match) {
           rate = String(match.fields?.[priceCol] || '');
-          params._matchFound = match.fields?.Title;
+          params._matchFound = match.fields?.Service || match.fields?.Title;
           params._priceColUsed = priceCol;
-          if (context) context.log(`[RTB] Match: "${match.fields?.Title}" ${priceCol}=${rate} allFields:${JSON.stringify(match.fields)}`);
+          if (context) context.log(`[RTB] Match: "${match.fields?.Service||match.fields?.Title}" ${priceCol}=${rate}`);
         } else {
           params._matchFound = 'NONE';
           params._priceColUsed = priceCol;
