@@ -816,8 +816,7 @@ app.http('approve-scan', {
           labIds:     allFullIds,
           formalName,
           archiveNote:    fileId ? 'File moved to Archive' : 'No file to archive',
-          intakeListId:   archivedIntakeListId || 'NOT FOUND',
-          intakeSiteId:   _siteId || 'NOT SET',
+
         },
       };
 
