@@ -677,6 +677,7 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress
 
         } catch (err) {
           context.log(`[scan] ✗ ${file.name}: ${err.message}`);
+          results.push({ fileName: file.name, error: err.message });
           // Move back to INCOMING on failure so it can be retried
           await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
         }
@@ -684,7 +685,7 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress
 
       return {
         status:   200,
-        jsonBody: { checked: files.length, processed: results.length, results },
+        jsonBody: { checked: files.length, processed: results.filter(r=>!r.error).length, results },
       };
 
     } catch (err) {
