@@ -540,35 +540,67 @@ async function writeReportsToBilled(siteId, token, params, context) {
     if (!fileRes.ok) throw new Error(`Reports to be Billed.xlsx not found (${fileRes.status})`);
     const { id: fileId } = await fileRes.json();
 
-    // 2. Look up Rate from Current Pricing V1 based on test name and pricing category
+    // 2. Look up Rate:
+    //    Step A → find client in Clients list → get PricingCategory
+    //    Step B → find test row in Current Pricing V1 → use matching column
     let rate = '';
     try {
+      // Step A: Get client's PricingCategory from Clients list
+      let pricingCategory = params.pricingCategory || '';
+      if (!pricingCategory && params.customer) {
+        const clientRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,PricingCategory)&$top=500`,
+          { headers: authHdr }
+        );
+        if (clientRes.ok) {
+          const clientData = await clientRes.json();
+          const customerLow = params.customer.toLowerCase().trim();
+          const clientMatch = (clientData.value || []).find(i => {
+            const name = (i.fields?.ClientName || i.fields?.Title || '').toLowerCase().trim();
+            return name === customerLow || customerLow.includes(name) || name.includes(customerLow);
+          });
+          pricingCategory = clientMatch?.fields?.PricingCategory || '';
+          if (context) context.log(`[RTB] Client "${params.customer}" → PricingCategory="${pricingCategory}"`);
+        }
+      }
+
+      // Map PricingCategory to the Current Pricing V1 column name
+      const catLow = pricingCategory.toLowerCase();
+      let priceCol;
+      if (catLow.includes('inspector')) {
+        priceCol = 'InspectorPrice';
+      } else if (catLow.includes('wq') || catLow.includes('water quality')) {
+        priceCol = 'WQPrice';
+      } else {
+        priceCol = 'PublicPrice'; // default for public/unknown
+      }
+      if (context) context.log(`[RTB] Using price column: ${priceCol}`);
+
+      // Step B: Find the test row in Current Pricing V1
       const pricingRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice,Active)&$top=200`,
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice)&$top=200`,
         { headers: authHdr }
       );
       if (pricingRes.ok) {
         const pricingData = await pricingRes.json();
-        const testNameLow = (params.testName || '').toLowerCase();
-        const suffixLow   = (params.suffix || '').toLowerCase();
+        const testNameLow = (params.testName || '').toLowerCase().trim();
+        const suffixLow   = (params.suffix   || '').toLowerCase().trim();
         const match = (pricingData.value || []).find(item => {
-          const f = item.fields || {};
-          return (f.Title || '').toLowerCase() === testNameLow ||
-                 (f.Suffix || '').toLowerCase() === suffixLow;
+          const f     = item.fields || {};
+          const title = (f.Title  || '').toLowerCase().trim();
+          const suf   = (f.Suffix || '').toLowerCase().trim();
+          return title === testNameLow || suf === suffixLow;
         });
         if (match) {
-          const f = match.fields || {};
-          const cat = (params.pricingCategory || '').toLowerCase();
-          if (cat.includes('wq') || cat.includes('inspector') && cat.includes('wq')) {
-            rate = f.WQPrice || '';
-          } else if (cat.includes('inspector')) {
-            rate = f.InspectorPrice || '';
-          } else {
-            rate = f.PublicPrice || '';
-          }
+          rate = String(match.fields?.[priceCol] || '');
+          if (context) context.log(`[RTB] Found "${match.fields?.Title}" → ${priceCol}=${rate}`);
+        } else {
+          if (context) context.log(`[RTB] No match in Current Pricing V1 for testName="${params.testName}" suffix="${params.suffix}"`);
+          const titles = (pricingData.value || []).slice(0,5).map(i=>i.fields?.Title).join(', ');
+          if (context) context.log(`[RTB] First 5 pricing items: ${titles}`);
         }
       }
-    } catch(e) { context.log('[RTB] Pricing lookup failed:', e.message); }
+    } catch(e) { if (context) context.log('[RTB] Rate lookup error:', e.message); }
 
     const qty  = 1;
     const amt  = rate ? (qty * parseFloat(rate)).toFixed(2) : '';
