@@ -4096,12 +4096,10 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.disabled = true;
     btn.textContent = '⏳ Checking...';
     try {
-      const res  = await fetch('/api/scan-drive', { method: 'POST' });
-      const data = await res.json();
-      showToast(data.found > 0 ? `✅ Found ${data.found} new scan(s)` : '✅ No new scans found');
       await loadScans();
+      showToast('✅ Scan list refreshed');
     } catch(e) {
-      showToast('⚠️ Scan check failed: ' + e.message);
+      showToast('⚠️ ' + e.message);
     } finally {
       btn.disabled = false;
       btn.textContent = orig;
