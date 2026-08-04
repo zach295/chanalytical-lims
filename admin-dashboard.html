@@ -4243,10 +4243,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
-      showToast(found > 0 ? `✅ Found ${found} new scan(s) — refreshing queue` : '✅ Drive checked — no new scans');
-      // Wait for OCR then refresh the queue
-      await new Promise(r => setTimeout(r, 4000));
-      await loadReviewQueue();
+      showToast(found > 0 ? `✅ Processing scan — queue will refresh automatically` : '✅ Drive checked — no new scans');
+      // Poll every 2s until a new card appears (max 30s)
+      const prevCount = document.querySelectorAll('#rq-scan-cards > *').length;
+      let attempts = 0;
+      const poll = async () => {
+        attempts++;
+        await loadReviewQueue();
+        const newCount = document.querySelectorAll('#rq-scan-cards > *').length;
+        if (newCount > prevCount || attempts >= 15) return;
+        await new Promise(res => setTimeout(res, 2000));
+        return poll();
+      };
+      if (found > 0) await poll();
       await loadScans();
     } catch(e) {
       showToast('⚠️ ' + e.message);
