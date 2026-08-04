@@ -627,7 +627,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
         params._firstItemFields = Object.keys(firstItem?.fields || {}).slice(0, 20).join(',');
         params._firstItemService = firstItem?.fields?.Service || firstItem?.fields?.Title || JSON.stringify(Object.values(firstItem?.fields||{}).slice(0,5));
         if (match) {
-          rate = String(match.fields?.[priceCol] || '');
+          rate = String(match.fields?.[priceCol] || '').replace(/[$,]/g, '').trim();
           params._matchFound = match.fields?.Service || match.fields?.Title;
           params._priceColUsed = priceCol;
         } else {
@@ -708,7 +708,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
       });
 
       context.log(`[RTB] Wrote ${params.labId} to row ${nextRow} rate=${rate} cat=${params.pricingCategory}`);
-      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory, priceColUsed: params._priceColUsed, matchFound: params._matchFound, pricingCount: params._pricingCount, firstItemFields: params._firstItemFields, firstItemService: params._firstItemService };
+      return { success: true, row: nextRow, rate };
     } finally {
       await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
     }
@@ -1163,8 +1163,8 @@ app.http('approve-scan', {
           labIds:     allFullIds,
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
-          rcsStatus,
-          rtbDebug:   rtbResults?.[0] || null,
+
+
 
         },
       };
