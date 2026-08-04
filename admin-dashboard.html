@@ -343,7 +343,11 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
-    <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border);">
+    <!-- Top scrollbar mirrors the table scroll so you can scroll from any position -->
+    <div id="clients-top-scroll" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px;">
+      <div id="clients-top-scroll-inner" style="height:1px;"></div>
+    </div>
+    <div id="clients-table-wrap" style="overflow-x:auto;border-radius:10px;border:1px solid var(--border);">
       <table id="clients-table" style="min-width:1400px;width:100%;border-collapse:collapse;">
         <thead>
           <tr>
@@ -2831,6 +2835,20 @@ document.addEventListener('DOMContentLoaded', function() {
     else showToast('⚠️ ' + d.error);
   }
 
+
+  // ── Sync top scrollbar with table scroll ──────────────────────────────────
+  function initClientsScroll() {
+    const wrap = document.getElementById('clients-table-wrap');
+    const top  = document.getElementById('clients-top-scroll');
+    const inner = document.getElementById('clients-top-scroll-inner');
+    if (!wrap || !top || !inner) return;
+    // Set inner width to match table width
+    inner.style.width = wrap.scrollWidth + 'px';
+    // Sync scroll positions
+    top.addEventListener('scroll', () => { wrap.scrollLeft = top.scrollLeft; });
+    wrap.addEventListener('scroll', () => { top.scrollLeft = wrap.scrollLeft; });
+  }
+
     async function loadClients() {
     document.getElementById('clients-body').innerHTML =
       '<tr><td colspan="10"><div class="empty-state">Loading...</div></td></tr>';
@@ -2845,6 +2863,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!res.ok) throw new Error(data.error);
       _clientsData = data.clients || [];
       renderClientsTable();
+      setTimeout(initClientsScroll, 100);
     } catch (err) {
       document.getElementById('clients-body').innerHTML =
         `<tr><td colspan="10"><div class="empty-state">⚠️ ${err.message}</div></td></tr>`;
