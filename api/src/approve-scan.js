@@ -696,8 +696,8 @@ async function writeReportsToBilled(siteId, token, params, context) {
         body: JSON.stringify({ values: [rowSX] }),
       });
 
-      context.log(`[RTB] Wrote ${params.labId} to row ${nextRow}`);
-      return { success: true, row: nextRow };
+      context.log(`[RTB] Wrote ${params.labId} to row ${nextRow} rate=${rate} cat=${params.pricingCategory}`);
+      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory };
     } finally {
       await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
     }
