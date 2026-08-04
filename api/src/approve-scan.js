@@ -621,19 +621,20 @@ app.http('approve-scan', {
         };
         if (notes && notes.trim()) intakeFields.field_13 = notes;
         let intakeResult = null;
+        let intakeError  = null;
         if (archivedIntakeListId) {
           const ir = await fetch(
             `${GRAPH}/sites/${_siteId}/lists/${archivedIntakeListId}/items`,
             { method: 'POST', headers: { Authorization: `Bearer ${_token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ fields: intakeFields }) }
           );
-          intakeResult = ir.ok ? await ir.json() : null;
-          if (!ir.ok) context.log('[ArchivedIntake] FAILED', ir.status, await ir.text().catch(()=>''));
-          else context.log('[ArchivedIntake] ✓ wrote', item.fullId);
-        } else {
-          // Fallback to createItem helper
-          intakeResult = await createItem(LISTS.ARCHIVED_INTAKE, intakeFields)
-            .catch(e => { context.log('[ArchivedIntake] fallback error:', e.message); return null; });
+          if (ir.ok) {
+            intakeResult = await ir.json();
+            context.log('[ArchivedIntake] ✓ wrote', item.fullId, 'id=', intakeResult.id);
+          } else {
+            intakeError = `${ir.status}: ${await ir.text().catch(()=>'')}`;
+            context.log('[ArchivedIntake] FAILED', intakeError);
+          }
         }
       }
 
@@ -814,6 +815,8 @@ app.http('approve-scan', {
           archiveNote:    fileId ? 'File moved to Archive' : 'No file to archive',
           intakeListId:   archivedIntakeListId || 'NOT FOUND',
           intakeSiteId:   _siteId || 'NOT SET',
+          intakeError:    intakeError || null,
+          intakeWriteId:  intakeResult?.id || null,
         },
       };
 
