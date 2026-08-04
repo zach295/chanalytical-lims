@@ -2799,26 +2799,6 @@ document.addEventListener('DOMContentLoaded', function() {
       </tr>`).join('');
   }
 
-      // Initialize Rejected - Timeout exclusion for any pre-checked cards
-      container.querySelectorAll('[data-rejected="true"]').forEach(div => {
-        const fileId = div.dataset.fileid;
-        const cb = div.querySelector('input[value="Rejected - Timeout"]');
-        if (cb) setRejectedTimeoutExclusion(div, true);
-    });
-    }
-
-    // Recently Approved table — 5 most recent from today's Archived Intake
-    const approvedBody = document.getElementById('rq-approved-body');
-    const displayApproved = todayArchived.slice(0, 5);
-    approvedBody.innerHTML = displayApproved.length
-      ? displayApproved.map(a => `<tr>
-          <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.labId||'—'}</td>
-          <td class="client-name">${a.customer||'—'}</td>
-          <td style="font-size:12px;">${a.coaTest||'—'}</td>
-          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="4"><div class="empty-state">No approvals today yet.</div></td></tr>';
-  }
 
   function openAddClientModal() {
     _editingRow = null;
