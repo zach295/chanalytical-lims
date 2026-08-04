@@ -187,7 +187,18 @@ app.http('update-sample', {
 
       // ── Find all Archived Intake items for this baseId ─────────────────────────
       // Filter client-side — OData filter unreliable for field_N columns
-      const allIntake = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
+      // Fetch all Archived Intake items and filter client-side
+      let allIntake = [];
+      try {
+        allIntake = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+        context.log(`[update-sample] LISTS.ARCHIVED_INTAKE="${LISTS.ARCHIVED_INTAKE}" total items=${allIntake.length}`);
+        if (allIntake.length > 0) {
+          context.log(`[update-sample] First item field_1="${allIntake[0].field_1}" _id="${allIntake[0]._id}"`);
+        }
+      } catch(e) {
+        context.log(`[update-sample] listItems error: ${e.message}`);
+        log.push(`⚠️ Could not read Archived Intake: ${e.message}`);
+      }
       const archivedItems = allIntake.filter(r => {
         const rowBase = (r.field_1 || '').split(' ')[0].trim();
         return rowBase === baseId;
