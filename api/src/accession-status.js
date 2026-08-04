@@ -27,6 +27,7 @@ function formatCustomerName(name) {
   return inner;
 }
 
+// v202608040008 — force instance reload
 // Archived Intake field mapping:
 // Title=timestamp, field_1=fullId, field_2=coaTest, field_3=clientName,
 // field_4=dateDrawn, field_5=timeDrawn, field_6=receivedDate, field_7=receivedTime,
