@@ -32,15 +32,16 @@ app.http('reject-sample', {
       const dateStr = actNow.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
       const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
       try {
+        // Field names from SP Activity Log list (check exact internal names)
         await createItem('Activity Log', {
           Title:        `${dateStr} ${labId}`,
-          Date:         dateStr,
-          Time:         timeStr,
           Client:       labId,
           ActivityType: rejectionType,
           Notes:        reason.trim(),
           By:           rejectedBy || 'Lab Staff',
-          Qty:          0,
+          LogDate:      dateStr,
+          LogTime:      timeStr,
+          Quantity:     0,
         });
         log.push('✅ Written to Activity Log');
       } catch(e) {
