@@ -583,11 +583,11 @@ async function writeReportsToBilled(siteId, token, params, context) {
       const catLow = pricingCategory.toLowerCase();
       let priceCol;
       if (catLow.includes('inspector')) {
-        priceCol = 'Inspector_x0020_Pricing';
+        priceCol = 'InspectorPricing';
       } else if (catLow.includes('wq') || catLow.includes('water quality')) {
-        priceCol = 'WQ_x0020_Pricing';
+        priceCol = 'WQPricing';
       } else {
-        priceCol = 'Public_x0020_Pricing'; // default
+        priceCol = 'PublicPricing';
       }
       if (context) context.log(`[RTB] cat="${pricingCategory}" → column="${priceCol}`);
 
@@ -612,8 +612,10 @@ async function writeReportsToBilled(siteId, token, params, context) {
         const match = (pricingData.value || []).find(item => {
           const f       = item.fields || {};
           const service = (f.Service || f.Title || '').toLowerCase().trim();
-          const suf     = (f.Suffix  || '').toLowerCase().trim();
-          return service === testNameLow || suf === suffixLow;
+          const abbr    = (f.CoreAbbr_x002f_Symbol || '').toLowerCase().trim();
+          const suf     = (f.Suffix || abbr || '').toLowerCase().trim();
+          return service === testNameLow || suf === suffixLow ||
+                 service.includes(testNameLow) || testNameLow.includes(service);
         });
         // Dump ALL field keys from first item so we know exact names
         const firstItem = pricingData.value?.[0];
