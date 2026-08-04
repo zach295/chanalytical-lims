@@ -603,6 +603,12 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           ocr.location = cleanAddress(ocr.location);
           ocr.zip      = fixZip(ocr.zip, ocr.state);
 
+          // For public customers with no billing address, use sample address
+          if (!ocr.billingAddress) {
+            const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
+            if (parts.length) ocr.billingAddress = parts.join(', ');
+          }
+
           // ── Hallucination check ───────────────────────────────────────────────
           let validatedCustomer = ocr.customer || '';
           if (validatedCustomer && azureText) {
