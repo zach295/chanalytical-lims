@@ -606,7 +606,6 @@ app.http('approve-scan', {
           Title:    ts,
           field_1:  item.fullId,
           field_2:  item.coaTest,
-          Test:     item.coaTest,
           field_3:  formalName || customer || '',
           field_4:  fmt(dateDrawn) || '',
           field_5:  to24h(timeDrawn) || '',
@@ -617,9 +616,13 @@ app.http('approve-scan', {
           field_10: state      || 'ME',
           field_11: zip        ? String(zip).padStart(5,'0') : '',
           field_12: reviewedBy || 'Lab Staff',
-          field_14: 'Pending',
+          field_14: item.isRejection ? 'Rejected' : 'Pending',
         };
         if (notes && notes.trim()) intakeFields.field_13 = notes;
+        // For rejections, also store rejection type in notes if no other note
+        if (item.isRejection && !notes?.trim()) {
+          intakeFields.field_13 = item.rejType || item.coaTest || 'Rejected';
+        }
         let intakeResult = null;
         let intakeError  = null;
         if (archivedIntakeListId) {
@@ -815,8 +818,6 @@ app.http('approve-scan', {
           archiveNote:    fileId ? 'File moved to Archive' : 'No file to archive',
           intakeListId:   archivedIntakeListId || 'NOT FOUND',
           intakeSiteId:   _siteId || 'NOT SET',
-          intakeError:    intakeError || null,
-          intakeWriteId:  intakeResult?.id || null,
         },
       };
 
