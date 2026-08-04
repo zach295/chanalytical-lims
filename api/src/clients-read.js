@@ -20,22 +20,22 @@ app.http('clients-read', {
       const clients = (data.value || []).map(item => {
         const f = item.fields || {};
         return {
-          _id:             item.id,
-          clientName:      f.ClientName      || '',
-          clientCode:      f.ClientCode      || '',
-          abbrev:          f.Abbrev          || '',
-          mainContact:     f.Email           || '',   // display: Main Contact
-          dbaName:         f.Phone           || '',   // display: DBA Name
-          reportEmail:     f.Aliases         || '',   // display: Report Email Address
-          billingEmail:    f.Notes           || '',   // display: Billing Email Address
-          phone:           f.Active          || '',   // display: Phone #
-          billingAddress:  f.BillingAddress  || '',
+          _id:              item.id,
+          clientName:       f.ClientName       || '',
+          clientCode:       f.ClientCode       || '',
+          abbrev:           f.Abbrev           || '',
+          mainContact:      f.Email            || '',   // Main Contact (first name)
+          dbaName:          f.Phone            || '',   // DBA Name
+          reportEmail:      f.Aliases          || '',   // Report Email Address
+          billingEmail:     f.Notes            || '',   // Billing Email Address
+          phone:            f.Active           || '',   // Phone #
+          billingAddress:   f.BillingAddress   || '',
           billingPreference: f.BillingFrequency || '',
-          frequency:       f.Frequency       || '',
-          pricingCategory: f.PricingCategory || '',
-          startDate:       f.StartDate       || '',
-          status:          f.Status          || 'Active',
-          radonLic:        f.RadonLic_x0023_ || '',
+          frequency:        f.Frequency        || '',
+          pricingCategory:  f.PricingCategory  || '',
+          startDate:        f.StartDate        || '',
+          status:           f.Status           || 'Active',
+          radonLic:         f.RadonLic_x0023_  || '',
         };
       });
 
