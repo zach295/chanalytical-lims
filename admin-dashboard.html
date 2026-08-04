@@ -2242,9 +2242,16 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const scans = data.pending || [];
 
-      // Update today's approved — read from accession-status with today action
+      // ── Approved Today + Northern Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
       const todayEl      = document.getElementById('rq-today');
+      const northernEl   = document.getElementById('rq-high-conf');
+      const northernBreakEl = document.getElementById('rq-northern-breakdown');
+      const todayBreakEl = document.getElementById('rq-today-breakdown');
+
+      const NORTHERN_CLIENTS = ['madden home inspections','yankee home inspections',
+        'defender home inspections',"elliott's information service"];
+
       try {
         const todayRes  = await fetch('/api/accession-status', {
           method: 'POST',
@@ -2252,19 +2259,61 @@ document.addEventListener('DOMContentLoaded', function() {
           body: JSON.stringify({ action: 'today-approved' }),
         });
         const todayData = await todayRes.json();
-        const approved  = todayData.approved || [];
-        if (todayEl) todayEl.textContent = approved.length;
+        // Merge server data with in-memory session cache
+        const serverApproved = todayData.approved || [];
+        const allApproved    = [...recentlyApprovedCache];
+        for (const s of serverApproved) {
+          if (!allApproved.some(a => a.fullId === s.fullId)) allApproved.push(s);
+        }
+        allApproved.sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+
+        // Approved Today counter
+        if (todayEl) todayEl.textContent = allApproved.length;
+
+        // Approved Today breakdown — top clients by volume
+        const clientCounts = {};
+        allApproved.forEach(a => {
+          const c = a.customer || 'Unknown';
+          clientCounts[c] = (clientCounts[c] || 0) + 1;
+        });
+        if (todayBreakEl && allApproved.length) {
+          const top = Object.entries(clientCounts).sort((a,b)=>b[1]-a[1]).slice(0,4);
+          todayBreakEl.innerHTML = top.map(([c,n])=>`<div>${c}: <strong>${n}</strong></div>`).join('');
+          todayBreakEl.style.display = 'block';
+        }
+
+        // Northern Run counter — approved today + pending in queue
+        const northernApproved = allApproved.filter(a =>
+          NORTHERN_CLIENTS.some(nc => (a.customer||'').toLowerCase().includes(nc))
+        );
+        const northernPending  = (data.pending || []).filter(s =>
+          NORTHERN_CLIENTS.some(nc => (s.customer||'').toLowerCase().includes(nc))
+        );
+        const northernTotal = northernApproved.length + northernPending.length;
+        if (northernEl) northernEl.textContent = northernTotal;
+
+        // Northern Run breakdown
+        if (northernBreakEl && northernTotal > 0) {
+          const lines = [];
+          if (northernApproved.length) lines.push(`✅ ${northernApproved.length} approved`);
+          if (northernPending.length)  lines.push(`⏳ ${northernPending.length} pending`);
+          northernBreakEl.innerHTML = lines.join('<br>');
+          northernBreakEl.style.display = 'block';
+        }
+
+        // Recently Approved table — last 5
         if (approvedBody) {
-          approvedBody.innerHTML = approved.length
-            ? approved.map(a => `<tr>
-                <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||a.labId||'—'}</td>
+          const recent = allApproved.slice(0, 5);
+          approvedBody.innerHTML = recent.length
+            ? recent.map(a => `<tr>
+                <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
                 <td class="client-name">${a.customer||'—'}</td>
-                <td style="font-size:12px;">${a.coaTest||a.test||'—'}</td>
+                <td style="font-size:12px;">${a.coaTest||'—'}</td>
                 <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
               </tr>`).join('')
             : '<tr><td colspan="4"><div class="empty-state">No approvals today yet.</div></td></tr>';
         }
-      } catch(e) { console.error('Recently approved failed:', e); }
+      } catch(e) { console.error('Counters update failed:', e); }
 
       if (!scans.length) {
         container.innerHTML = '<div class="empty-state" style="padding:32px;">✅ No pending scans — queue is clear</div>';
