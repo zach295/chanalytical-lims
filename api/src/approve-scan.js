@@ -622,11 +622,11 @@ async function writeReportsToBilled(siteId, token, params, context) {
         params.customer     || '',  // E Customer
         params.clientCode   || '',  // F Client Code
         nextBusinessDay(params.receivedDate || params.dateDrawn), // G Report Date (next business day)
-        params.labId        || '',  // H Lab #
+        (params.labId || '').split(' ')[0].trim() || '',  // H Lab # (base ID only, no suffix)
         params.location     || '',  // I Location
         params.city         || '',  // J City/Town
         params.state        || '',  // K State
-        params.zip          || '',  // L Zip
+        params.zip ? String(params.zip).replace(/\D/g,'').padStart(5,'0') : '',  // L Zip
         params.testName     || '',  // M Item/Service
         params.suffix       || '',  // N Test Type SKU
         '',                         // O RW Results (blank until radon import)
