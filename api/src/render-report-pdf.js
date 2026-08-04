@@ -157,14 +157,10 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const attLbl = findLabel(rows, 'attention');
   if (attLbl) {
     const m = meta || {};
-    const addrLine = [
-      m.billingAddress,
-      m.billingCity && m.billingState
-        ? `${m.billingCity}, ${m.billingState} ${m.billingZip || ''}`.trim()
-        : (m.billingCity || m.billingState || ''),
-    ].filter(Boolean).join(', ');
-    const phoneLine = m.phone || '';
-    const emailLine = m.email || '';
+    // Clients list: BillingAddress is a combined "Street, City, State Zip" field
+    const addrLine  = m.billingAddress || '';
+    const phoneLine = m.phone         || '';
+    const emailLine = m.reportEmail   || m.email || '';
     // Write address at row+1, phone at row+2, email at row+3 (same col as name)
     const attCol = attLbl.c + 1; // same column as the name value
     if (addrLine)   addCell(attLbl.r + 1, attCol, addrLine);
