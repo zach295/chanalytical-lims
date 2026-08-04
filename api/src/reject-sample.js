@@ -31,17 +31,22 @@ app.http('reject-sample', {
       const actNow = new Date();
       const dateStr = actNow.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
       const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-      await createItem(LISTS.ACTIVITY_LOG, {
-        Title:        `${dateStr} ${labId}`,
-        Date:         dateStr,
-        Time:         timeStr,
-        Client:       labId,
-        ActivityType: rejectionType,
-        Notes:        reason.trim(),
-        By:           rejectedBy || 'Lab Staff',
-        Qty:          0,
-      }).catch(e => context.log('[ActivityLog] Error:', e.message));
-      log.push('✅ Written to Activity Log');
+      try {
+        await createItem('Activity Log', {
+          Title:        `${dateStr} ${labId}`,
+          Date:         dateStr,
+          Time:         timeStr,
+          Client:       labId,
+          ActivityType: rejectionType,
+          Notes:        reason.trim(),
+          By:           rejectedBy || 'Lab Staff',
+          Qty:          0,
+        });
+        log.push('✅ Written to Activity Log');
+      } catch(e) {
+        context.log('[ActivityLog] Error:', e.message);
+        log.push('⚠️ Activity Log write failed: ' + e.message);
+      }
 
       // 2. Update Archived Intake — change suffix to REJ and append notes
       // field_1=fullId, field_2=coaTest, field_13=notes, field_14=status
