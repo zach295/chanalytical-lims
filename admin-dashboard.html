@@ -418,9 +418,12 @@ document.addEventListener('DOMContentLoaded', function() {
           <label for="cm-billing-pref">Billing Preference</label>
           <select id="cm-billing-pref" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
             <option value="">— Select —</option>
+            <option value="E-mail">E-mail</option>
+            <option value="Snail Mail">Snail Mail</option>
+            <option value="Auto Charge CC">Auto Charge CC</option>
+            <option value="Auto ACH">Auto ACH</option>
             <option value="Pre-Pay">Pre-Pay</option>
-            <option value="Invoice">Invoice</option>
-            <option value="Auto ACH Auth">Auto ACH Auth</option>
+            <option value="Include Payment with Sample">Include Payment with Sample</option>
           </select>
         </div>
         <div class="form-field">
@@ -428,8 +431,10 @@ document.addEventListener('DOMContentLoaded', function() {
           <select id="cm-frequency" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
             <option value="">— Select —</option>
             <option value="Monthly">Monthly</option>
-            <option value="Per Sample">Per Sample</option>
-            <option value="Quarterly">Quarterly</option>
+            <option value="Semi-Monthly">Semi-Monthly</option>
+            <option value="Weekly">Weekly</option>
+            <option value="PAYG">PAYG</option>
+            <option value="Bi-Weekly">Bi-Weekly</option>
           </select>
         </div>
         <div class="form-field">
