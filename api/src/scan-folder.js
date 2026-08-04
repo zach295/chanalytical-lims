@@ -497,9 +497,12 @@ FIRST — determine form type:
 - waterType: "Raw" or "Treated" if mentioned, else ""
 - notes: observations, illegible fields. Note "Public submission" for public forms.
 - barcodeId: barcode number like 0600326-006 or CHA-YYMMDD-####, else ""
+- phone: Check ALL phone fields: "Daytime Phone", "Daytime Phon", "Phone", "Cell", "Mobile". For PUBLIC forms look in CUSTOMER & PROPERTY INFORMATION section. Return number as-is. "" if truly blank.
+- billingAddress: BUSINESS forms only — full mailing address from Report To section as one line (e.g. "24 Freedom Dr, Standish, ME 04084"). PUBLIC forms → always "".
+- formType: "business" if Report To has a real company/person name that is NOT Chanalytical. "public" if Report To is blank or shows Chanalytical's own info.
 - confidence: 0-100
 
-Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
+Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
                   }],
                 }),
               });
