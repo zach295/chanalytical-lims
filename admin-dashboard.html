@@ -2233,6 +2233,18 @@ document.addEventListener('DOMContentLoaded', function() {
     return first + mm + dd + yy;
   }
 
+  function toggleAdminCode(btn) {
+    const el = document.getElementById('admin-code-display');
+    if (!el) return;
+    if (el.textContent === '••••••••') {
+      el.textContent = 'CHANLAB2026!';
+      btn.textContent = '🙈 Hide';
+    } else {
+      el.textContent = '••••••••';
+      btn.textContent = '👁 Reveal';
+    }
+  }
+
   async function loadUsersTab() {
     document.getElementById('users-body').innerHTML = '<tr><td colspan="7"><div class="empty-state">Loading...</div></td></tr>';
     try {
