@@ -2661,6 +2661,20 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── REJECTED SAMPLES TAB ─────────────────────────────────────────────────
+  function enforceOnePackage(cb, fileId) {
+    if (!cb.checked) return;
+    const card = fileId ? document.getElementById(`scan-card-${fileId}`) : cb.closest('.card');
+    if (!card) return;
+    const PKGS = ['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)',
+      'WW - Expanded Safety','Comprehensive','Pro Plus','AIO FHA','AIO Portability'];
+    if (PKGS.includes(cb.value)) {
+      // Uncheck all other packages
+      card.querySelectorAll('input[type="checkbox"]').forEach(other => {
+        if (other !== cb && PKGS.includes(other.value)) other.checked = false;
+      });
+    }
+  }
+
   function enforceOneRejType(cb) {
     if (cb.checked) {
       document.querySelectorAll('.rej-type-cb').forEach(c => { if (c !== cb) c.checked = false; });
