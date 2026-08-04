@@ -288,6 +288,33 @@ app.http('update-sample', {
 
       context.log(`[update-sample] ${baseId} by ${updatedBy||'staff'}: ${log.join(', ')}`);
 
+      // ── Remove from Rejected list if correcting away from a rejected type ───────
+      if (updates.coaTest) {
+        const wasRejected = /^rejected|^wq.*reject|^rw.*reject/i.test(updates.coaTest) === false;
+        const prevTest    = archivedItems[0]?.field_2 || '';
+        const wasRejectedBefore = /^rejected|^wq.*reject|^rw.*reject/i.test(prevTest);
+        if (wasRejectedBefore && !updates.coaTest.match(/^rejected|^wq.*reject|^rw.*reject/i)) {
+          try {
+            // Find Rejected list ID
+            const rejListRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, {headers:authHdr});
+            const rejListId  = ((await rejListRes.json()).value||[]).find(l=>l.displayName==='Rejected')?.id;
+            if (rejListId) {
+              const rejItemsRes = await fetch(
+                `${GRAPH}/sites/${siteId}/lists/${rejListId}/items?$expand=fields($select=field_1)&$top=200`,
+                {headers:authHdr}
+              );
+              const rejItems = ((await rejItemsRes.json()).value||[])
+                .filter(i => (i.fields?.field_1||'').split(' ')[0].trim() === baseId);
+              for (const r of rejItems) {
+                await fetch(`${GRAPH}/sites/${siteId}/lists/${rejListId}/items/${r.id}`,
+                  { method:'DELETE', headers:authHdr });
+              }
+              if (rejItems.length) log.push(`✅ Removed ${rejItems.length} row(s) from Rejected list`);
+            }
+          } catch(e) { log.push(`⚠️ Rejected list cleanup: ${e.message}`); }
+        }
+      }
+
       // ── Update Control Sheet ─────────────────────────────────────────────────
       const datePrefix = baseId.slice(0, 6); // MMDDYY
       if (updates.coaTest || rowsUpdated > 0) {
