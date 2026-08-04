@@ -155,7 +155,16 @@ app.http('accession-status', {
           const matches  = allItems.filter(r => {
             const fid = (r.field_1 || '').split(' ')[0].trim();
             return fid === searchId;
-          }).map(r => ({ _id: r._id, field_1: r.field_1, field_2: r.field_2, Test: r.Test }));
+          }).map(r => ({
+            _id: r._id,
+            field_1: r.field_1,
+            field_2: r.field_2,
+            Test: r.Test,
+            // Show exactly what coaTest resolves to
+            resolvedCoaTest: (r.field_2 || r.Test || r['Test0'] || '').trim(),
+            // Show all field keys on the item
+            allKeys: Object.keys(r),
+          }));
           return { status: 200, jsonBody: { matches, count: matches.length } };
         }
 
