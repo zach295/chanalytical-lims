@@ -4,7 +4,7 @@
  * v361 adds: test type update with suffix recalculation.
  */
 const { app }   = require('@azure/functions');
-const { listItems, updateItem, createItem, LISTS } = require('../shared/graph');
+const { listItems, updateItem, createItem, getToken, LISTS } = require('../shared/graph');
 
 const SUFFIX_MAP = {
   'Basic Safety (FHA)':'BS','Basic Safety':'BS','Standard Safety':'SS',
@@ -53,8 +53,10 @@ function to24h(t) {
 
 // ── Control Sheet Helper ──────────────────────────────────────────────────────
 // Finds C_MMDDYY.xlsx in Test C folder and updates the lab ID cell in column A
-async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, context) {
+async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {
   const GRAPH        = 'https://graph.microsoft.com/v1.0';
+  const siteId       = siteIdArg || process.env.SP_SITE_ID;
+  const token        = tokenArg  || (await getToken());
   const controlFolder = process.env.SP_CONTROL_FOLDER ||
     '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
   const marker    = 'Shared Documents/';
@@ -116,8 +118,10 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
 }
 
 // ── Radon Control Sheet Helper ────────────────────────────────────────────────
-async function updateRadonSheet(siteId, datePrefix, baseId, newLabId, token, context) {
+async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {
   const GRAPH      = 'https://graph.microsoft.com/v1.0';
+  const siteId     = siteIdArg || process.env.SP_SITE_ID;
+  const token      = tokenArg  || (await getToken());
   const controlFolder = process.env.SP_CONTROL_FOLDER ||
     '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
   const marker     = 'Shared Documents/';
@@ -187,22 +191,35 @@ app.http('update-sample', {
 
       // ── Find all Archived Intake items for this baseId ─────────────────────────
       // Filter client-side — OData filter unreliable for field_N columns
-      // Fetch all Archived Intake items and filter client-side
-      let allIntake = [];
+      // Fetch Archived Intake items directly via Graph API
+      const GRAPH   = 'https://graph.microsoft.com/v1.0';
+      const token   = await getToken();
+      const siteId  = process.env.SP_SITE_ID;
+      const authHdr = { Authorization: `Bearer ${token}` };
+
+      // Find Archived Intake list ID by name
+      let listId = null;
       try {
-        allIntake = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
-        context.log(`[update-sample] LISTS.ARCHIVED_INTAKE="${LISTS.ARCHIVED_INTAKE}" total items=${allIntake.length}`);
-        if (allIntake.length > 0) {
-          context.log(`[update-sample] First item field_1="${allIntake[0].field_1}" _id="${allIntake[0]._id}"`);
-        }
-      } catch(e) {
-        context.log(`[update-sample] listItems error: ${e.message}`);
-        log.push(`⚠️ Could not read Archived Intake: ${e.message}`);
+        const listsRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName&$top=50`, { headers: authHdr });
+        const listsData = await listsRes.json();
+        const found = (listsData.value || []).find(l => l.displayName === 'Archived Intake');
+        listId = found?.id;
+        context.log(`[update-sample] Archived Intake list id=${listId}`);
+      } catch(e) { log.push('⚠️ Could not find Archived Intake list: ' + e.message); }
+
+      let archivedItems = [];
+      if (listId) {
+        try {
+          const itemsRes  = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`,
+            { headers: authHdr }
+          );
+          const itemsData = await itemsRes.json();
+          const allItems  = (itemsData.value || []).map(i => ({ ...i.fields, _id: i.id }));
+          archivedItems   = allItems.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+          context.log(`[update-sample] total=${allItems.length} matched=${archivedItems.length} baseId=${baseId}`);
+        } catch(e) { log.push('⚠️ Archived Intake read error: ' + e.message); }
       }
-      const archivedItems = allIntake.filter(r => {
-        const rowBase = (r.field_1 || '').split(' ')[0].trim();
-        return rowBase === baseId;
-      });
 
       // ── Update standard fields (Archived Intake uses field_N internal names) ────
       for (const item of archivedItems) {
@@ -222,8 +239,12 @@ app.http('update-sample', {
         if (updates.notes        !== undefined) fields.field_13 = updates.notes;
 
         if (Object.keys(fields).length > 0) {
-          await updateItem(LISTS.ARCHIVED_INTAKE, item._id, fields);
-          rowsUpdated++;
+          if (listId) {
+            await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
+              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                body: JSON.stringify(fields) });
+            rowsUpdated++;
+          }
         }
       }
       log.push(`Archived Intake: ${archivedItems.length} row(s) found`);
@@ -239,11 +260,9 @@ app.http('update-sample', {
             const rowBase = currentFullId.split(' ')[0].trim();
             if (rowBase !== baseId) continue;
             const newFullId = `${rowBase} ${newSuffix}`;
-            await updateItem(LISTS.ARCHIVED_INTAKE, item._id, {
-              field_1: newFullId,
-              field_2: newTest,
-              Title:   new Date().toISOString(), // Title is timestamp in Archived Intake
-            });
+            if (listId) await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
+              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ field_1: newFullId, field_2: newTest }) });
             rowsUpdated++;
           }
           log.push(`Test type updated to ${newTest} (${newSuffix})`);
@@ -298,7 +317,13 @@ app.http('update-sample', {
         const actNow  = new Date();
         const logDate = actNow.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
         const logTime = actNow.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-        const changes = Object.entries(updates).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>`${k}: ${v}`).join('; ');
+        const fieldLabels = { coaTest:'Test Type', customer:'Customer', dateDrawn:'Date Drawn',
+          timeDrawn:'Time Drawn', receivedDate:'Date Received', receivedTime:'Time Received',
+          location:'Address', city:'City', state:'State', zip:'Zip', notes:'Notes' };
+        const changes = Object.entries(updates)
+          .filter(([,v]) => v !== undefined && v !== '')
+          .map(([k,v]) => `${fieldLabels[k] || k} → ${v}`)
+          .join('; ');
         await createItem('Activity Log', {
           Title:        `${logDate} ${baseId}`,
           Client:       baseId,
