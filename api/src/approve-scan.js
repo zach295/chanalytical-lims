@@ -435,11 +435,21 @@ async function writeReportsToBilled(siteId, token, params, context) {
     fields["RW Results"]         = '';
     fields["Statement/Inv Date"] = '';
 
-    // Remap display names → internal names using colMap
+    // Read-only / system fields to skip
+    const SKIP_FIELDS = new Set([
+      'LinkTitleNoMenu','LinkTitle','FileLeafRef','FileDirRef','FileRef',
+      '_UIVersionString','Attachments','Edit','ItemChildCount','FolderChildCount',
+      '_ComplianceFlags','_ComplianceTag','ContentType','id','Modified','Created',
+      'AuthorLookupId','EditorLookupId','@odata.etag',
+    ]);
+
+    // Remap display names → internal names using colMap, skip system/read-only fields
     const mappedFields = {};
     for (const [displayName, value] of Object.entries(fields)) {
       const internalName = colMap[displayName] || displayName;
-      mappedFields[internalName] = value;
+      if (!SKIP_FIELDS.has(internalName)) {
+        mappedFields[internalName] = value;
+      }
     }
     if (context) context.log('[RTB] Writing keys:', Object.keys(mappedFields).join(','));
 
