@@ -2588,27 +2588,48 @@ document.addEventListener('DOMContentLoaded', function() {
     formEl.style.display = 'none';
 
     try {
-      // Search directly in Archived Intake — works for any date
-      const res = await fetch(`/api/labid-search?baseId=${encodeURIComponent(baseId)}`);
+      // Use list-intake action — correctly matches by base ID
+      const res = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list-intake', baseId }),
+      });
       if (!res.ok) throw new Error('Could not search Archived Intake');
       const data = await res.json();
+      const matches = data.matches || [];
 
-      if (!data.found) {
+      if (!matches.length) {
         statusEl.textContent = `⚠️ Lab ID ${baseId} not found in Archived Intake.`;
         statusEl.style.color = 'var(--error)';
         return;
       }
 
-      const found = data.record;
+      // Use first match (primary sample row)
+      const raw = matches[0];
+      const found = {
+        labId:        raw.field_1 || '',
+        tests:        raw.field_2 ? [raw.field_2] : [],
+        customer:     raw.field_3 || '',
+        dateDrawn:    raw.field_4 || '',
+        timeDrawn:    raw.field_5 || '',
+        receivedDate: raw.field_6 || '',
+        receivedTime: raw.field_7 || '',
+        location:     raw.field_8 || '',
+        city:         raw.field_9 || '',
+        state:        raw.field_10 || 'ME',
+        zip:          raw.field_11 || '',
+        notes:        raw.field_13 || '',
+        _id:          raw._id,
+      };
       _scCurrentData = { ...found, baseId };
 
       // Populate fields
-      document.getElementById('sc-edit-coaTest').value      = found.tests?.join(', ') || '';
+      document.getElementById('sc-edit-coaTest').value      = raw.field_2 || '';
       document.getElementById('sc-edit-customer').value     = found.customer     || '';
       document.getElementById('sc-edit-dateDrawn').value    = found.dateDrawn    || '';
       document.getElementById('sc-edit-timeDrawn').value    = found.timeDrawn    || '';
-      document.getElementById('sc-edit-receivedDate').value = found.receivedDate || found.dateReceived || '';
-      document.getElementById('sc-edit-receivedTime').value = found.receivedTime || found.timeReceived || '';
+      document.getElementById('sc-edit-receivedDate').value = found.receivedDate || '';
+      document.getElementById('sc-edit-receivedTime').value = found.receivedTime || '';
       document.getElementById('sc-edit-location').value     = found.location     || '';
       document.getElementById('sc-edit-city').value         = found.city         || '';
       document.getElementById('sc-edit-state').value        = found.state        || 'ME';
@@ -2616,7 +2637,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('sc-edit-notes').value        = found.notes        || '';
       document.getElementById('sc-save-status').textContent = '';
 
-      statusEl.textContent = `✅ Found: ${baseId} — ${found.customer||'Unknown'}`;
+      statusEl.textContent = `✅ Found: ${found.labId} — ${found.customer||'Unknown'}`;
       statusEl.style.color = 'var(--success)';
       formEl.style.display = 'block';
     } catch(e) {
