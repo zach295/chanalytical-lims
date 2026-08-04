@@ -980,6 +980,7 @@ app.http('approve-scan', {
       const radonLabItem = labItems.find(l => l.isRadon && !l.isRejected);
       context.log('[RCS] radonLabItem:', radonLabItem ? radonLabItem.fullId : 'none');
       context.log('[RCS] _siteId:', _siteId, 'token length:', _token?.length);
+      let rcsStatus = 'skipped';
       if (radonLabItem) {
         try {
           const rcsResult = await writeRadonControlSheet(
@@ -988,8 +989,12 @@ app.http('approve-scan', {
             to24h(timeDrawn) || timeDrawn || '',
             context
           );
-          context.log(`[RCS] ${JSON.stringify(rcsResult)}`);
-        } catch(e) { context.log('[RCS] Error:', e.message); }
+          rcsStatus = JSON.stringify(rcsResult);
+          context.log(`[RCS] ${rcsStatus}`);
+        } catch(e) {
+          rcsStatus = 'ERROR: ' + e.message;
+          context.log('[RCS] Error:', e.message);
+        }
       }
 
       return {
@@ -998,7 +1003,8 @@ app.http('approve-scan', {
           success:    true,
           labIds:     allFullIds,
           formalName,
-          archiveNote:    fileId ? 'File moved to Archive' : 'No file to archive',
+          archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
+          rcsStatus,
 
         },
       };
