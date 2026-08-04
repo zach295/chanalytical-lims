@@ -29,10 +29,10 @@ app.http('reject-sample', {
 
       // ── Write to Activity Log ─────────────────────────────────────────────
       const actNow = new Date();
-      const dateStr = now.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-      const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+      const dateStr = actNow.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+      const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
       await createItem(LISTS.ACTIVITY_LOG, {
-        Title:        `${actNow.toISOString().split('T')[0]} ${labId}`,
+        Title:        `${dateStr} ${labId}`,
         Date:         dateStr,
         Time:         timeStr,
         Client:       labId,
