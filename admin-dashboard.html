@@ -2833,16 +2833,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadClients() {
     document.getElementById('clients-body').innerHTML =
-      '<tr><td colspan="9"><div class="empty-state">Loading...</div></td></tr>';
+      '<tr><td colspan="10"><div class="empty-state">Loading...</div></td></tr>';
     try {
-      const res = await fetch('/api/clients-read');
+      // Use accession-status read-clients action (always up to date)
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'read-clients' }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       _clientsData = data.clients || [];
       renderClientsTable();
     } catch (err) {
       document.getElementById('clients-body').innerHTML =
-        `<tr><td colspan="9"><div class="empty-state">⚠️ ${err.message}</div></td></tr>`;
+        `<tr><td colspan="10"><div class="empty-state">⚠️ ${err.message}</div></td></tr>`;
     }
   }
 
