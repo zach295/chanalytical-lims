@@ -1,37 +1,21 @@
 const { app } = require('@azure/functions');
-const { updateItem, deleteItem, getToken, LISTS } = require('../shared/graph');
+const { getToken } = require('../shared/graph');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-async function moveSpFile(itemId, destFolderPath, token) {
-  const siteId = process.env.SP_SITE_ID;
-  const marker = 'Shared Documents/';
-  const idx    = destFolderPath.indexOf(marker);
-  const rel    = idx >= 0 ? destFolderPath.slice(idx + marker.length) : destFolderPath.replace(/^\/+/,'');
-  const drivePath = rel.split('/').map(s => encodeURIComponent(s)).join('/');
-  try {
-    const folderRes = await fetch(
-      `${GRAPH}/sites/${siteId}/drive/root:/${drivePath}?$select=id`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!folderRes.ok) return;
-    const destId = (await folderRes.json()).id;
-    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
-      method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parentReference: { id: destId } }),
-    });
-  } catch(e) { console.warn('[moveSpFile]', e.message); }
+async function deleteSpFile(siteId, itemId, token) {
+  if (!itemId) return;
+  await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(e => console.warn('[deleteSpFile]', e.message));
 }
 
-async function deleteSpFile(itemId, token) {
-  const siteId = process.env.SP_SITE_ID;
-  try {
-    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch(e) { console.warn('[deleteSpFile]', e.message); }
+async function getListId(siteId, displayName, token) {
+  const res  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  return ((await res.json()).value || []).find(l => l.displayName === displayName)?.id || null;
 }
 
 app.http('mark-scan-processed', {
@@ -40,38 +24,50 @@ app.http('mark-scan-processed', {
   handler: async (request, context) => {
     try {
       const { fileId, outcome, reviewQueueRow, rowIndex } = await request.json();
-      const row = reviewQueueRow || rowIndex;
-      if (!row) return { status: 400, body: JSON.stringify({ error: 'rowIndex required' }) };
-
-      const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
-        '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
+      const row    = reviewQueueRow || rowIndex;
+      const token  = await getToken();
+      const siteId = process.env.SP_SITE_ID;
 
       if (outcome === 'discarded') {
-        // Delete from Review Queue list
-        await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
-        // Delete the PDF file entirely (discarded = not needed)
-        if (fileId) {
-          const token = await getToken();
-          await deleteSpFile(fileId, token);
+        // 1. Delete the Review Queue list entry
+        if (row) {
+          const rqListId = await getListId(siteId, 'Review Queue', token);
+          if (rqListId) {
+            await fetch(`${GRAPH}/sites/${siteId}/lists/${rqListId}/items/${row}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            }).catch(e => context.log('[mark-scan] RQ delete failed:', e.message));
+          }
         }
+
+        // 2. Delete the PDF file from SharePoint Drive
+        if (fileId) {
+          await deleteSpFile(siteId, fileId, token);
+          context.log('[mark-scan] Deleted PDF:', fileId);
+        }
+
+        // 3. If file is still in Incoming (not yet moved), find and delete it there too
+        // (handles case where scan-folder moved it before we got the ID)
+        return { status: 200, jsonBody: { success: true, driveDeleted: !!fileId } };
+
       } else {
-        // Mark as processed in Review Queue
-        await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' }).catch(() => {});
-        // Move PDF to Archive
-        if (fileId) {
-          const token = await getToken();
-          await moveSpFile(fileId, SCAN_ARCHIVE, token);
+        // Mark as processed in Review Queue list
+        if (row) {
+          const rqListId = await getListId(siteId, 'Review Queue', token);
+          if (rqListId) {
+            await fetch(`${GRAPH}/sites/${siteId}/lists/${rqListId}/items/${row}/fields`, {
+              method: 'PATCH',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ Title: 'Processed', ReviewStatus: 'Processed' }),
+            }).catch(e => context.log('[mark-scan] RQ update failed:', e.message));
+          }
         }
+        return { status: 200, jsonBody: { success: true } };
       }
 
-      return {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true }),
-      };
     } catch(e) {
       context.log('[mark-scan-processed] Error:', e.message);
-      return { status: 500, body: JSON.stringify({ error: e.message }) };
+      return { status: 500, jsonBody: { error: e.message } };
     }
   }
 });
