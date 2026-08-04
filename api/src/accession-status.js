@@ -168,6 +168,29 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { clients } };
         }
 
+        // Return today's approved samples from Archived Intake (last 5, descending)
+        if (action === 'today-approved') {
+          const tkn    = await getToken();
+          const sid    = process.env.SP_SITE_ID;
+          const allI   = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
+          const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+          const approved = allI
+            .filter(r => {
+              const ts = String(r.Title || '');
+              return ts.startsWith(todayStr);
+            })
+            .map(r => ({
+              fullId:     r.field_1  || '',
+              coaTest:    r.field_2  || '',
+              customer:   r.field_3  || '',
+              approvedBy: r.field_12 || '',
+              timestamp:  r.Title    || '',
+            }))
+            .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            .slice(0, 5);
+          return { status: 200, jsonBody: { approved } };
+        }
+
         // Direct field patch action
         if (action === 'fix-field') {
           const { itemId, field, value } = body2;
