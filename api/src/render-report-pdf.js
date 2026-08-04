@@ -425,7 +425,7 @@ app.http('render-report-pdf', {
       await fitOnePage(radonSheet.id);
       // Delete Spec sheet for radon reports
       if (specSheet) {
-        await gReq('DELETE', `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+        await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
@@ -438,7 +438,7 @@ app.http('render-report-pdf', {
     } else if (labSheet) {
       // Delete spec sheet entirely when not a speciation test
       if (specSheet) {
-        await gReq('DELETE', `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+        await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       }
       await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(labSheet.id);
