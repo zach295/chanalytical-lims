@@ -339,6 +339,132 @@ async function loadDynamicTestTypes(token) {
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────────
+
+// ── Write to Radon Control Sheet on approval ──────────────────────────────────
+async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const baseId    = labId.split(' ')[0].trim();
+  const datePrefix = baseId.slice(0, 6); // MMDDYY
+  const mm  = datePrefix.slice(0, 2);
+  const yy  = datePrefix.slice(4, 6);
+  const year = '20' + yy;
+  const monthName = MONTHS[parseInt(mm, 10) - 1];
+
+  const authHdr = { Authorization: `Bearer ${token}` };
+
+  // ── 1. Ensure monthly Radon folder exists ────────────────────────────────────
+  const controlFolder = process.env.SP_CONTROL_FOLDER ||
+    '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+  const marker  = 'Shared Documents/';
+  const idx     = controlFolder.indexOf(marker);
+  const relPath = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\/+/, '');
+  const monthFolder = `${monthName} Radon ${year}`;
+
+  const monthFolderPath = `${relPath}/${monthFolder}`;
+  const encMonthPath    = monthFolderPath.split('/').map(encodeURIComponent).join('/');
+
+  // Check if monthly folder exists, create if not
+  const folderCheckRes = await fetch(
+    `${GRAPH}/sites/${siteId}/drive/root:/${encMonthPath}?$select=id`,
+    { headers: authHdr }
+  );
+  if (!folderCheckRes.ok) {
+    // Create the folder
+    const parentEncPath = relPath.split('/').map(encodeURIComponent).join('/');
+    const parentRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${parentEncPath}?$select=id`, { headers: authHdr });
+    if (!parentRes.ok) throw new Error(`Could not find Test C folder`);
+    const parentId = (await parentRes.json()).id;
+    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${parentId}/children`, {
+      method: 'POST',
+      headers: { ...authHdr, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: monthFolder, folder: {}, '@microsoft.graph.conflictBehavior': 'replace' }),
+    });
+    context.log(`[RCS] Created folder: ${monthFolder}`);
+  }
+
+  // ── 2. Check if daily RCS file exists, copy master if not ─────────────────────
+  const rcsName    = `RCS_${datePrefix}.xlsx`;
+  const rcsPath    = `${monthFolderPath}/${rcsName}`;
+  const encRcsPath = rcsPath.split('/').map(encodeURIComponent).join('/');
+
+  const rcsCheckRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encRcsPath}?$select=id`, { headers: authHdr });
+  let rcsFileId;
+
+  if (!rcsCheckRes.ok) {
+    // Copy master radon control sheet
+    const masterPath    = 'Documents/Lab Scans/Control Sheets/Master Radon Control Sheet.xlsx';
+    const encMasterPath = masterPath.split('/').map(encodeURIComponent).join('/');
+    const masterRes     = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMasterPath}?$select=id`, { headers: authHdr });
+    if (!masterRes.ok) throw new Error(`Master Radon Control Sheet not found`);
+    const masterId = (await masterRes.json()).id;
+
+    // Get the monthly folder ID for the copy destination
+    const monthRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMonthPath}?$select=id`, { headers: authHdr });
+    if (!monthRes.ok) throw new Error(`Monthly radon folder not found`);
+    const monthFolderId = (await monthRes.json()).id;
+
+    // Copy master → new RCS file
+    const copyRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${masterId}/copy`, {
+      method: 'POST',
+      headers: { ...authHdr, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentReference: { id: monthFolderId }, name: rcsName }),
+    });
+    if (!copyRes.ok) throw new Error(`Failed to copy master radon sheet`);
+
+    // Wait briefly for copy to complete
+    await new Promise(r => setTimeout(r, 3000));
+    const newRcsRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encRcsPath}?$select=id`, { headers: authHdr });
+    if (!newRcsRes.ok) throw new Error(`Copied RCS file not found after copy`);
+    rcsFileId = (await newRcsRes.json()).id;
+    context.log(`[RCS] Created ${rcsName} from master`);
+  } else {
+    rcsFileId = (await rcsCheckRes.json()).id;
+  }
+
+  // ── 3. Open workbook session and find first empty row ─────────────────────────
+  const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${rcsFileId}/workbook`;
+
+  const sesRes = await fetch(`${wbBase}/createSession`, {
+    method: 'POST',
+    headers: { ...authHdr, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ persistChanges: true }),
+  });
+  const { id: sid } = await sesRes.json();
+  const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+
+  try {
+    // Get first worksheet
+    const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
+    const wsId      = ((await sheetsRes.json()).value || [])[0]?.id;
+    if (!wsId) throw new Error('No worksheets in RCS file');
+
+    // Read column A to find first empty row
+    const rangeRes = await fetch(`${wbBase}/worksheets/${wsId}/usedRange?$select=values`, { headers: wbHdr });
+    const rows     = (await rangeRes.json()).values || [];
+
+    // Find first empty row in column A (skip header row 1)
+    let targetRow = rows.length + 1; // default: after last used row
+    for (let i = 1; i < rows.length; i++) { // start at 1 to skip header
+      if (!String(rows[i][0] || '').trim()) { targetRow = i + 1; break; }
+    }
+
+    // Write Lab Barcode # (col A), Date Drawn (col D), Time Drawn (col E)
+    await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:E${targetRow}')`, {
+      method: 'PATCH',
+      headers: wbHdr,
+      body: JSON.stringify({
+        values: [[labId, '', '', dateDrawn || '', timeDrawn || '']],
+      }),
+    });
+
+    context.log(`[RCS] Wrote ${labId} to ${rcsName} row ${targetRow}`);
+    return { success: true, file: rcsName, row: targetRow };
+  } finally {
+    await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
+  }
+}
+
 app.http('approve-scan', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -629,6 +755,20 @@ app.http('approve-scan', {
         );
         if (!csRes.ok) context.log('[CS] control-sheet returned', csRes.status);
       } catch(e) { context.log('[CS] control-sheet call failed:', e.message); }
+
+      // ── Write to Radon Control Sheet if Radon Water approved ─────────────────
+      const radonItem = labItems.find(l => l.isRadon && !l.isRejected);
+      if (radonItem) {
+        try {
+          const rcsResult = await writeRadonControlSheet(
+            siteId, token, radonItem.fullId,
+            fmt(dateDrawn) || dateDrawn || '',
+            to24h(timeDrawn) || timeDrawn || '',
+            context
+          );
+          context.log(`[RCS] ${JSON.stringify(rcsResult)}`);
+        } catch(e) { context.log('[RCS] Error:', e.message); }
+      }
 
       return {
         status: 200,
