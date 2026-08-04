@@ -465,6 +465,131 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
   }
 }
 
+
+// ── Write to Reports to be Billed.xlsx ────────────────────────────────────────
+async function writeReportsToBilled(siteId, token, params, context) {
+  // params: { labId, suffix, customer, clientCode, pricingCategory,
+  //           dateDrawn, timeDrawn, receivedDate, receivedTime,
+  //           location, city, state, zip, testName, today }
+  const GRAPH   = 'https://graph.microsoft.com/v1.0';
+  const authHdr = { Authorization: `Bearer ${token}` };
+
+  try {
+    // 1. Find Reports to be Billed.xlsx in Lab Scans folder
+    const labScansPath = 'Documents/Lab Scans/Reports to be Billed.xlsx';
+    const encPath = labScansPath.split('/').map(encodeURIComponent).join('/');
+    const fileRes = await fetch(
+      `${GRAPH}/sites/${siteId}/drive/root:/${encPath}?$select=id`,
+      { headers: authHdr }
+    );
+    if (!fileRes.ok) throw new Error(`Reports to be Billed.xlsx not found (${fileRes.status})`);
+    const { id: fileId } = await fileRes.json();
+
+    // 2. Look up Rate from Current Pricing V1 based on test name and pricing category
+    let rate = '';
+    try {
+      const pricingRes = await fetch(
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice,Active)&$top=200`,
+        { headers: authHdr }
+      );
+      if (pricingRes.ok) {
+        const pricingData = await pricingRes.json();
+        const testNameLow = (params.testName || '').toLowerCase();
+        const suffixLow   = (params.suffix || '').toLowerCase();
+        const match = (pricingData.value || []).find(item => {
+          const f = item.fields || {};
+          return (f.Title || '').toLowerCase() === testNameLow ||
+                 (f.Suffix || '').toLowerCase() === suffixLow;
+        });
+        if (match) {
+          const f = match.fields || {};
+          const cat = (params.pricingCategory || '').toLowerCase();
+          if (cat.includes('wq') || cat.includes('inspector') && cat.includes('wq')) {
+            rate = f.WQPrice || '';
+          } else if (cat.includes('inspector')) {
+            rate = f.InspectorPrice || '';
+          } else {
+            rate = f.PublicPrice || '';
+          }
+        }
+      }
+    } catch(e) { context.log('[RTB] Pricing lookup failed:', e.message); }
+
+    const qty  = 1;
+    const amt  = rate ? (qty * parseFloat(rate)).toFixed(2) : '';
+
+    // 3. Open workbook session
+    const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
+    const sesRes = await fetch(`${wbBase}/createSession`, {
+      method: 'POST',
+      headers: { ...authHdr, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persistChanges: true }),
+    });
+    if (!sesRes.ok) throw new Error(`Session open failed (${sesRes.status})`);
+    const { id: sid } = await sesRes.json();
+    const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+
+    try {
+      // 4. Get first worksheet
+      const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
+      const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
+      if (!wsId) throw new Error('No worksheets found');
+
+      // 5. Find first empty row after header (scan column A for empty cell)
+      const rangeRes = await fetch(
+        `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
+        { headers: wbHdr }
+      );
+      const usedValues = (await rangeRes.json()).values || [];
+      const nextRow = usedValues.length + 1; // 1-based, after last used row
+
+      // 6. Write the row
+      // Columns: A=Date Rec'd, B=Time Rec'd, C=Date Drawn, D=Time Drawn,
+      // E=Customer, F=Client Code, G=Report Date, H=Lab #,
+      // I=Location, J=City/Town, K=State, L=Zip,
+      // M=Item/Service, N=Test Type SKU, O=RW Results,
+      // P=Qty, Q=Rate, R=Amt, S=QB, T=Disc, U=Stmt/Inv Date,
+      // V=Pd, W=Amt Pd, X=Date Pd
+      const row = [
+        params.receivedDate || '',  // A Date Rec'd
+        params.receivedTime || '',  // B Time Rec'd
+        params.dateDrawn    || '',  // C Date Drawn
+        params.timeDrawn    || '',  // D Time Drawn
+        params.customer     || '',  // E Customer
+        params.clientCode   || '',  // F Client Code
+        '',                         // G Report Date (blank, filled when reported)
+        params.labId        || '',  // H Lab #
+        params.location     || '',  // I Location
+        params.city         || '',  // J City/Town
+        params.state        || '',  // K State
+        params.zip          || '',  // L Zip
+        params.testName     || '',  // M Item/Service
+        params.suffix       || '',  // N Test Type SKU
+        '',                         // O RW Results (blank until radon import)
+        qty,                        // P Qty
+        rate,                       // Q Rate
+        amt,                        // R Amt
+        '', '', '', '', '', '',     // S-X (QB, Disc, Stmt, Pd, Amt Pd, Date Pd)
+      ];
+
+      const addr = `A${nextRow}:X${nextRow}`;
+      await fetch(`${wbBase}/worksheets/${wsId}/range(address='${addr}')`, {
+        method: 'PATCH',
+        headers: wbHdr,
+        body: JSON.stringify({ values: [row] }),
+      });
+
+      context.log(`[RTB] Wrote ${params.labId} to row ${nextRow}`);
+      return { success: true, row: nextRow };
+    } finally {
+      await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
+    }
+  } catch(e) {
+    context.log('[RTB] Error:', e.message);
+    return { success: false, error: e.message };
+  }
+}
+
 app.http('approve-scan', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -474,6 +599,7 @@ app.http('approve-scan', {
         fileId, reviewQueueRow, reviewedBy,
         customer, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
         location, city, state, zip, tests, hasRadon, wqReject, rwReject, notes, email,
+        phone, billingAddress,
       } = await request.json();
 
       if (!fileId || !tests?.length)
@@ -687,12 +813,32 @@ app.http('approve-scan', {
       }
 
       // ── Write Results Cache ──────────────────────────────────────────────────
-      // Write base ID to LabID field so ICP-MS and control sheet imports
-      // can find and update this row. Do NOT write to Title (that is the PH column).
       for (const item of labItems) {
         await createItem('Results Cache', {
           LabID: item.baseId,
         }).catch(e => context.log('[ResultsCache]', e.message));
+      }
+
+      // ── Write to Reports to be Billed ────────────────────────────────────────
+      for (const item of labItems) {
+        if (item.isRejection) continue; // skip rejected — no billing needed
+        const rtbResult = await writeReportsToBilled(_siteId, _token, {
+          labId:           item.fullId,
+          suffix:          item.suffix      || '',
+          customer:        formalName       || customer || '',
+          clientCode:      clientCode       || '',
+          pricingCategory: clientInfo.pricingCategory || '',
+          dateDrawn:       fmt(dateDrawn)   || '',
+          timeDrawn:       to24h(timeDrawn) || '',
+          receivedDate:    fmt(receivedDate)|| tdStr,
+          receivedTime:    to24h(receivedTime)||tmStr,
+          location:        location         || '',
+          city:            city             || '',
+          state:           state            || 'ME',
+          zip:             zip ? String(zip).padStart(5,'0') : '',
+          testName:        item.coaTest     || '',
+        }, context).catch(e => ({ success:false, error:e.message }));
+        context.log('[RTB]', item.fullId, rtbResult.success ? `row ${rtbResult.row}` : rtbResult.error);
       }
 
       // ── Auto-add new client if not in Clients list ───────────────────────────
@@ -716,9 +862,10 @@ app.http('approve-scan', {
           if (!existing) {
             await createItem(LISTS.CLIENTS, {
               ClientName:       formalClientName,
-              Aliases:          clientInfo.reportEmail || email || '',   // Report Email Address
-              Notes:            clientInfo.billingEmail || email || '',  // Billing Email Address
-              Active:           clientInfo.phone || '',                  // Phone #
+              Aliases:          clientInfo.reportEmail || email || '',         // Report Email Address
+              Notes:            clientInfo.billingEmail || email || '',        // Billing Email Address
+              Active:           clientInfo.phone || phone || '',               // Phone #
+              BillingAddress:   clientInfo.billingAddress || billingAddress || '', // Billing Address
               Phone:            clientInfo.dbaName || '',                // DBA Name
               BillingAddress:   clientInfo.billingAddress || '',
               ClientCode:       '',
