@@ -164,8 +164,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     // Write address at row+1, phone at row+2, email at row+3 (same col as name)
     const attCol = attLbl.c + 1; // same column as the name value
     if (addrLine)   addCell(attLbl.r + 1, attCol, addrLine);
-    if (phoneLine)  addCell(attLbl.r + 2, attCol, phoneLine);
-    if (emailLine)  addCell(phoneLine ? attLbl.r + 3 : attLbl.r + 2, attCol, emailLine);
+    if (emailLine)  addCell(attLbl.r + 2, attCol, emailLine);
   }
 
   for (const [lbl, val] of Object.entries(leftHdrs)) {
@@ -424,8 +423,10 @@ app.http('render-report-pdf', {
     if (isRadon && radonSheet) {
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(radonSheet.id);
-      // Hide Spec sheet if present
-      if (specSheet) await hideSheet(siteId, tempId, specSheet.id, token, sid);
+      // Delete Spec sheet for radon reports
+      if (specSheet) {
+        await gReq('DELETE', `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+      }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
       await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
@@ -435,8 +436,10 @@ app.http('render-report-pdf', {
       if (fhaSheet)   await hideSheet(siteId, tempId, fhaSheet.id,   token, sid);
       if (radonSheet) await hideSheet(siteId, tempId, radonSheet.id, token, sid);
     } else if (labSheet) {
-      // Hide spec sheet if present (not a speciation test)
-      if (specSheet) await hideSheet(siteId, tempId, specSheet.id, token, sid);
+      // Delete spec sheet entirely when not a speciation test
+      if (specSheet) {
+        await gReq('DELETE', `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+      }
       await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(labSheet.id);
     }
