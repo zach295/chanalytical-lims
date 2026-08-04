@@ -35,6 +35,7 @@ app.http('get-scan-queue', {
         phone:            r.Phone        || '',
         billingAddress:   r.BillingAddress || '',
         isNewClient:      r.IsNewClient  === 'Yes',
+        formType:         r.FormType     || 'public',
         fileName:         r.FileName     || '',
         _rowIndex:        r._id,
       }));
