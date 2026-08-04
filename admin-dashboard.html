@@ -3249,6 +3249,42 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
 
+  // ── Sample timeout checker ──────────────────────────────────────────────────
+  // Returns { flags: [{type:'rejected'|'expired', element, hours, limit}] }
+  function checkSampleTimeout(tests, dateDrawn, timeDrawn, receivedDate, receivedTime) {
+    const TIME_LIMITS = {
+      'Bacteria': 30, 'Total Coliform': 30, 'E.Coli': 30,
+      'Nitrate': 48, 'Nitrite': 48,
+      'Coliform MPN': 30, 'Ecoli MPN': 30,
+    };
+    if (!dateDrawn || !receivedDate) return { flags: [] };
+    try {
+      const parseDate = (d, t) => {
+        const [mm, dd, yy] = (d || '').split(/[-\/]/).map(Number);
+        const year = yy < 100 ? 2000 + yy : yy;
+        const [hh, mn] = (t || '00:00').split(':').map(Number);
+        return new Date(year, mm - 1, dd, hh || 0, mn || 0);
+      };
+      const drawn    = parseDate(dateDrawn, timeDrawn);
+      const received = parseDate(receivedDate, receivedTime);
+      if (isNaN(drawn) || isNaN(received)) return { flags: [] };
+      const hoursElapsed = (received - drawn) / 3600000;
+      const flags = [];
+      for (const [element, limit] of Object.entries(TIME_LIMITS)) {
+        const inTests = tests.some(t => t.toLowerCase().includes(element.toLowerCase()));
+        if (inTests && hoursElapsed > limit) {
+          flags.push({ type: 'rejected', element, hours: hoursElapsed.toFixed(1), limit });
+        }
+      }
+      return { flags };
+    } catch { return { flags: [] }; }
+  }
+
+  function setRejectedTimeoutExclusion(cardDiv, checked) {
+    const cb = cardDiv?.querySelector('input[value="Rejected - Timeout"]');
+    if (cb) cb.checked = checked;
+  }
+
   function buildScanCard(r) {
     const confColor = r.confidence >= 90 ? 'var(--success)' : r.confidence >= 70 ? 'var(--warning)' : 'var(--error)';
     const confBg    = r.confidence >= 90 ? 'var(--success-light)' : r.confidence >= 70 ? 'var(--warning-light)' : 'var(--error-light)';
