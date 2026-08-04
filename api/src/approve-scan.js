@@ -686,8 +686,11 @@ app.http('approve-scan', {
       if (fileId) {
         // Build month/day subfolder path: Archived/August 2026/3/
         const archiveDate  = new Date();
-        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        const dayFolder    = String(archiveDate.getDate());
+        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' });
+        // Day folder formatted as MM-DD-YY e.g. 08-04-26
+        const dayFolder    = archiveDate.toLocaleDateString('en-US', {
+          month: '2-digit', day: '2-digit', year: '2-digit', timeZone: 'America/New_York'
+        }).replace(/\//g, '-');
         const archiveDest  = await ensureFolderPath(SCAN_ARCHIVE, [monthFolder, dayFolder], token)
           .catch(e => { context.log('[Archive folder]', e.message); return SCAN_ARCHIVE; });
         context.log(`[Archive] Destination: ${archiveDest}`);
@@ -757,11 +760,11 @@ app.http('approve-scan', {
       } catch(e) { context.log('[CS] control-sheet call failed:', e.message); }
 
       // ── Write to Radon Control Sheet if Radon Water approved ─────────────────
-      const radonItem = labItems.find(l => l.isRadon && !l.isRejected);
-      if (radonItem) {
+      const radonLabItem = labItems.find(l => l.isRadon && !l.isRejected);
+      if (radonLabItem) {
         try {
           const rcsResult = await writeRadonControlSheet(
-            siteId, token, radonItem.fullId,
+            siteId, token, radonLabItem.fullId,
             fmt(dateDrawn) || dateDrawn || '',
             to24h(timeDrawn) || timeDrawn || '',
             context
