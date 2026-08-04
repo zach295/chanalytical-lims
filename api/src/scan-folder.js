@@ -234,10 +234,29 @@ function matchClient(name, clients) {
     if (found) return found;
   }
 
+  // Normalize: remove punctuation/extra spaces for fuzzy comparison
+  const normalize = str => str.toLowerCase().replace(/[.,'-]/g,'').replace(/\s+/g,' ').trim();
+  const sNorm = normalize(s);
+
   return (
+    // 1. Exact match
     clients.find(c => c.clientName.toLowerCase() === s) ||
+    // 2. Normalized exact match (handles punctuation differences)
+    clients.find(c => normalize(c.clientName) === sNorm) ||
+    // 3. Alias match
     clients.find(c => c.aliases.split(',').map(a => a.trim().toLowerCase())
       .some(a => a.length >= 4 && (s === a || s.includes(a) || a.includes(s)))) ||
+    // 4. Prefix match — OCR often abbreviates (min 10 chars to avoid false positives)
+    (sNorm.length >= 10 ? clients.find(c => {
+      const cNorm = normalize(c.clientName);
+      return cNorm.startsWith(sNorm) || sNorm.startsWith(cNorm.slice(0, Math.min(cNorm.length, sNorm.length)));
+    }) : null) ||
+    // 5. Word-based match — all words in OCR name appear in client name
+    (sNorm.split(' ').length >= 2 ? clients.find(c => {
+      const cNorm  = normalize(c.clientName);
+      const ocrWords = sNorm.split(' ').filter(w => w.length >= 4);
+      return ocrWords.length >= 2 && ocrWords.every(w => cNorm.includes(w));
+    }) : null) ||
     null
   );
 }
