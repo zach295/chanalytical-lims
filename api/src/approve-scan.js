@@ -437,12 +437,13 @@ async function writeReportsToBilled(siteId, token, params, context) {
 }
 
 // ── Write to Radon Control Sheet on approval ──────────────────────────────────
-async function writeRadonControlSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {
+async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {
   const GRAPH = 'https://graph.microsoft.com/v1.0';
-  const siteId = siteIdArg || process.env.SP_SITE_ID;
-  const token  = tokenArg  || (await (require('../shared/graph').getToken)());
   const MONTHS = ['January','February','March','April','May','June',
                   'July','August','September','October','November','December'];
+  const baseId     = labId.split(' ')[0].trim();
+  const datePrefix = baseId.slice(0, 6); // MMDDYY
+  const newLabId   = labId; // full lab ID including suffix
   const mm   = datePrefix.slice(0, 2);
   const yy   = datePrefix.slice(4, 6);
   const year = '20' + yy;
@@ -995,6 +996,7 @@ app.http('approve-scan', {
           labIds:     allFullIds,
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
+          rtbResults: rtbResults.map(r => ({ success: r.success, id: r.id, rate: r.rate, error: r.error })),
 
 
 
