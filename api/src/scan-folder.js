@@ -517,7 +517,10 @@ TWO FORM TYPES EXIST:
 
 RULES:
 - customer: PUBLIC form: person's name from CUSTOMER & PROPERTY INFORMATION. BUSINESS form: checked company in Report To. Return "" if nothing clear.
-- location/city/state/zip: BUSINESS=from WELL OWNER section. PUBLIC=from CUSTOMER & PROPERTY INFORMATION.
+- email: From "E-mail:" or "Email:" field in REPORT TO BE SENT TO section (business) or CUSTOMER & PROPERTY INFORMATION (public). Concatenate split email lines. Return "" if blank.
+- phone: From "Phone:" or "Daytime Phone:" field in REPORT TO BE SENT TO section (business) or CUSTOMER & PROPERTY INFORMATION (public). Return "" if blank.
+- billingAddress: FULL mailing address from REPORT TO BE SENT TO section — street + city + state + zip on one line (e.g. "24 Freedom Dr, Standish, ME 04084"). PUBLIC form: leave "". BUSINESS form only.
+- location/city/state/zip: Sample address — BUSINESS=from WELL OWNER section. PUBLIC=from CUSTOMER & PROPERTY INFORMATION. These are WHERE THE WATER WAS COLLECTED, not the billing address.
 - dateDrawn: YYYY-MM-DD from "Date Sampled" field. Return "" if blank — NEVER guess.
 - timeDrawn: HH:MM 24hr from "Time Sampled". Return "" if blank.
 - receivedDate/receivedTime: from "Lab Use Only" box only. Return "" if blank.
@@ -530,7 +533,7 @@ RULES:
 COC TEXT:
 ${azureText}
 
-Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
+Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
                 }],
               }),
             });
@@ -642,7 +645,10 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
             City:             ocr.city         || '',
             State:            ocr.state        || 'ME',
             Zip:              ocr.zip ? String(ocr.zip).padStart(5, '0') : '',
-            Email:            client ? client.email : (ocr.email || ''),
+            Email:            client ? (client.reportEmail || client.email) : (ocr.email || ''),
+            Phone:            ocr.phone           || '',
+            BillingAddress:   ocr.billingAddress  || '',
+            IsNewClient:      client ? 'No' : 'Yes',
             SampleDate:       ocr.dateDrawn    || '',
             SampleTime:       ocr.timeDrawn    || '',
             ReceivedDate:     ocr.receivedDate || '',
