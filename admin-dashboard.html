@@ -2239,20 +2239,33 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const scans = data.pending || [];
 
-      // Update today's count stat
-      const todayApproved = data.todayApproved || [];
-      const todayEl = document.getElementById('rq-today');
-      if (todayEl) todayEl.textContent = todayApproved.length;
-
-      // Update recently approved table
+      // Update today's approved from Archived Intake (last 5 today, descending)
       const approvedBody = document.getElementById('rq-approved-body');
-      if (approvedBody && todayApproved.length) {
-        approvedBody.innerHTML = todayApproved.slice(0, 5).map(a => `<tr>
-          <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.labIds?.[0]||'—'}</td>
-          <td class="client-name">${a.customer||'—'}</td>
-          <td style="font-size:12px;">${a.tests?.[0]||'—'}</td>
-          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
-        </tr>`).join('');
+      const todayEl      = document.getElementById('rq-today');
+      try {
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const aqRes    = await fetch('/api/accession-status');
+        const aqData   = await aqRes.json();
+        // reported = already sent; pending = approved but not yet sent — both count
+        const allApproved = [...(aqData.reported || []), ...(aqData.pending || [])];
+        // Filter to today and sort descending by timestamp
+        const todayApproved = allApproved
+          .filter(a => (a.timestamp || '').startsWith(todayStr))
+          .sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''))
+          .slice(0, 5);
+        if (todayEl) todayEl.textContent = todayApproved.length;
+        if (approvedBody) {
+          approvedBody.innerHTML = todayApproved.length
+            ? todayApproved.map(a => `<tr>
+                <td style="font-family:monospace;font-weight:700;color:var(--teal);">${(a.fullIds||[])[0]||a.baseId||'—'}</td>
+                <td class="client-name">${a.customer||'—'}</td>
+                <td style="font-size:12px;">${(a.tests||[])[0]||'—'}</td>
+                <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
+              </tr>`).join('')
+            : '<tr><td colspan="4"><div class="empty-state">No approvals today yet.</div></td></tr>';
+        }
+      } catch(e) {
+        console.error('Recently approved load failed:', e);
       }
 
       if (!scans.length) {
