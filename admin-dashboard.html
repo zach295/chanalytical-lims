@@ -2201,7 +2201,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function refreshClientList() {
     try {
-      const res  = await fetch('/api/accession-status', {
+      const res  = await fetch('/api/accession-actions', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ action: 'read-clients' }),
       });
@@ -2246,7 +2246,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const approvedBody = document.getElementById('rq-approved-body');
       const todayEl      = document.getElementById('rq-today');
       try {
-        const todayRes  = await fetch('/api/accession-status', {
+        const todayRes  = await fetch('/api/accession-actions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'today-approved' }),
@@ -2631,7 +2631,7 @@ document.addEventListener('DOMContentLoaded', function() {
     resultEl.innerHTML = '⏳ Looking up...';
     try {
       // Use list-intake action which correctly matches by base ID
-      const res = await fetch('/api/accession-status', {
+      const res = await fetch('/api/accession-actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'list-intake', baseId }),
@@ -2765,7 +2765,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     try {
       // Use list-intake action — correctly matches by base ID
-      const res = await fetch('/api/accession-status', {
+      const res = await fetch('/api/accession-actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'list-intake', baseId }),
@@ -3107,7 +3107,7 @@ document.addEventListener('DOMContentLoaded', function() {
       '<tr><td colspan="10"><div class="empty-state">Loading...</div></td></tr>';
     try {
       // Use accession-status read-clients action (always up to date)
-      const res  = await fetch('/api/accession-status', {
+      const res  = await fetch('/api/accession-actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'read-clients' }),
@@ -5341,7 +5341,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const reportedBaseId = (currentReportData.labId || currentReportData.meta?.labId || '').replace(/\s+\w+$/, '').trim();
       if (reportedBaseId && sendEmail) {
         try {
-          const markRes  = await fetch('/api/accession-status', {
+          const markRes  = await fetch('/api/accession-actions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'mark-reported', baseId: reportedBaseId }),
