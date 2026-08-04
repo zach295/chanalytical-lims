@@ -569,7 +569,12 @@ app.http('approve-scan', {
       const clientCode   = clientInfo.clientCode;
       const formalName   = clientInfo.formalName || customer;
       const isPublicClient = formalName.startsWith('Public-');
-      const abbrev       = (isPublicOverride || isPublicClient) ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
+      // Only use PUBLIC abbrev for genuine public (residential) clients
+      // Business clients (with LLC, Inc, Inspections etc.) should never get PUBLIC
+      const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|real estate)\b/i;
+      const nameIsBusinessLike = BWORDS.test(formalName) || formalName.includes('/') || formalName.includes('&');
+      const usePublic = (isPublicOverride || isPublicClient) && !nameIsBusinessLike;
+      const abbrev    = usePublic ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
 
       // ── Write Accession Log ──────────────────────────────────────────────────
       // Field mapping (Excel-imported): Title=timestamp, field_1=baseId,
