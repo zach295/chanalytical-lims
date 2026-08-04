@@ -2490,7 +2490,12 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch(`/api/labid-search?labId=${encodeURIComponent(input)}`);
       const data = await res.json();
-      const results = data.results || [];
+      // Filter client-side: only keep results where base ID exactly matches input
+      const baseInput = input.split(' ')[0].trim().toUpperCase();
+      const results = (data.results || []).filter(r => {
+        const rowBase = (r.labId || '').split(' ')[0].trim().toUpperCase();
+        return rowBase === baseInput;
+      });
       if (results.length) {
         resultEl.innerHTML = results.map(r =>
           `<div style="margin-bottom:4px;">✅ <strong>${r.labId}</strong> — ${r.customer||'Unknown'} | ${r.tests||''} <span style="font-size:11px;color:var(--slate);">(${r.source})</span></div>`
