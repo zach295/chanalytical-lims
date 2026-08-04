@@ -3250,34 +3250,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
   // ── Sample timeout checker ──────────────────────────────────────────────────
-  // Returns { flags: [{type:'rejected'|'expired', element, hours, limit}] }
+  // Returns { flags: [{type:'rejected'|'expired'|'close', element, hours, over, remaining, limit}] }
   function checkSampleTimeout(tests, dateDrawn, timeDrawn, receivedDate, receivedTime) {
+    // Time limits in hours from draw to receipt
     const TIME_LIMITS = {
       'Bacteria': 30, 'Total Coliform': 30, 'E.Coli': 30,
-      'Nitrate': 48, 'Nitrite': 48,
       'Coliform MPN': 30, 'Ecoli MPN': 30,
+      'Nitrate': 48, 'Nitrite': 48,
     };
+    const CLOSE_THRESHOLD = 6; // warn if within 6hrs of limit
     if (!dateDrawn || !receivedDate) return { flags: [] };
     try {
       const parseDate = (d, t) => {
-        const [mm, dd, yy] = (d || '').split(/[-\/]/).map(Number);
+        if (!d) return null;
+        const parts = d.split(/[-\/]/);
+        let mm, dd, yy;
+        if (parts.length === 3) { [mm, dd, yy] = parts.map(Number); }
+        else return null;
         const year = yy < 100 ? 2000 + yy : yy;
-        const [hh, mn] = (t || '00:00').split(':').map(Number);
-        return new Date(year, mm - 1, dd, hh || 0, mn || 0);
+        const timeParts = (t || '00:00').split(':').map(Number);
+        return new Date(year, mm - 1, dd, timeParts[0] || 0, timeParts[1] || 0);
       };
       const drawn    = parseDate(dateDrawn, timeDrawn);
       const received = parseDate(receivedDate, receivedTime);
-      if (isNaN(drawn) || isNaN(received)) return { flags: [] };
+      if (!drawn || !received || isNaN(drawn) || isNaN(received)) return { flags: [] };
       const hoursElapsed = (received - drawn) / 3600000;
       const flags = [];
       for (const [element, limit] of Object.entries(TIME_LIMITS)) {
-        const inTests = tests.some(t => t.toLowerCase().includes(element.toLowerCase()));
-        if (inTests && hoursElapsed > limit) {
-          flags.push({ type: 'rejected', element, hours: hoursElapsed.toFixed(1), limit });
+        const inTests = (tests || []).some(t => t.toLowerCase().includes(element.toLowerCase()));
+        if (!inTests) continue;
+        const hours     = Math.round(hoursElapsed * 10) / 10;
+        const over      = Math.round((hoursElapsed - limit) * 10) / 10;
+        const remaining = Math.round((limit - hoursElapsed) * 10) / 10;
+        if (hoursElapsed > limit) {
+          flags.push({ type: 'rejected', element, hours, over, limit });
+        } else if (hoursElapsed > limit - CLOSE_THRESHOLD) {
+          flags.push({ type: 'close', element, hours, remaining, limit });
         }
       }
       return { flags };
-    } catch { return { flags: [] }; }
+    } catch(e) { return { flags: [] }; }
   }
 
   function setRejectedTimeoutExclusion(cardDiv, checked) {
@@ -3396,6 +3408,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const timeoutResult = checkSampleTimeout(tests, r.dateDrawn, r.timeDrawn, effectiveReceivedDate, effectiveReceivedTime);
     const hasRejectedTimeout = timeoutResult?.flags?.some(f => f.type === 'rejected');
     const hasExpiredInPackage = timeoutResult?.flags?.some(f => f.type === 'expired');
+    // Build readable timeout warning showing hours elapsed vs limit
+    const timeoutWarningText = timeoutResult?.flags?.length
+      ? timeoutResult.flags.map(f =>
+          `${f.element}: ${f.hours}hrs elapsed (limit ${f.limit}hrs)`
+        ).join('; ')
+      : '';
 
     // Auto-convert to Rejected - Timeout — but ONLY for standalone elements
     // If bacteria/nitrate/nitrite expire inside a PACKAGE, keep the package and add a note
@@ -4195,8 +4213,9 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
       showToast(found > 0 ? `✅ Found ${found} new scan(s) — refreshing queue` : '✅ Drive checked — no new scans');
-      // Refresh the review queue and scan list
-      await loadScanQueue().then(renderScanQueue);
+      // Wait for OCR then refresh the queue
+      await new Promise(r => setTimeout(r, 4000));
+      await loadReviewQueue();
       await loadScans();
     } catch(e) {
       showToast('⚠️ ' + e.message);
