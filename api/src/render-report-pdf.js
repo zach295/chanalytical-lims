@@ -153,6 +153,25 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     'authorized by':  authorizedBy,
     'review date':    reviewDate,
   };
+  // Fill attention address/phone/email in rows below the Attention label
+  const attLbl = findLabel(rows, 'attention');
+  if (attLbl) {
+    const m = meta || {};
+    const addrLine = [
+      m.billingAddress,
+      m.billingCity && m.billingState
+        ? `${m.billingCity}, ${m.billingState} ${m.billingZip || ''}`.trim()
+        : (m.billingCity || m.billingState || ''),
+    ].filter(Boolean).join(', ');
+    const phoneLine = m.phone || '';
+    const emailLine = m.email || '';
+    // Write address at row+1, phone at row+2, email at row+3 (same col as name)
+    const attCol = attLbl.c + 1; // same column as the name value
+    if (addrLine)   addCell(attLbl.r + 1, attCol, addrLine);
+    if (phoneLine)  addCell(attLbl.r + 2, attCol, phoneLine);
+    if (emailLine)  addCell(phoneLine ? attLbl.r + 3 : attLbl.r + 2, attCol, emailLine);
+  }
+
   for (const [lbl, val] of Object.entries(leftHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
