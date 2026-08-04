@@ -5501,8 +5501,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
       }
       showToast(msg);
-      if (data.log?.length) console.log('[Radon Import]', data.log.join('
-'));
+      if (data.log?.length) console.log('[Radon Import]', data.log.join(' | '));
     } catch(e) {
       const msg = '⚠️ ' + e.message;
       if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--error)'; }
