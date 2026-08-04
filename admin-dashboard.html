@@ -2327,21 +2327,6 @@ document.addEventListener('DOMContentLoaded', function() {
       badge.textContent   = pending.length;
     }
   }
-    // Pending section
-    const pendingEl = document.getElementById('rq-pending-list');
-    if (pendingEl) {
-      if (!pending.length) {
-        pendingEl.innerHTML = '<div class="empty-state" style="padding:32px;">No pending samples — queue is clear ✓</div>';
-      } else {
-        pendingEl.innerHTML = '';
-        pending.forEach(r => {
-          const card = document.createElement('div');
-          card.innerHTML = buildPendingCard(r);
-          pendingEl.appendChild(card.firstElementChild);
-        });
-      }
-    }
-  }
 
   function buildPendingCard(r) {
     const name    = r.customer || r.fullIds?.[0] || 'Unknown';
