@@ -36,7 +36,7 @@ app.http('reject-sample', {
         Date:         dateStr,
         Time:         timeStr,
         Client:       labId,
-        ActivityType: rejType,
+        ActivityType: rejectionType,
         Notes:        reason.trim(),
         By:           rejectedBy || 'Lab Staff',
         Qty:          0,
