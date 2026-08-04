@@ -32,6 +32,10 @@ app.http('get-scan-queue', {
         reviewStatus:     r.Title        || r.ReviewStatus || 'Pending',
         validationErrors: r.ValidationErrors || '',
         waterType:        r.WaterType    || '',
+        phone:            r.Phone        || '',
+        billingAddress:   r.BillingAddress || '',
+        isNewClient:      r.IsNewClient  === 'Yes',
+        fileName:         r.FileName     || '',
         _rowIndex:        r._id,
       }));
 
