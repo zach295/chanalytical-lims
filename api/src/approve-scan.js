@@ -394,7 +394,8 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
 
   if (!rcsCheckRes.ok) {
     // Copy master radon control sheet
-    const masterPath    = 'Documents/Lab Scans/Control Sheets/Master Radon Control Sheet.xlsx';
+    const masterPath    = process.env.SP_RADON_TEMPLATE ||
+      'Documents/Documents/Control Sheets/Master Radon Control Sheet.xlsx';
     const encMasterPath = masterPath.split('/').map(encodeURIComponent).join('/');
     if (context) context.log(`[RCS] Looking for master at: ${masterPath}`);
     const masterRes     = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMasterPath}?$select=id`, { headers: authHdr });
