@@ -3295,12 +3295,24 @@ document.addEventListener('DOMContentLoaded', function() {
       const parseDate = (d, t) => {
         if (!d) return null;
         const parts = d.split(/[-\/]/);
+        if (parts.length !== 3) return null;
         let mm, dd, yy;
-        if (parts.length === 3) { [mm, dd, yy] = parts.map(Number); }
-        else return null;
-        const year = yy < 100 ? 2000 + yy : yy;
-        const timeParts = (t || '00:00').split(':').map(Number);
-        return new Date(year, mm - 1, dd, timeParts[0] || 0, timeParts[1] || 0);
+        // Detect ISO format YYYY-MM-DD vs MM-DD-YY
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          [yy, mm, dd] = parts.map(Number);
+        } else {
+          // MM-DD-YY or MM-DD-YYYY
+          [mm, dd, yy] = parts.map(Number);
+          if (yy < 100) yy = 2000 + yy;
+        }
+        const timeParts = (t || '00:00').replace(/[APap][Mm]?$/,'').trim().split(':').map(Number);
+        let h = timeParts[0] || 0;
+        // Handle AM/PM if present in time string
+        if (/pm/i.test(t||'') && h < 12) h += 12;
+        if (/am/i.test(t||'') && h === 12) h = 0;
+        const dt = new Date(yy, mm - 1, dd, h, timeParts[1] || 0);
+        return isNaN(dt.getTime()) ? null : dt;
       };
       const drawn    = parseDate(dateDrawn, timeDrawn);
       const received = parseDate(receivedDate, receivedTime);
