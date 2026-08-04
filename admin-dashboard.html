@@ -3692,7 +3692,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Email — auto-filled from Clients list for known clients, OCR for new
     const clientEmail  = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
-    const isNewClient  = !matchedClient; // r.IsNewClient === 'Yes' or client not found
+    const isNewClient  = r.isNewClient === true || !matchedClient; // server flag or local detection
     const safeQ = s => (s||'').replace(/"/g,'&quot;');
 
     const emailFieldHtml = `
