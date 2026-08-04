@@ -1,73 +1,5568 @@
-const { app } = require('@azure/functions');
-const { getToken } = require('../shared/graph');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="format-detection" content="telephone=no,address=no,email=no" />
+  <meta name="google" content="nositelinkssearchbox" />
+  <title>Chanalytical — Lab Dashboard</title>
+  <style>
+    :root {
+      --navy:#003A5C;--teal:#00869B;--teal-light:#e6f4f6;--water:#C8E8F0;
+      --white:#fff;--off-white:#F5F9FA;--slate:#4A6572;--text:#1a2a32;--border:#CBD8DE;
+      --success:#1A7A4A;--success-light:#e8f5ee;--warning:#E67E22;--warning-light:#FFF3E0;
+      --error:#C0392B;--error-light:#fdf0ee;
+      --font-display:Georgia,serif;--font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      --radius:10px;--shadow:0 2px 12px rgba(0,58,92,0.10);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:var(--font-body);background:var(--off-white);color:var(--text);min-height:100vh;}
+    header{background:var(--navy);color:var(--white);padding:16px 24px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.2);}
+    .header-inner{max-width:1300px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+    .lab-name{font-family:var(--font-display);font-size:18px;color:var(--white);}
+    .lab-sub{font-size:11px;color:var(--water);letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+    .btn-h{padding:8px 14px;border-radius:20px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all .15s;}
+    .btn-primary{background:var(--teal);color:white;}
+    .btn-outline{background:rgba(255,255,255,0.1);color:white;border:1px solid rgba(255,255,255,0.25);}
+    .btn-primary:hover{background:#007a8e;}
+    main{padding:24px 20px 60px;}
+    .nav-tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--white);border-radius:var(--radius);padding:6px;box-shadow:var(--shadow);border:1px solid var(--border);flex-wrap:wrap;}
+    .nav-tab{padding:10px 18px;border:none;background:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--slate);cursor:pointer;font-family:var(--font-body);transition:all .15s;}
+    .nav-tab.active{background:var(--navy);color:white;}
+    .section{display:none;} .section.active{display:block;overflow-x:auto;}
+    .summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+    @media(max-width:900px){.summary-row{grid-template-columns:repeat(2,1fr);}}
+    .stat-card{background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);border:1px solid var(--border);}
+    .stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--slate);margin-bottom:8px;}
+    .stat-value{font-size:32px;font-weight:700;color:var(--navy);line-height:1;}
+    .stat-sub{font-size:12px;color:var(--slate);margin-top:4px;}
+    .stat-card.teal{border-top:3px solid var(--teal);}
+    .stat-card.green{border-top:3px solid var(--success);}
+    .stat-card.orange{border-top:3px solid var(--warning);}
+    .stat-card.navy{border-top:3px solid var(--navy);}
+    .card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;margin-bottom:20px;}
+    .card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+    .card-title{font-size:15px;font-weight:700;color:var(--navy);}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    thead{background:var(--navy);color:var(--white);}
+    th{padding:11px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;}
+    th.r,td.r{text-align:right;} th.c,td.c{text-align:center;}
+    tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+    tbody tr:last-child{border-bottom:none;}
+    tbody tr:hover{background:var(--off-white);}
+    td{padding:11px 14px;vertical-align:middle;}
+    .client-name{font-weight:600;color:var(--navy);font-size:13px;}
+    .tier-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;}
+    .tier-wq{background:#E3F2FD;color:#1565C0;}
+    .tier-inspector{background:var(--teal-light);color:var(--teal);}
+    .tier-public{background:#F3E5F5;color:#6A1B9A;}
+    .stock-high{color:var(--success);font-weight:700;}
+    .stock-med{color:var(--warning);font-weight:700;}
+    .stock-low{color:var(--error);font-weight:700;}
+    .action-btn{padding:5px 10px;border-radius:6px;border:1.5px solid var(--border);background:var(--white);font-size:11px;cursor:pointer;font-family:var(--font-body);font-weight:600;transition:all .15s;color:var(--text);}
+    .action-btn:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-light);}
+    .btn-group{display:flex;gap:5px;}
+    /* BOTTLE GRID */
+    .bottle-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;padding:20px;}
+    .bottle-card{border-radius:8px;padding:16px;border:1px solid var(--border);}
+    .bottle-icon{font-size:36px;margin-bottom:8px;}
+    .bottle-name{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px;}
+    .bottle-count{font-size:28px;font-weight:700;margin-bottom:4px;}
+    .bottle-sub{font-size:11px;color:var(--slate);}
+    .bottle-actions{display:flex;gap:6px;margin-top:12px;}
+    .bottle-btn{flex:1;padding:8px;border:1.5px solid var(--border);border-radius:6px;background:var(--white);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all .15s;}
+    .bottle-btn.add{border-color:var(--success);color:var(--success);}
+    .bottle-btn.add:hover{background:var(--success);color:white;}
+    .bottle-btn.remove{border-color:var(--error);color:var(--error);}
+    .bottle-btn.remove:hover{background:var(--error);color:white;}
+    .assemble-bar{background:var(--teal-light);border-radius:8px;padding:16px;margin:0 20px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+    .assemble-btn{padding:10px 20px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-body);}
+    .assemble-btn:hover{background:#007a8e;}
+    /* LOG */
+    .log-type{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;}
+    .log-sent{background:#E3F2FD;color:#1565C0;}
+    .log-sampled{background:var(--warning-light);color:var(--warning);}
+    .log-received{background:var(--success-light);color:var(--success);}
+    .log-initial{background:#F3E5F5;color:#6A1B9A;}
+    .log-adjust{background:#f5f5f5;color:#555;}
+    /* ALERT */
+    .alert-banner{border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;display:none;align-items:center;gap:12px;}
+    .alert-banner.visible{display:flex;}
+    .alert-green{background:var(--success-light);border:1px solid #a8d5b5;}
+    .alert-red{background:var(--error-light);border:1px solid #f0c0b0;}
+    /* MODAL */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,58,92,0.6);z-index:200;align-items:center;justify-content:center;padding:20px;}
+    .modal-overlay.open{display:flex;}
+    .modal{background:var(--white);border-radius:var(--radius);padding:28px;width:100%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,0.2);}
+    .modal-title{font-size:18px;font-weight:700;color:var(--navy);margin-bottom:20px;font-family:var(--font-display);}
+    .form-field{margin-bottom:14px;}
+    .form-field label{display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;}
+    .form-field input,.form-field select{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:var(--font-body);color:var(--text);-webkit-appearance:none;}
+    .form-field input:focus,.form-field select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,134,155,0.12);}
+    /* Global override — checkboxes and radios must NEVER inherit form-field text input styles */
+    input[type=checkbox],input[type=radio]{-webkit-appearance:checkbox!important;appearance:auto!important;width:auto!important;height:auto!important;padding:0!important;border:initial!important;border-radius:0!important;box-shadow:none!important;font-size:initial!important;}
+    .modal-actions{display:flex;gap:10px;margin-top:20px;}
+    .btn-ok{flex:1;padding:12px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font-body);}
+    .btn-cancel{flex:1;padding:12px;background:var(--off-white);color:var(--slate);border:1.5px solid var(--border);border-radius:8px;font-size:15px;cursor:pointer;font-family:var(--font-body);}
+    .section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
+    .section-hdr-title{font-size:15px;font-weight:700;color:var(--navy);}
+    .empty-state{text-align:center;padding:28px;color:var(--slate);font-size:13px;}
+    .toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:var(--navy);color:white;padding:10px 20px;border-radius:30px;font-size:13px;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
+    .toast.show{opacity:1;}
+    code{background:var(--off-white);padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;color:var(--navy);border:1px solid var(--border);}
+    .sb-btn{display:block;width:100%;text-align:left;padding:9px 10px;background:none;border:none;color:rgba(255,255,255,0.75);font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;font-family:var(--font-body);transition:all .15s;margin-bottom:1px;}
+    .sb-btn:hover{background:rgba(255,255,255,0.1);color:var(--white);}
+    .sb-btn.active{background:var(--teal);color:var(--white);font-weight:700;}
+    .sb-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,0.35);padding:14px 8px 3px;}
+    /* Profile card */
+    .profile-card{background:var(--white);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px;}
+    .profile-card h3{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+    .pf{margin-bottom:14px;} .pf label{display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;}
+    .pf input{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:var(--font-body);color:var(--text);}
+    .pf input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(0,134,155,0.12);}
+    .pf input:read-only{background:var(--off-white);color:var(--slate);}
+    .btn-save-profile{padding:11px 24px;background:var(--teal);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-body);}
+    .msg-inline{padding:9px 13px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none;}
+    .msg-inline.ok{background:var(--success-light);color:var(--success);display:block;}
+    .msg-inline.err{background:var(--error-light);color:var(--error);display:block;}
+    @media(max-width:700px){#sidebar{display:none;}}
+    #sidebar.collapsed{width:0!important;min-width:0!important;overflow:hidden;}
+    #sidebar.collapsed #sb-brand,#sidebar.collapsed .sb-label,#sidebar.collapsed .sb-btn span:not(#review-badge),#sidebar.collapsed #sb-username{display:none;}
+    #sb-expand{display:none;position:fixed;top:12px;left:8px;z-index:100;background:var(--navy);border:none;color:white;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:14px;}
+  </style>
+</head>
+<body autocomplete="off">
+<script>
+// Globally suppress browser autofill, "Save to Google", and credential saving
+document.addEventListener('DOMContentLoaded', function() {
+  function disableAutofill(root) {
+    root.querySelectorAll('input, select, textarea').forEach(function(el) {
+      if (el.dataset.allowAutofill) return;
+      el.setAttribute('autocomplete', 'new-password'); // "new-password" is the most effective blocker
+      el.setAttribute('data-form-type', 'other');
+      el.setAttribute('data-lpignore', 'true');
+      el.setAttribute('data-1p-ignore', 'true');
+      el.setAttribute('readonly', 'true'); // prevent autofill on focus
+      el.addEventListener('focus', function() { this.removeAttribute('readonly'); }, { once: false });
+      // Chrome triggers "Save" popup on type=email and type=password — use type=text instead
+      if (el.type === 'email' || el.type === 'password') el.type = 'text';
+    });
+    root.querySelectorAll('form').forEach(function(f) {
+      f.setAttribute('autocomplete', 'off');
+    });
+  }
 
-const GRAPH = 'https://graph.microsoft.com/v1.0';
+  disableAutofill(document);
 
-async function deleteSpFile(siteId, itemId, token) {
-  if (!itemId) return;
-  await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  }).catch(e => console.warn('[deleteSpFile]', e.message));
-}
+  // Re-run whenever the DOM changes (scan cards, modals, etc.)
+  new MutationObserver(function(mutations) {
+    mutations.forEach(function(m) {
+      m.addedNodes.forEach(function(node) {
+        if (node.nodeType === 1) disableAutofill(node);
+      });
+    });
+  }).observe(document.body, { childList: true, subtree: true });
 
-async function getListId(siteId, displayName, token) {
-  const res  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
-    { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return null;
-  return ((await res.json()).value || []).find(l => l.displayName === displayName)?.id || null;
-}
+});
+</script>
+<div style="display:flex;min-height:100vh;">
 
-app.http('mark-scan-processed', {
-  methods: ['POST'],
-  authLevel: 'anonymous',
-  handler: async (request, context) => {
+<!-- SIDEBAR -->
+<div id="sidebar" style="width:230px;min-width:230px;background:var(--navy);color:var(--white);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;z-index:50;transition:width 0.2s,min-width 0.2s;">
+  <div style="padding:20px 16px 14px;border-bottom:1px solid rgba(255,255,255,0.1);display:flex;align-items:flex-start;justify-content:space-between;">
+    <div id="sb-brand">
+      <div style="font-family:var(--font-display);font-size:15px;color:var(--white);line-height:1.3;">Chanalytical<br>Laboratories</div>
+      <div style="font-size:10px;color:var(--water);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;">Lab Dashboard</div>
+    </div>
+    <button onclick="toggleSidebar()" title="Hide sidebar" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:16px;padding:2px 4px;line-height:1;flex-shrink:0;" id="sb-toggle">◀</button>
+  </div>
+  <div style="padding:10px 8px;flex:1;">
+
+    <div class="sb-label">Dashboard</div>
+    <button class="sb-btn active" onclick="showSection('overview',this)">📊 Overview</button>
+    <button class="sb-btn" onclick="showSection('review',this)">🔬 Review Queue <span id="review-badge" style="background:var(--warning);color:white;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px;display:none;"></span></button>
+    <button class="sb-btn" onclick="showSection('rejected',this)">🚫 Rejected Samples</button>
+    <button class="sb-btn" onclick="showSection('sample-correction',this)">✏️ Sample Correction</button>
+
+    <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
+    <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
+    <button class="sb-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
+
+    <div class="sb-label">Inventory</div>
+    <button class="sb-btn" onclick="showSection('kits',this)">📦 Kit Inventory</button>
+    <button class="sb-btn" onclick="showSection('bottles',this)">🧪 Bottle Inventory</button>
+    <button class="sb-btn" onclick="showSection('kitstk',this)">🗃️ Lab Kit Stock</button>
+    <button class="sb-btn" onclick="showSection('log',this)">📋 Activity Log</button>
+
+    <div class="sb-label">Actions</div>
+    <button class="sb-btn" onclick="openModal('send')">📤 Send Kits</button>
+    <button class="sb-btn" onclick="openModal('initial')">➕ Set Stock</button>
+    <button class="sb-btn" onclick="window.open('/index.html','_blank')">🧪 Field App</button>
+
+    <div class="sb-label" id="sb-admin-label" style="display:none;">Clients</div>
+    <button class="sb-btn" id="sb-clients-btn" onclick="showSection('clients',this)" style="display:none;">👥 Clients &amp; Codes</button>
+    <button class="sb-btn" id="sb-users-btn" onclick="showSection('users',this)" style="display:none;">👤 Users</button>
+    <button class="sb-btn" id="sb-testtypes-btn" onclick="showSection('testtypes',this)" style="display:none;">🧪 Test Types</button>
+
+
+  </div>
+  <div style="padding:14px 16px;border-top:1px solid rgba(255,255,255,0.1);">
+    <div style="font-size:12px;color:var(--water);margin-bottom:8px;" id="sb-username"></div>
+    <button onclick="Auth.logout()" style="width:100%;padding:8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:var(--white);border-radius:6px;font-size:12px;cursor:pointer;font-family:var(--font-body);">Sign Out</button>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<button id="sb-expand" onclick="toggleSidebar()" title="Show sidebar">☰</button>
+<div style="flex:1;min-width:0;overflow-x:hidden;">
+<main>
+
+  <!-- ══ OVERVIEW ══════════════════════════════════════════════════════════ -->
+  <div class="section active" id="section-overview">
+
+    <div class="summary-row">
+      <div class="stat-card teal">
+        <div class="stat-label">Kits in Field</div>
+        <div class="stat-value" id="ov-in-field">0</div>
+        <div class="stat-sub">Across all clients</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-label">Sampled / Pending</div>
+        <div class="stat-value" id="ov-sampled">0</div>
+        <div class="stat-sub">Not yet received</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Received This Month</div>
+        <div class="stat-value" id="ov-received">0</div>
+        <div class="stat-sub" id="ov-month">—</div>
+      </div>
+      <div class="stat-card navy">
+        <div class="stat-label">Kits Assemblable</div>
+        <div class="stat-value" id="ov-assemblable">0</div>
+        <div class="stat-sub">From bottle stock</div>
+      </div>
+    </div>
+
+    <!-- BOTTLE STOCK OVERVIEW -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <div class="card-title">🧪 Bottle Stock Overview</div>
+        <button class="action-btn" onclick="showSection('bottles',document.getElementById('tab-bottles'))">Manage →</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;" id="ov-bottle-row"></div>
+    </div>
+
+    <!-- HIGH STOCK ALERT -->
+    <div class="alert-banner alert-green" id="alert-high">
+      <span style="font-size:20px;">📦</span>
+      <div>
+        <div style="font-weight:700;color:var(--success);font-size:14px;">Kits Ready to Send</div>
+        <div id="alert-high-msg" style="font-size:13px;color:var(--slate);margin-top:2px;"></div>
+      </div>
+    </div>
+
+    <!-- TOP 5 BY RECEIVED THIS MONTH -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Top Clients — Received This Month</div></div>
+      <table>
+        <thead><tr><th>Client</th><th class="c">In Stock</th><th class="c">Pending</th><th class="c">Recv'd This Month</th></tr></thead>
+        <tbody id="ov-top-clients"></tbody>
+      </table>
+    </div>
+
+    <!-- LOW STOCK — BOTTOM 5 -->
+    <div class="section-hdr">
+      <div class="section-hdr-title" style="color:var(--error);">⚠️ Lowest Kit Inventory</div>
+      <div style="font-size:12px;color:var(--slate);">Bottom 5 clients by kits in stock</div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Client</th><th class="c">Kits in Stock</th><th class="c">Alert</th><th>Action</th></tr></thead>
+        <tbody id="ov-low-clients"></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ══ REVIEW QUEUE ══════════════════════════════════════════════════════ -->
+  <div class="section" id="section-review">
+    <div class="section-hdr">
+      <div class="section-hdr-title">🔬 Review Queue</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ok" style="padding:8px 18px;font-size:13px;" onclick="triggerScanNow(this)">⚡ Check Drive Now</button>
+        <button class="action-btn" onclick="refreshQueueSafe()">↻ Refresh Queue</button>
+
+        <span id="create-cs-status" style="font-size:12px;color:var(--slate);"></span>
+      </div>
+    </div>
+
+    <div class="summary-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">
+      <div class="stat-card green" style="padding:16px 20px;">
+        <div class="stat-label">Approved Today</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-top:4px;">
+          <div>
+            <div class="stat-value" id="rq-today" style="margin:0;">0</div>
+            <div class="stat-sub" id="rq-today-date" style="margin-top:2px;">—</div>
+          </div>
+          <div id="rq-today-breakdown" style="flex:1;font-size:11px;color:var(--slate);padding-left:12px;border-left:1px solid rgba(0,0,0,0.08);display:none;margin-top:2px;"></div>
+        </div>
+      </div>
+      <div class="stat-card teal" style="padding:16px 20px;">
+        <div class="stat-label">Northern Run</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-top:4px;">
+          <div>
+            <div class="stat-value" id="rq-high-conf" style="margin:0;">0</div>
+            <div class="stat-sub" style="margin-top:2px;">Madden, Yankee, Defender, Elliott's</div>
+          </div>
+          <div id="rq-northern-breakdown" style="flex:1;font-size:11px;color:var(--slate);padding-left:12px;border-left:1px solid rgba(0,0,0,0.08);display:none;margin-top:2px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PENDING SCANS — editable COC cards -->
+    <div id="rq-scan-cards" style="display:flex;flex-direction:column;gap:16px;margin-bottom:20px;"></div>
+
+    <!-- RECENTLY APPROVED -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">✅ Recently Approved</div></div>
+      <table>
+        <thead><tr><th>Lab ID</th><th>Customer</th><th>Tests</th><th>Approved By</th></tr></thead>
+        <tbody id="rq-approved-body"><tr><td colspan="5"><div class="empty-state">No approvals yet.</div></td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ══ CLIENTS & CODES ═══════════════════════════════════════════════════ -->
+  <div class="section" id="section-clients">
+    <div class="section-hdr">
+      <div class="section-hdr-title">👥 Clients &amp; Codes</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ok" style="padding:8px 16px;font-size:13px;" onclick="openAddClientModal()">+ Add Client</button>
+        <button class="action-btn" onclick="loadClients()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <!-- Top scrollbar: always visible, syncs with table -->
+    <div id="clients-top-scroll" style="overflow-x:scroll;overflow-y:hidden;margin-bottom:4px;border-radius:4px;">
+      <div id="clients-top-scroll-inner" style="height:1px;min-height:1px;"></div>
+    </div>
+    <div id="clients-table-wrap" style="overflow-x:auto;border-radius:10px;border:1px solid var(--border);">
+      <table id="clients-table" style="min-width:1400px;width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="position:sticky;left:0;z-index:3;background:var(--navy);">Client Name</th>
+            <th>Code</th>
+            <th>Abbrev</th>
+            <th>Report Email</th>
+            <th>Billing Email</th>
+            <th>Phone #</th>
+            <th>Billing Address</th>
+            <th>Billing Pref</th>
+            <th>Frequency</th>
+            <th>Pricing</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="clients-body">
+          <tr><td colspan="9"><div class="empty-state">Loading...</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+
+  </div>
+
+  <!-- Add/Edit Client Modal -->
+  <div id="client-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:12px;padding:28px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div style="font-size:18px;font-weight:700;color:var(--navy);" id="client-modal-title">Add Client</div>
+        <button onclick="closeClientModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--slate);">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-field" style="grid-column:1/-1;">
+          <label for="cm-name">Client Name *</label>
+          <input type="text" id="cm-name" placeholder="e.g. A-Z Water Systems" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-code">Client Code</label>
+          <input type="text" id="cm-code" placeholder="e.g. AZW0224" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-abbrev">Abbreviation</label>
+          <input type="text" id="cm-abbrev" placeholder="e.g. AZW" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-main-contact">Main Contact</label>
+          <input type="text" id="cm-main-contact" placeholder="First name" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-dba">DBA Name</label>
+          <input type="text" id="cm-dba" placeholder="Trade name (if different)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-report-email">Report Email Address</label>
+          <input type="email" id="cm-report-email" placeholder="reports@example.com" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-billing-email">Billing Email Address</label>
+          <input type="email" id="cm-billing-email" placeholder="billing@example.com" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-phone">Phone #</label>
+          <input type="tel" id="cm-phone" placeholder="207-555-0100" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-billing-pref">Billing Preference</label>
+          <select id="cm-billing-pref" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
+            <option value="">— Select —</option>
+            <option value="E-mail">E-mail</option>
+            <option value="Snail Mail">Snail Mail</option>
+            <option value="Auto Charge CC">Auto Charge CC</option>
+            <option value="Auto ACH">Auto ACH</option>
+            <option value="Pre-Pay">Pre-Pay</option>
+            <option value="Include Payment with Sample">Include Payment with Sample</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="cm-frequency">Frequency</label>
+          <select id="cm-frequency" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
+            <option value="">— Select —</option>
+            <option value="Monthly">Monthly</option>
+            <option value="Semi-Monthly">Semi-Monthly</option>
+            <option value="Weekly">Weekly</option>
+            <option value="PAYG">PAYG</option>
+            <option value="Bi-Weekly">Bi-Weekly</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="cm-pricing">Pricing Category</label>
+          <select id="cm-pricing" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
+            <option value="">— Select —</option>
+            <option value="WQ Pricing">WQ Pricing</option>
+            <option value="Inspector Pricing">Inspector Pricing</option>
+            <option value="Public Pricing">Public Pricing</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="cm-status">Status</label>
+          <select id="cm-status" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="form-field" style="grid-column:1/-1;">
+          <label for="cm-billing-addr">Billing Address <span style="font-size:11px;color:var(--slate);font-weight:400;">(Street, City, State Zip)</span></label>
+          <input type="text" id="cm-billing-addr" placeholder="1164 Lewiston Rd, New Gloucester, ME 04260" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-start-date">Start Date</label>
+          <input type="date" id="cm-start-date" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div class="form-field">
+          <label for="cm-radon-lic">Radon Lic #</label>
+          <input type="text" id="cm-radon-lic" placeholder="e.g. SMC419" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+      </div>
+      <div id="cm-status-msg" style="font-size:13px;margin:12px 0;min-height:18px;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
+        <button class="action-btn" onclick="closeClientModal()">Cancel</button>
+        <button class="btn-ok" style="padding:10px 24px;" onclick="saveClient()">💾 Save Client</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ COC BATCH GENERATOR ══════════════════════════════════════════════════ -->
+  <div class="section" id="section-coc">
+    <div class="section-hdr">
+      <div class="section-hdr-title">📋 COC Batch Generator</div>
+      <div style="font-size:12px;color:var(--slate);">Monday morning kit packing — generates pre-barcoded COC forms</div>
+    </div>
+
+    <!-- Generate Card -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><div class="card-title">Generate Batch</div></div>
+      <div style="padding:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Company</label>
+            <select id="coc-client" aria-label="Client company" style="width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);">
+              <option value="ward-water">Critical Plumbing / Ward Water</option>
+              <option value="maine-radon">Maine Radon & Environmental</option>
+              <option value="downeast">Downeast Home Inspections</option>
+              <option value="madden">Madden Home Inspections</option>
+              <option value="yankee">Yankee Home Inspections</option>
+              <option value="az-water">A-Z Water Systems</option>
+              <option value="fontus">Fontus Water</option>
+              <option value="main-choice">Main Choice Inspections</option>
+              <option value="defender">Defender Home Inspections</option>
+              <option value="elliotts">Elliott's Information Service</option>
+              <option value="campbell">Campbell Property Inspections</option>
+              <option value="onpoint">OnPoint Home Inspections</option>
+              <option value="peter-mason">Peter Mason / Friend Real Estate</option>
+              <option value="advanced">Advanced Inspections</option>
+              <option value="nova-enviro">Nova Analytic Labs</option>
+              <option value="evergreen">Evergreen Inspections</option>
+              <option value="fpi-chancorp">FPI / ChanCorp</option>
+              <option value="super-inspector">Super Inspector</option>
+              <option value="all-in-one">All in One Home Inspections</option>
+              <option value="general">General / Walk-in (no company)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Number of COC Forms</label>
+            <input type="number" id="coc-quantity" aria-label="Number of COC forms" value="10" min="1" max="50"
+              style="width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            <div style="font-size:11px;color:var(--slate);margin-top:4px;">Max 50 per batch</div>
+          </div>
+        </div>
+        <button class="btn-ok" style="width:100%;padding:14px;font-size:15px;" onclick="generateCOCBatch(this)">
+          📄 Generate &amp; Download COC PDF
+        </button>
+        <div id="coc-status" style="font-size:13px;color:var(--slate);margin-top:12px;min-height:18px;"></div>
+      </div>
+    </div>
+
+    <!-- Visual Preview Editor -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div class="card-title">🎯 Barcode &amp; Text Editor</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="coc-preview-tab" aria-label="COC preview tab" onchange="loadPreviewForTab(this.value)"
+            style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font-body);">
+            <option value="COC_Default">COC_Default</option>
+            <option value="COC_WardWater">COC_WardWater</option>
+            <option value="COC_Fontus">COC_Fontus</option>
+            <option value="COC_AZW">COC_AZW</option>
+            <option value="COC_MERW">COC_MERW</option>
+          </select>
+          <button class="action-btn" onclick="saveCOCPreview()">💾 Save</button>
+          <button class="action-btn" onclick="loadCOCSettings()">↻ Refresh</button>
+        </div>
+      </div>
+      <div style="padding:20px;">
+        <p style="font-size:12px;color:var(--slate);margin:0 0 12px;">
+          Drag the barcode to position it. Use the controls below to resize it. Add text overlays that get stamped onto every COC. All positions are in <strong>PDF points</strong> (72 pts = 1 inch). Landscape page = 792 × 612 pts.
+        </p>
+
+        <!-- Preview canvas -->
+        <div style="display:flex;gap:20px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:300px;">
+            <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;margin-bottom:6px;">Page Preview (drag items to reposition)</div>
+            <div id="coc-preview-wrap" style="position:relative;width:100%;max-width:600px;background:#f5f5f5;border:2px solid var(--border);border-radius:6px;overflow:hidden;cursor:crosshair;"
+              onclick="previewAddTextClick(event)">
+              <!-- Landscape aspect ratio box: 792/612 = 1.294 -->
+              <div id="coc-preview-area" style="position:relative;width:100%;padding-top:77.3%;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <!-- Barcode element -->
+                <div id="coc-preview-barcode"
+                  style="position:absolute;background:rgba(0,120,200,0.15);border:2px dashed #0078c8;border-radius:4px;cursor:move;display:flex;align-items:center;justify-content:center;font-size:10px;color:#0078c8;font-weight:700;user-select:none;"
+                  onmousedown="startDragBarcode(event)">
+                  BARCODE
+                </div>
+                <!-- Text overlays rendered here dynamically -->
+              </div>
+              <div style="position:absolute;bottom:4px;right:6px;font-size:10px;color:#aaa;">Click empty area to add text</div>
+            </div>
+          </div>
+
+          <!-- Controls panel -->
+          <div style="width:240px;flex-shrink:0;">
+            <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;margin-bottom:8px;">Barcode Position &amp; Size</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+              <div>
+                <label style="font-size:11px;color:var(--slate);display:block;margin-bottom:3px;">X (from left)</label>
+                <input type="number" id="coc-pos-x" aria-label="X position" min="0" max="792" oninput="updatePreviewFromInputs()"
+                  style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--slate);display:block;margin-bottom:3px;">Y (from top)</label>
+                <input type="number" id="coc-pos-y" aria-label="Y position" min="0" max="612" oninput="updatePreviewFromInputs()"
+                  style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--slate);display:block;margin-bottom:3px;">Width</label>
+                <input type="number" id="coc-pos-w" aria-label="Width" min="30" max="400" oninput="updatePreviewFromInputs()"
+                  style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+              </div>
+              <div>
+                <label style="font-size:11px;color:var(--slate);display:block;margin-bottom:3px;">Height</label>
+                <input type="number" id="coc-pos-h" aria-label="Height" min="10" max="100" oninput="updatePreviewFromInputs()"
+                  style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" />
+              </div>
+            </div>
+
+            <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;margin-bottom:8px;padding-top:10px;border-top:1px solid var(--border);">Text Overlays</div>
+            <div id="coc-overlays-list" style="margin-bottom:8px;max-height:200px;overflow-y:auto;"></div>
+            <div style="font-size:11px;color:var(--slate);">💡 Or click on the preview to add text at that position</div>
+          </div>
+        </div>
+
+        <div id="coc-preview-status" style="font-size:12px;color:var(--slate);margin-top:10px;min-height:16px;"></div>
+      </div>
+    </div>
+
+    <!-- Text Overlay Edit Modal -->
+    <div id="overlay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:24px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:16px;" id="overlay-modal-title">Add Text</div>
+        <input type="hidden" id="overlay-edit-idx" value="-1" />
+        <div class="form-field" style="margin-bottom:12px;">
+          <label for="overlay-text">Text</label>
+          <input type="text" id="overlay-text" placeholder="e.g. Chanalytical Laboratories"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div><label style="font-size:11px;color:var(--slate);">X (from left)</label>
+            <input type="number" id="overlay-x" aria-label="X position" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" /></div>
+          <div><label style="font-size:11px;color:var(--slate);">Y (from top)</label>
+            <input type="number" id="overlay-y" aria-label="Y position" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" /></div>
+          <div><label style="font-size:11px;color:var(--slate);">Font size (pts)</label>
+            <input type="number" id="overlay-size" aria-label="Font size" value="10" min="6" max="48" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;" /></div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="overlay-bold" aria-label="Bold text" /> Bold
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="action-btn" onclick="closeOverlayModal()">Cancel</button>
+          <button class="action-btn" id="overlay-delete-btn" style="color:var(--error);border-color:var(--error);display:none;" onclick="deleteOverlay()">🗑 Delete</button>
+          <button class="btn-ok" style="padding:8px 20px;" onclick="saveOverlay()">Save Text</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ RESULTS ENTRY ════════════════════════════════════════════════════════ -->
+  <div class="section" id="section-results" style="display:none!important;"></div>
+
+
+    <!-- ══ REPORT GENERATION ════════════════════════════════════════════════════ -->
+  <div class="section" id="section-reports">
+    <div class="section-hdr">
+      <div class="section-hdr-title">📄 Report Generation</div>
+      <div style="font-size:12px;color:var(--slate);">Generate, review, authorize and send reports to clients</div>
+    </div>
+
+    <!-- Import buttons -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><div class="card-title">📥 Import Lab Results</div></div>
+      <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
+          ⚗️ Import ICP-MS Results
+        </button>
+        <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
+          📋 Import Control Sheet
+        </button>
+        <span id="import-status" style="font-size:13px;color:var(--slate);flex:1;"></span>
+      </div>
+    </div>
+
+    <!-- Lab ID selector -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="padding:18px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:14px;align-items:flex-end;margin-bottom:10px;">
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">
+              Pending Lab IDs
+              <button onclick="loadPendingLabIds()" style="background:none;border:none;color:var(--teal);font-size:11px;cursor:pointer;margin-left:6px;">↻ Refresh</button>
+            </label>
+            <select id="rpt-labid-select" aria-label="Select pending Lab ID" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);" onchange="onReportLabIdChange()">
+              <option value="">— Loading Lab IDs... —</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">Or type Lab ID manually</label>
+            <input type="text" id="rpt-labid-manual" aria-label="Type Lab ID manually" placeholder="e.g. 070726-009" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;" />
+          </div>
+<button class="btn-ok" style="padding:11px 24px;height:42px;" onclick="generateReportPreview()">Generate Report</button>
+        </div>
+        <div id="rpt-labid-detail" style="font-size:12px;color:var(--slate);min-height:16px;"></div>
+      </div>
+      <div id="rpt-gen-status" style="padding:0 18px 14px;font-size:13px;color:var(--slate);display:none;"></div>
+    </div>
+
+    <!-- EDITABLE REPORT PREVIEW -->
+    <div id="rpt-preview-wrapper" style="display:none;margin-bottom:16px;">
+
+      <!-- Action bar above report -->
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <div style="font-size:13px;color:var(--slate);flex:1;">Click any result, name, or comment to edit it directly on the report.</div>
+        <button class="action-btn" onclick="resetReportEdits()" style="color:var(--warning);border-color:var(--warning);">↺ Reset Changes</button>
+      </div>
+
+      <!-- Report container — styled to match COA template -->
+      <div id="rpt-live-preview" style="background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
+
+      <!-- Authorization bar -->
+      <div style="background:white;border:1px solid var(--border);border-radius:10px;padding:20px 36px;margin-top:12px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow);">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:180px;">
+          <label style="font-size:13px;font-weight:700;white-space:nowrap;">Authorized By:</label>
+          <input type="text" id="rpt-authorized-by" aria-label="Authorized by" readonly style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;font-family:Arial;background:var(--off-white);color:var(--navy);cursor:default;" />
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <label style="font-size:13px;font-weight:700;white-space:nowrap;">Review Date:</label>
+          <input type="date" id="rpt-review-date" aria-label="Review date" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;" />
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px;">
+          <label style="font-size:13px;font-weight:700;white-space:nowrap;">Send To:</label>
+          <input type="text" inputmode="email" autocomplete="off" spellcheck="false" id="rpt-send-email-input" aria-label="Send to email" placeholder="client@example.com" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;" />
+        </div>
+      </div>
+
+      <!-- Send / Save buttons -->
+      <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap;">
+        <button class="btn-ok" style="padding:12px 28px;background:var(--navy);" onclick="saveAndSendReport(false)">
+          🖨️ Save PDF (Print)
+        </button>
+        <button class="btn-ok" style="padding:12px 28px;" onclick="saveAndSendReport(true)">
+          📧 Save PDF &amp; Email to Client
+        </button>
+        <div id="rpt-send-status" style="font-size:13px;color:var(--slate);padding:12px 0;"></div>
+      </div>
+    </div>
+
+    <!-- Recently Generated -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Recently Generated This Session</div></div>
+      <div id="rpt-history" style="padding:16px;font-size:13px;color:var(--slate);">No reports generated yet this session.</div>
+    </div>
+  </div>
+
+  <!-- ══ KIT INVENTORY ═════════════════════════════════════════════════════ -->
+  <div class="section" id="section-kits">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Kit Inventory — All Clients</div>
+        <div style="font-size:12px;color:var(--slate);">Updated: <span id="kit-updated">—</span></div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Client</th><th>Tier</th>
+            <th class="c">In Stock</th><th class="c">Sampled</th>
+            <th class="c">Total Sent</th><th class="c">Total Recv'd</th>
+            <th>Last Activity</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="kit-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══ BOTTLE INVENTORY ══════════════════════════════════════════════════ -->
+  <div class="section" id="section-bottles">
+
+    <div class="assemble-bar">
+      <div>
+        <div style="font-weight:700;color:var(--navy);font-size:15px;">Kits assemblable from current stock</div>
+        <div style="font-size:12px;color:var(--slate);margin-top:3px;">1 bacteria + 2 metals + 1 radon + 1 unmade box per kit. Use "+ Add" on a kit brand in Lab Kit Stock to assemble.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="font-size:28px;font-weight:700;color:var(--teal);" id="bottles-assemblable">0</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">Bottles & Boxes</div></div>
+      <div class="bottle-grid" id="bottle-grid"></div>
+    </div>
+
+  </div>
+
+  <!-- ══ ACTIVITY LOG ══════════════════════════════════════════════════════ -->
+  <div class="section" id="section-log">
+    <div class="section-hdr">
+      <div class="section-hdr-title">Activity Log</div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Date</th><th>Client / Item</th><th>Type</th><th class="r">Qty</th><th>Notes</th><th>By</th></tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══ LAB KIT STOCK ═══════════════════════════════════════════════════ -->
+  <div class="section" id="section-kitstk">
+    <div class="section-hdr">
+      <div class="section-hdr-title">🗃️ Lab Kit Stock — By Company</div>
+      <div style="font-size:12px;color:var(--slate);">Track assembled kits ready to send by brand</div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Assembled Kits by Brand</div>
+        <div style="font-size:12px;color:var(--slate);">Track how many assembled kits are allocated per client</div>
+      </div>
+      <div class="bottle-grid" id="kitstk-grid"></div>
+    </div>
+  </div>
+
+  <!-- ══ PROFILE ══════════════════════════════════════════════════════════ -->
+
+
+
+  <!-- ══ USERS ════════════════════════════════════════════════════════════ -->
+  <div class="section" id="section-users">
+    <!-- Registration Codes -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div class="card">
+        <div class="card-header"><div class="card-title">🔑 Lab Staff Code</div></div>
+        <div style="padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <code style="font-size:20px;padding:10px 18px;background:var(--off-white);border-radius:8px;letter-spacing:2px;font-family:monospace;">CHANLAB2024</code>
+          <div style="font-size:13px;color:var(--slate);">Give to lab staff when creating their account.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🔐 Admin Code</div></div>
+        <div style="padding:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <code id="admin-code-display" style="font-size:20px;padding:10px 18px;background:var(--off-white);border-radius:8px;letter-spacing:2px;font-family:monospace;">••••••••</code>
+          <button class="action-btn" onclick="toggleAdminCode(this)" style="flex:none;">👁 Reveal</button>
+          <div style="font-size:13px;color:var(--slate);">Keep confidential.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👤 User Accounts</div>
+        <button class="btn-ok" onclick="openCreateUser()" style="padding:8px 16px;font-size:13px;">+ Create Account</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:var(--navy);color:white;">
+          <th style="padding:10px 12px;text-align:left;">Name</th>
+          <th style="padding:10px 12px;text-align:left;">Email</th>
+          <th style="padding:10px 12px;text-align:left;">Role</th>
+          <th style="padding:10px 12px;text-align:left;">Code</th>
+          <th style="padding:10px 12px;text-align:left;">Status</th>
+          <th style="padding:10px 12px;text-align:left;">Created By</th>
+          <th style="padding:10px 12px;"></th>
+        </tr></thead>
+        <tbody id="users-body"><tr><td colspan="7"><div class="empty-state">Loading...</div></td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Floating dropdown menu (rendered outside table to avoid clipping) -->
+    <div id="user-dropdown" style="display:none;position:fixed;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);z-index:9999;min-width:160px;padding:4px 0;"></div>
+
+    <!-- Create User Modal -->
+    <div id="modal-create-user" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:28px;width:420px;max-width:95vw;">
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px;">Create Account</div>
+        <div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Temp password will be: <strong>W3lcom3!</strong></div>
+        <div class="err" id="create-user-err" style="margin-bottom:12px;"></div>
+        <div class="form-field"><label for="cu-name">Full Name</label><input type="text" id="cu-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
+        <div class="form-field"><label for="cu-email">Email</label><input type="text" id="cu-email" inputmode="email" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
+        <div class="form-field"><label for="cu-role">Role</label>
+          <select id="cu-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
+            <option value="office">Office Staff</option>
+            <option value="lab">Lab Staff</option>
+            <option value="admin">Admin</option>
+            <option value="wq">WQ/Inspector</option>
+            <option value="public">Public</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="cu-code">Registration Code (optional)</label><input type="text" id="cu-code" autocomplete="new-password" placeholder="e.g. FPI0823" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;"/></div>
+        <div style="background:#f8f9fa;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;">
+          📋 Temp password: <strong id="cu-temp-preview">—</strong><br>
+          <span style="color:var(--slate);font-size:11px;">Share this with the user verbally. They'll set a new password on first login.</span>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn-ok" onclick="doCreateUser()" style="flex:1;">Create Account</button>
+          <button class="btn-cancel" onclick="document.getElementById('modal-create-user').style.display='none'" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="modal-edit-user" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:28px;width:420px;max-width:95vw;">
+        <div style="font-size:18px;font-weight:700;margin-bottom:16px;">Edit Account</div>
+        <input type="hidden" id="edit-orig-email"/>
+        <div class="form-field"><label for="edit-name">Full Name</label><input type="text" id="edit-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
+        <div class="form-field"><label for="edit-email">Email</label><input type="text" id="edit-email" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
+        <div class="form-field"><label for="edit-role">Role</label>
+          <select id="edit-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
+            <option value="office">Office Staff</option>
+            <option value="lab">Lab Staff</option>
+            <option value="admin">Admin</option>
+            <option value="wq">WQ/Inspector</option>
+            <option value="public">Public</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="edit-code">Registration Code</label><input type="text" id="edit-code" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;"/></div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn-ok" onclick="doEditUser()" style="flex:1;">Save Changes</button>
+          <button class="btn-cancel" onclick="document.getElementById(\'modal-edit-user\').style.display='none'" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change Role Modal -->
+    <div id="modal-set-role" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:28px;width:380px;max-width:95vw;">
+        <div style="font-size:18px;font-weight:700;margin-bottom:16px;">Change Role</div>
+        <div id="role-email-display" style="font-size:13px;color:var(--slate);margin-bottom:16px;"></div>
+        <div class="form-field"><label for="sr-role">New Role</label>
+          <select id="sr-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
+            <option value="lab">Lab Staff</option>
+            <option value="office">Office Staff</option>
+            <option value="admin">Admin</option>
+            <option value="wq">WQ/Inspector</option>
+            <option value="public">Public</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:20px;">
+          <button class="btn-ok" onclick="doSetRole()" style="flex:1;">Save Role</button>
+          <button class="btn-cancel" onclick="document.getElementById('modal-set-role').style.display='none'" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <div id="modal-reset-pw" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:12px;padding:28px;width:380px;max-width:95vw;">
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Reset Password</div>
+        <div id="resetpw-email-display" style="font-size:13px;color:var(--slate);margin-bottom:12px;"></div>
+        <div style="background:#fff3cd;border-radius:8px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:600;">New temporary password:</div>
+          <div id="reset-pw-preview" style="font-size:20px;font-weight:700;font-family:monospace;margin-top:4px;color:var(--navy);"></div>
+          <div style="font-size:11px;color:var(--slate);margin-top:4px;">Share this with the user. They'll create a new password on next login.</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn-ok" onclick="doResetPw()" style="flex:1;">Reset Password</button>
+          <button class="btn-cancel" onclick="document.getElementById('modal-reset-pw').style.display='none'" style="flex:1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ══ REJECTED SAMPLES ═══════════════════════════════════════════════════ -->
+  <div class="section" id="section-rejected">
+    <div class="card" style="max-width:600px;">
+      <div class="card-header"><div class="card-title">🚫 Reject a Sample</div></div>
+      <div style="padding:20px;">
+        <div style="display:flex;gap:10px;margin-bottom:16px;">
+          <input type="text" id="rej-labid" placeholder="Lab ID (e.g. 070826-001 EXP)"
+            style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;" />
+          <button class="btn-ok" onclick="lookupRejLabId()" style="padding:10px 16px;white-space:nowrap;">Look Up</button>
+        </div>
+        <div id="rej-lookup-result" style="background:var(--off);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;display:none;"></div>
+
+        <div class="form-field">
+          <label>Rejection Type <span style="color:var(--error);">*</span></label>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Timeout" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Timeout
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Missing Information" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Missing Information
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Chlorine" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Chlorine
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Other" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Other
+            </label>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="rej-reason">Reason <span style="color:var(--error);">*</span></label>
+          <textarea id="rej-reason" rows="3" placeholder="Required — explain why the sample is being rejected"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical;"></textarea>
+        </div>
+        <div id="rej-status" style="font-size:13px;min-height:18px;margin-bottom:10px;"></div>
+        <button class="btn-ok" onclick="doRejectSample()" style="background:var(--error);width:100%;padding:12px;">🚫 Reject Sample</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+      <div class="card-header"><div class="card-title">Recent Rejections</div></div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:var(--navy);color:white;">
+          <th style="padding:10px 12px;text-align:left;">Date</th>
+          <th style="padding:10px 12px;text-align:left;">Lab ID</th>
+          <th style="padding:10px 12px;text-align:left;">Type</th>
+          <th style="padding:10px 12px;text-align:left;">Reason</th>
+          <th style="padding:10px 12px;text-align:left;">Rejected By</th>
+        </tr></thead>
+        <tbody id="rej-history"><tr><td colspan="5"><div class="empty-state">Loading...</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <!-- ══ SAMPLE CORRECTION ════════════════════════════════════════════════════ -->
+  <div class="section" id="section-sample-correction">
+    <div class="card" style="max-width:700px;">
+      <div class="card-header"><div class="card-title">✏️ Sample Correction</div></div>
+      <div style="padding:20px;">
+        <p style="margin:0 0 16px;color:var(--slate);font-size:14px;">Look up a Lab ID and edit sample information. Changes will update Archived Intake, COA Master, and RW Master sheets.</p>
+
+        <div style="display:flex;gap:10px;margin-bottom:20px;">
+          <input type="text" id="sc-lookup-id" placeholder="Lab ID (e.g. 072126-003)"
+            style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;"
+            onkeydown="if(event.key==='Enter')lookupSampleForCorrection()" />
+          <button class="btn-ok" onclick="lookupSampleForCorrection()" style="padding:10px 16px;white-space:nowrap;">Look Up</button>
+        </div>
+
+        <div id="sc-lookup-status" style="font-size:13px;color:var(--slate);margin-bottom:12px;min-height:18px;"></div>
+
+        <div id="sc-edit-form" style="display:none;">
+          <!-- Test Type Checkboxes — same style as Review Queue -->
+          <div style="margin-bottom:16px;padding:14px;border:1.5px solid var(--border);border-radius:8px;">
+            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">
+              Test Type <span style="font-size:11px;font-weight:400;color:var(--slate);">(check one package OR individual elements)</span>
+            </div>
+            <div>
+                <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Packages &amp; AIO</div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:14px;">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Basic Safety (FHA)" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Basic Safety (FHA)</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Standard Safety" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Standard Safety</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Expanded Safety (Mortgage Test)" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Expanded Safety (Mortgage Test)</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="WW - Expanded Safety" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> WW - Expanded Safety</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Comprehensive" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Comprehensive</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Pro Plus" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Pro Plus</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="Radon Water" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> Radon Water</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="AIO FHA" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> AIO FHA</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb " value="AIO Portability" onchange="scEnforcePackage(this)" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;"/> AIO Portability</label>
+                </div>
+                <div style="font-size:11px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Individual Elements</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px 20px;margin-bottom:14px;">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Alkalinity" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Alkalinity</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Antimony" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Antimony</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Arsenic, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Arsenic, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Arsenic, Speciation" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Arsenic, Speciation</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Bacteria" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Bacteria</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Bromide" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Bromide</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Cadmium, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Cadmium, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Calcium, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Calcium, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Chloride, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Chloride, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Chromium" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Chromium</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Cobalt" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Cobalt</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Copper, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Copper, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Fluoride" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Fluoride</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Iron, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Iron, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Lead, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Lead, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Magnesium, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Magnesium, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Manganese, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Manganese, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Nitrate" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Nitrate</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Nitrite" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Nitrite</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="pH" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> pH</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Sodium, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Sodium, Total</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Sulfate" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Sulfate</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Tannins" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Tannins</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Total Dissolved Solids (TDS)" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Total Dissolved Solids (TDS)</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Total Hardness" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Total Hardness</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-element-cb" value="Uranium, Total" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Uranium, Total</label>
+                </div>
+                <div style="font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Rejected</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px 20px;">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="Rejected - Timeout" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Rejected - Timeout</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="Rejected - Missing Information" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Rejected - Missing Information</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="Rejected - Chlorine" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Rejected - Chlorine</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="Rejected - Bleach/Chlorinated" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Rejected - Bleach/Chlorinated</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="Rejected - Other" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> Rejected - Other</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="WQ - Reject" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> WQ - Reject</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap;"><input type="checkbox" class="sc-test-cb sc-rej-cb" value="RW - Reject" onchange="scEnforcePackage(this)" style="width:14px;height:14px;flex-shrink:0;cursor:pointer;"/> RW - Reject</label>
+                </div>
+              </div></div>
+          </div>
+          <input type="hidden" id="sc-edit-coaTest" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div class="form-field" style="grid-column:1/-1;">
+              <label>Customer / Company</label>
+              <input type="text" id="sc-edit-customer" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Date Sampled</label>
+              <input type="text" id="sc-edit-dateDrawn" placeholder="MM-DD-YY" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Time Sampled (HH:MM)</label>
+              <input type="text" id="sc-edit-timeDrawn" placeholder="HH:MM" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Date Received</label>
+              <input type="text" id="sc-edit-receivedDate" placeholder="MM-DD-YY" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Time Received (HH:MM)</label>
+              <input type="text" id="sc-edit-receivedTime" placeholder="HH:MM" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field" style="grid-column:1/-1;">
+              <label>Street Address</label>
+              <input type="text" id="sc-edit-location" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>City</label>
+              <input type="text" id="sc-edit-city" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>State</label>
+              <input type="text" id="sc-edit-state" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Zip</label>
+              <input type="text" id="sc-edit-zip" maxlength="5" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+            <div class="form-field">
+              <label>Notes</label>
+              <input type="text" id="sc-edit-notes" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button class="btn-ok" onclick="saveSampleCorrection()" id="sc-save-btn" style="padding:11px 24px;">💾 Save Changes</button>
+            <button class="btn-cancel" onclick="document.getElementById('sc-edit-form').style.display='none';document.getElementById('sc-lookup-status').textContent='';document.getElementById('sc-lookup-id').value='';" style="padding:11px 16px;">Cancel</button>
+            <span id="sc-save-status" style="font-size:13px;color:var(--slate);"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TEST TYPES ══════════════════════════════════════════════════════════ -->
+  <div class="section" id="section-testtypes">
+
+    <!-- Test Packages Card -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <div class="card-title">📦 Test Packages</div>
+        <button class="btn-ok" onclick="openTestTypeModal()" style="padding:8px 16px;font-size:13px;">+ New Package</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:var(--navy);color:white;">
+          <th style="padding:10px 12px;text-align:left;">Name</th>
+          <th style="padding:10px 12px;text-align:left;">Category</th>
+          <th style="padding:10px 12px;text-align:left;">Price</th>
+          <th style="padding:10px 12px;text-align:left;">Lab ID Suffix</th>
+          <th style="padding:10px 12px;text-align:left;">Includes</th>
+          <th style="padding:10px 12px;"></th>
+        </tr></thead>
+        <tbody id="tt-packages-body"><tr><td colspan="6"><div class="empty-state">Loading...</div></td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Individual Elements Card -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔬 Individual Elements</div>
+        <button class="btn-ok" onclick="openElementModal()" style="padding:8px 16px;font-size:13px;">+ New Element</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:var(--navy);color:white;">
+          <th style="padding:10px 12px;text-align:left;">Name</th>
+          <th style="padding:10px 12px;text-align:left;">Abbreviation</th>
+          <th style="padding:10px 12px;text-align:left;">Price</th>
+          <th style="padding:10px 12px;text-align:left;">Status</th>
+          <th style="padding:10px 12px;"></th>
+        </tr></thead>
+        <tbody id="tt-elements-body"><tr><td colspan="5"><div class="empty-state">Loading...</div></td></tr></tbody>
+      </table>
+    </div>
+
+
+  </div>
+
+</main>
+</div><!-- /main content -->
+</div><!-- /flex wrapper -->
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-send">
+  <div class="modal">
+    <div class="modal-title">📦 Send Kits to Client</div>
+    <div class="form-field"><label for="send-client">Client</label><select id="send-client"></select></div>
+    <div class="form-field"><label for="send-qty">Number of Kits</label><input type="number" id="send-qty" min="1" placeholder="e.g. 25" /></div>
+    <div class="form-field"><label for="send-date">Date Sent</label><input type="date" id="send-date" /></div>
+    <div class="form-field"><label for="send-notes">Notes (optional)</label><input type="text" id="send-notes" /></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('send')">Cancel</button><button class="btn-ok" onclick="submitSend()">Send Kits</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-initial">
+  <div class="modal">
+    <div class="modal-title">➕ Set Initial Kit Stock</div>
+    <div class="form-field"><label for="initial-client">Client</label><select id="initial-client"></select></div>
+    <div class="form-field"><label for="initial-qty">Kit Count</label><input type="number" id="initial-qty" min="0" placeholder="e.g. 15" /></div>
+    <div class="form-field"><label for="initial-date">As of Date</label><input type="date" id="initial-date" /></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('initial')">Cancel</button><button class="btn-ok" onclick="submitInitial()">Set Stock</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-adjust">
+  <div class="modal">
+    <div class="modal-title">✏️ Adjust Kit Count</div>
+    <input type="hidden" id="adjust-key" />
+    <div class="form-field"><label>Client</label><div id="adjust-name" style="font-weight:600;color:var(--navy);padding:8px 0;font-size:15px;"></div></div>
+    <div class="form-field"><label for="adjust-type">Type</label><select id="adjust-type"><option value="add">Add (correction/recount)</option><option value="remove">Remove (lost/damaged)</option></select></div>
+    <div class="form-field"><label for="adjust-qty">Quantity</label><input type="number" id="adjust-qty" min="1" /></div>
+    <div class="form-field"><label for="adjust-notes">Reason</label><input type="text" id="adjust-notes" placeholder="e.g. Recount correction" /></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('adjust')">Cancel</button><button class="btn-ok" onclick="submitAdjust()">Apply</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-bottle">
+  <div class="modal">
+    <div class="modal-title" id="bottle-modal-title">Update Stock</div>
+    <input type="hidden" id="bottle-key" />
+    <div class="form-field"><label for="bottle-action">Action</label><select id="bottle-action"><option value="add">Add stock (received shipment)</option><option value="remove">Remove (damaged/expired/used)</option></select></div>
+    <div class="form-field"><label for="bottle-qty">Quantity</label><input type="number" id="bottle-qty" min="1" placeholder="Number of bottles/boxes" /></div>
+    <div class="form-field"><label for="bottle-notes">Notes (optional)</label><input type="text" id="bottle-notes" /></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('bottle')">Cancel</button><button class="btn-ok" onclick="submitBottle()">Update</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-assemble">
+  <div class="modal">
+    <div class="modal-title">🔧 Assemble Kits</div>
+    <div style="font-size:13px;color:var(--slate);margin-bottom:16px;">Each kit: 1 bacteria + 2 metals + 1 radon + 1 box</div>
+    <div class="form-field"><label for="assemble-qty">Number of Kits to Assemble</label><input type="number" id="assemble-qty" min="1" oninput="updateAssemblePreview()" /></div>
+    <div id="assemble-preview" style="background:var(--off-white);border-radius:8px;padding:12px;font-size:13px;color:var(--slate);margin-top:4px;min-height:40px;"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('assemble')">Cancel</button><button class="btn-ok" onclick="submitAssemble()">Assemble</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-kitstk-add">
+  <div class="modal">
+    <div class="modal-title">🗃️ Set Kit Allocation</div>
+    <div class="form-field"><label for="kitstk-client-sel">Client</label><select id="kitstk-client-sel"></select></div>
+    <div class="form-field"><label for="kitstk-qty">Quantity</label><input type="number" id="kitstk-qty" min="0" placeholder="0" /></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('kitstk-add')">Cancel</button>
+      <button class="btn-ok" onclick="submitKitstkAdd()">Set Allocation</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-kitstk-update">
+  <div class="modal">
+    <div class="modal-title" id="kitstk-update-title">Update Kit Stock</div>
+    <input type="hidden" id="kitstk-update-key" />
+    <input type="hidden" id="kitstk-action" />
+    <div id="kitstk-update-hint" style="font-size:12px;color:var(--slate);margin-bottom:14px;padding:8px 12px;background:var(--off-white);border-radius:6px;"></div>
+    <div class="form-field"><label for="kitstk-update-qty">Quantity</label><input type="number" id="kitstk-update-qty" min="1" placeholder="Number of kits" /></div>
+    <div class="form-field" id="kitstk-send-client-row" style="display:none;">
+      <label for="kitstk-send-client">Send To <span style="color:var(--error);">*</span></label>
+      <select id="kitstk-send-client"></select>
+    </div>
+    <div class="form-field"><label for="kitstk-update-notes">Notes (optional)</label><input type="text" id="kitstk-update-notes" placeholder="Optional notes" /></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('kitstk-update')">Cancel</button>
+      <button class="btn-ok" onclick="submitKitstkUpdate()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-review-approve">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-title">✅ Approve & Accession</div>
+    <input type="hidden" id="rv-barcode" />
+    <div id="rv-summary" style="background:var(--off-white);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;"></div>
+    <div class="form-field">
+      <label>Test Type(s) Confirmed</label>
+      <div id="rv-tests-list" style="font-size:13px;color:var(--navy);font-weight:600;padding:8px 0;"></div>
+    </div>
+    <div class="form-field">
+      <label>Lab ID Preview</label>
+      <div id="rv-labid-preview" style="font-family:monospace;font-size:16px;font-weight:700;color:var(--teal);background:var(--teal-light);padding:10px 14px;border-radius:8px;"></div>
+    </div>
+    <div class="form-field"><label for="rv-notes">Notes (optional)</label><input type="text" id="rv-notes" placeholder="Reviewer notes" /></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('review-approve')">Cancel</button>
+      <button class="btn-ok" onclick="confirmAccession()">Approve & Generate Lab ID</button>
+    </div>
+  </div>
+</div>
+
+<!-- OCR REVIEW MODAL -->
+<!-- GENERATE REPORT MODAL -->
+<div class="modal-overlay" id="modal-generate-report">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-title">📄 Generate COA / RW Report</div>
+    <div id="gr-labid-display" style="font-family:monospace;font-size:15px;font-weight:700;color:var(--teal);background:var(--teal-light);padding:8px 12px;border-radius:6px;margin-bottom:16px;"></div>
+    <div class="form-field"><label for="gr-authorized-by">Authorized By</label><input type="text" id="gr-authorized-by" placeholder="Lab staff name" /></div>
+    <div class="form-field"><label for="gr-review-date">Review Date</label><input type="date" id="gr-review-date" /></div>
+    <div id="gr-status" style="font-size:13px;color:var(--slate);margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('generate-report')">Cancel</button>
+      <button class="btn-ok" onclick="generateReport()">Generate &amp; Download</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-ocr-review">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-title">📄 Review OCR Extraction</div>
+    <input type="hidden" id="ocr-file-id" />
+    <div id="ocr-confidence-banner" style="margin-bottom:14px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-field"><label for="ocr-customer">Customer</label><input type="text" id="ocr-customer" /></div>
+      <div class="form-field"><label for="ocr-email">Email</label><input type="text" inputmode="email" autocomplete="off" spellcheck="false" id="ocr-email" /></div>
+      <div class="form-field"><label for="ocr-phone">Phone</label><input type="text" id="ocr-phone" /></div>
+      <div class="form-field"><label for="ocr-date">Date Drawn</label><input type="date" id="ocr-date" /></div>
+      <div class="form-field"><label for="ocr-time">Time Drawn</label><input type="time" id="ocr-time" /></div>
+      <div class="form-field"><label for="ocr-zip">Zip</label><input type="text" id="ocr-zip" /></div>
+    </div>
+    <div class="form-field"><label for="ocr-location">Location</label><input type="text" id="ocr-location" /></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-field"><label for="ocr-city">City</label><input type="text" id="ocr-city" /></div>
+      <div class="form-field"><label for="ocr-state">State</label><input type="text" id="ocr-state" /></div>
+    </div>
+    <div class="form-field"><label for="ocr-tests">Tests (comma-separated)</label><input type="text" id="ocr-tests" /></div>
+    <div class="form-field"><label for="ocr-notes">Notes</label><input type="text" id="ocr-notes" /></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="discardScan()" style="color:var(--error);border-color:var(--error);">Discard (Blank)</button>
+      <button class="btn-ok" onclick="proceedFromOcr()">Looks Good — Continue →</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="auth.js"></script>
+<script>
+  const _session = Auth.requireAuth(['admin', 'lab', 'office']);
+
+  // Fix stale sessions from old builds that incorrectly set isAdmin=true for lab role
+  (function fixStaleSession() {
+    const raw = localStorage.getItem('cha_session');
+    if (!raw) return;
     try {
-      const { fileId, outcome, reviewQueueRow, rowIndex } = await request.json();
-      const row    = reviewQueueRow || rowIndex;
-      const token  = await getToken();
-      const siteId = process.env.SP_SITE_ID;
+      const s = JSON.parse(raw);
+      if (s.role === 'lab' && s.isAdmin === true) {
+        s.isAdmin = false;
+        localStorage.setItem('cha_session', JSON.stringify(s));
+      }
+    } catch (e) {}
+  })();
 
-      if (outcome === 'discarded') {
-        // 1. Delete the Review Queue list entry
-        if (row) {
-          const rqListId = await getListId(siteId, 'Review Queue', token);
-          if (rqListId) {
-            await fetch(`${GRAPH}/sites/${siteId}/lists/${rqListId}/items/${row}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${token}` },
-            }).catch(e => context.log('[mark-scan] RQ delete failed:', e.message));
+  // ── CLIENTS ──────────────────────────────────────────────────────────────
+  const CLIENTS = [
+    {key:'ward-water',      name:'Critical Plumbing Inc. a/k/a Ward Water',    tier:'wq',       code:'WARD0823',   email:'office@wardwater.com, Aaronjdion@gmail.com',                                             phone:'207-675-3272', contact:'Casey'},
+    {key:'maine-radon',     name:'Maine Radon & Environmental, LLC',            tier:'inspector',code:'MERW0823',   email:'labs@maineradonwater.com',                                                               phone:'207-503-3888', contact:'Brandon Lussier'},
+    {key:'downeast',        name:'Downeast Home Inspections, LLC',              tier:'inspector',code:'P2P0823',    email:'LussierTeam@pillartopost.com',                                                           phone:'207-749-3775', contact:'Brandon Lussier / Melissa Parker'},
+    {key:'madden',          name:'Madden Home Inspections',                     tier:'inspector',code:'MHI0226',    email:'maddenhomeinspection@gmail.com',                                                         phone:'207-989-5010', contact:'Kathy Madden / Tim Madden'},
+    {key:'yankee',          name:'Yankee Home Inspections',                     tier:'inspector',code:'MHI0226',    email:'yankeehomeinspections@gmail.com',                                                        phone:'207-659-2853', contact:'Eric J Martins'},
+    {key:'az-water',        name:'A-Z Water Systems',                           tier:'wq',       code:'AZW0224',    email:'benoit@a-zwatersystems.com',                                                             phone:'207-653-6923', contact:'Benoit'},
+    {key:'fontus',          name:'Fontus Water',                                tier:'wq',       code:'FONT0823',   email:'labtests@fontusH2O.com',                                                                 phone:'207-865-8165', contact:''},
+    {key:'main-choice',     name:'Main Choice Inspections, Inc.',               tier:'inspector',code:'MCI0823',    email:'labs@mainchoiceinspections.com',                                                         phone:'207-312-3403', contact:'Bill / Karriann'},
+    {key:'defender',        name:'Defender Home Inspections, Inc.',             tier:'inspector',code:'DHI0226',    email:'info@defenderme.com',                                                                    phone:'207-745-3900', contact:'Jeff Shirland'},
+    {key:'elliotts',        name:"Elliott's Information Service LLC",           tier:'inspector',code:'EIS0226',    email:'Bill@eisllc.org',                                                                        phone:'207-551-4240', contact:'Bill Elliot'},
+    {key:'campbell',        name:'Campbell Property Inspections',               tier:'inspector',code:'CPI0224',    email:'jeff@maineshomeinspector.com',                                                           phone:'207-441-9802', contact:'Jeff Campbell'},
+    {key:'onpoint',         name:'OnPoint Home Inspections Service',            tier:'inspector',code:'OPH0224',    email:'onpointhomeinspectionsmaine@gmail.com',                                                  phone:'207-807-7195', contact:'Jerry Livingston'},
+    {key:'peter-mason',     name:'Peter Mason / Friend Real Estate Inc.',       tier:'inspector',code:'PMASON23',   email:'peter@pogorealty.com',                                                                   phone:'207-632-8822', contact:'Peter Mason'},
+    {key:'advanced',        name:'Advanced Inspections, Inc',                   tier:'inspector',code:'ADV1123',    email:'tonia@advancedinspectionsinc.com',                                                       phone:'207-248-2690', contact:'Mike McCray'},
+    {key:'nova-enviro',     name:'Nova Analytic Labs (Nova EnviroLabs)',        tier:'wq',       code:'NOV1224',    email:'innovation@nova-analyticlabs.com, zac.smith@testnovalabs.com, scrispo@novaenvirolabs.com',phone:'207-804-7327', contact:'Zac Smith'},
+    {key:'evergreen',       name:'Evergreen Inspections',                       tier:'inspector',code:'EVGRN0325',  email:'info@evergreen-inspections.com',                                                         phone:'207-656-2572', contact:'Oliver Pettengill'},
+    {key:'fpi-chancorp',    name:'FPI / ChanCorp, Inc.',                        tier:'inspector',code:'FPI0823',    email:'fpi@fpi-web.com',                                                                        phone:'207-839-6595', contact:'Denise Durgin'},
+    {key:'super-inspector', name:'Super Inspector',                             tier:'inspector',code:'SUPIN0526',  email:'Assistant@yoursuperinspector.com',                                                       phone:'405-414-6712', contact:'Super Inspector'},
+    {key:'all-in-one',      name:'All in One Home Inspections, LLC',           tier:'inspector',code:'AIOHI0526',  email:'Assistant@yoursuperinspector.com',                                                       phone:'405-414-6712', contact:'Super Inspector'},
+  ];
+
+  // Bottle defs now dynamic from Sheets
+
+  // ── STATE (Sheets-backed, syncs across all devices) ──────────────────────
+  let inventory = {};
+  let kitStock = {};
+  let activityLog = [];
+  // Bottles: keyed by brand+type e.g. 'bacteria', 'metals', 'radon', 'box_chanalytical', 'box_wardwater' etc.
+  let bottles = {
+    bacteria:    { label: 'Bacteria Bottles', count: 0 },
+    metals:      { label: 'Metals Bottles',   count: 0 },
+    radon:       { label: 'Radon Bottles',    count: 0 },
+    unmade_kits: { label: 'Unmade Boxes',     count: 0 },
+  };
+
+  // Kit boxes — tracked in Lab Kit Stock, separate from bottles
+  let kitBoxes = {
+    box_chanalytical: { label: 'Chanalytical Kits', count: 0 },
+    box_wardwater:    { label: 'Ward Water Kits',    count: 0 },
+    box_mineradon:    { label: 'Maine Radon Kits',   count: 0 },
+    box_azwater:      { label: 'A-Z Water Kits',     count: 0 },
+    box_fontus:       { label: 'Fontus Water Kits',  count: 0 },
+  };
+
+  // Which clients use their own branded boxes
+  const BRANDED_BOX_CLIENTS = {
+    'ward-water':  'box_wardwater',
+    'maine-radon': 'box_mineradon',
+    'az-water':    'box_azwater',
+    'fontus':      'box_fontus',
+  };
+
+  // Ensure all clients exist in inventory
+  function ensureInventoryKeys() {
+    CLIENTS.forEach(c => {
+      if (!inventory[c.key]) inventory[c.key] = {inStock:0,sampled:0,totalSent:0,totalReceived:0,lastActivity:null};
+    });
+  }
+
+  // Loading state
+  let _loading = false;
+
+  // ── SHEETS API CALLS ──────────────────────────────────────────────────────
+  async function loadFromSheets() {
+    _loading = true;
+    showLoadingOverlay(true);
+    try {
+      const res = await fetch('/api/inventory-read');
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Sheets read failed (${res.status}): ${errText.slice(0,300)}`);
+      }
+      const data = await res.json();
+
+      // Merge inventory
+      if (data.inventory && Object.keys(data.inventory).length) {
+        inventory = data.inventory;
+      }
+      ensureInventoryKeys();
+
+      // Merge bottles (bacteria, metals, radon only)
+      if (data.bottles && Object.keys(data.bottles).length) {
+        Object.entries(data.bottles).forEach(([key, val]) => {
+          if (bottles[key] !== undefined) {
+            bottles[key].count = val.count || 0;
+          } else if (key.startsWith('box_')) {
+            if (kitBoxes[key] !== undefined) kitBoxes[key].count = val.count || 0;
+          } else {
+            bottles[key] = val;
           }
-        }
-
-        // 2. Delete the PDF file from SharePoint Drive
-        if (fileId) {
-          await deleteSpFile(siteId, fileId, token);
-          context.log('[mark-scan] Deleted PDF:', fileId);
-        }
-
-        // 3. If file is still in Incoming (not yet moved), find and delete it there too
-        // (handles case where scan-folder moved it before we got the ID)
-        return { status: 200, jsonBody: { success: true, driveDeleted: !!fileId } };
-
-      } else {
-        // Mark as processed in Review Queue list
-        if (row) {
-          const rqListId = await getListId(siteId, 'Review Queue', token);
-          if (rqListId) {
-            await fetch(`${GRAPH}/sites/${siteId}/lists/${rqListId}/items/${row}/fields`, {
-              method: 'PATCH',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ Title: 'Processed', ReviewStatus: 'Processed' }),
-            }).catch(e => context.log('[mark-scan] RQ update failed:', e.message));
-          }
-        }
-        return { status: 200, jsonBody: { success: true } };
+        });
       }
 
-    } catch(e) {
-      context.log('[mark-scan-processed] Error:', e.message);
-      return { status: 500, jsonBody: { error: e.message } };
+      // Activity log (newest first)
+      if (data.activityLog && data.activityLog.length) {
+        activityLog = data.activityLog.reverse();
+      }
+
+      const errBanner = document.getElementById('sheets-error-banner');
+      if (errBanner) errBanner.style.display = 'none';
+
+    } catch(err) {
+      console.error('Load failed:', err);
+      ensureInventoryKeys();
+      let errBanner = document.getElementById('sheets-error-banner');
+      if (!errBanner) {
+        errBanner = document.createElement('div');
+        errBanner.id = 'sheets-error-banner';
+        errBanner.style.cssText = 'background:#fdf0ee;border:2px solid #C0392B;border-radius:8px;padding:16px;margin-bottom:16px;font-size:13px;color:#C0392B;';
+        const mainEl = document.querySelector('main');
+        if (mainEl) mainEl.prepend(errBanner);
+      }
+      errBanner.style.display = 'block';
+      errBanner.innerHTML = `
+        <strong>⚠️ Could not connect to Google Sheets</strong><br>
+        <code style="font-size:11px;word-break:break-all;">${err.message}</code><br><br>
+        <strong>Checklist:</strong><br>
+        • Sheet tabs named exactly: <code>Client Inventory</code>, <code>Bottle Inventory</code>, <code>Activity Log</code><br>
+        • Netlify env vars set: <code>SPREADSHEET_ID</code>, <code>GOOGLE_PRIVATE_KEY</code>, <code>GOOGLE_CLIENT_EMAIL</code>, <code>GOOGLE_PRIVATE_KEY_ID</code>, <code>GOOGLE_CLIENT_ID</code><br>
+        • Service account has Editor access to the Sheet<br>
+        • Netlify has been redeployed since last env var change<br><br>
+        <button onclick="loadFromSheets().then(render)" style="padding:8px 16px;background:#C0392B;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">↺ Retry</button>
+        &nbsp;
+        <button onclick="runConnectionDiag()" style="padding:8px 16px;background:#003A5C;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🔍 Run Diagnostic</button>
+      `;
+    }
+    _loading = false;
+    showLoadingOverlay(false);
+  }
+
+  async function runConnectionDiag() {
+    const banner = document.getElementById('sheets-error-banner');
+    if (banner) banner.innerHTML += '<br>🔍 Running diagnostic...';
+    try {
+      const res = await fetch('/api/inventory-read');
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch(e) {}
+      const detail = parsed ? JSON.stringify(parsed, null, 2).slice(0, 500) : text.slice(0, 500);
+      if (banner) banner.innerHTML += `<br><pre style="font-size:10px;background:#fff;padding:8px;border-radius:4px;overflow:auto;max-height:200px;">${detail}</pre>`;
+    } catch(err) {
+      if (banner) banner.innerHTML += `<br>❌ Fetch failed entirely: ${err.message}`;
     }
   }
-});
+
+  async function writeInventory() {
+    try {
+      await fetch('/api/inventory-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'write_inventory', payload: { inventory } }),
+      });
+    } catch(err) { console.error('Inventory write failed:', err); }
+  }
+
+  async function writeBottles() {
+    try {
+      // Write both bottles and kitBoxes to Sheet3
+      const allBottles = { ...bottles, ...kitBoxes };
+      await fetch('/api/inventory-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'write_bottles', payload: { bottles: allBottles } }),
+      });
+    } catch(err) { console.error('Bottles write failed:', err); }
+  }
+
+  function timeNow() {
+    return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+
+  async function logActivity(entry) {
+    if (!entry.time) entry.time = timeNow();
+    activityLog.unshift(entry);
+    try {
+      const res = await fetch('/api/inventory-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log_activity', payload: { entry } }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.error(`[logActivity] admin-write returned ${res.status}: ${txt.slice(0,100)}`);
+        throw new Error(`admin-write ${res.status}`);
+      }
+    } catch(err) {
+      console.error('[logActivity] Failed:', err.message);
+      throw err; // re-throw so caller can catch
+    }
+  }
+
+  function showLoadingOverlay(show) {
+    let el = document.getElementById('loading-overlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'loading-overlay';
+      el.style.cssText = 'position:fixed;inset:0;background:rgba(0,58,92,0.5);z-index:999;display:flex;align-items:center;justify-content:center;';
+      el.innerHTML = '<div style="background:white;border-radius:10px;padding:28px 40px;text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⏳</div><div style="font-weight:600;color:#003A5C;">Loading from Sheets...</div></div>';
+      document.body.appendChild(el);
+    }
+    el.style.display = show ? 'flex' : 'none';
+  }
+
+  function kitsAssemblable() {
+    const bac = bottles.bacteria?.count || 0;
+    const met = bottles.metals?.count || 0;
+    const rad = bottles.radon?.count || 0;
+    const unmade = bottles.unmade_kits?.count || 0;
+    return Math.min(bac, Math.floor(met/2), rad, unmade);
+  }
+
+  function totalKitStock() {
+    return Object.values(kitBoxes).reduce((sum, v) => sum + (v.count||0), 0);
+  }
+
+  function boxCountForClient(clientKey) {
+    const boxKey = BRANDED_BOX_CLIENTS[clientKey] || 'box_chanalytical';
+    return kitBoxes[boxKey]?.count || 0;
+  }
+
+  // ── INIT ──────────────────────────────────────────────────────────────────
+  populateSelects();
+  setDates();
+  // Show Admin section for admin role only
+  if (_session && _session.role === 'admin') {
+    const adminLabel = document.getElementById('sb-admin-label');
+    if (adminLabel) adminLabel.style.display = 'block';
+    const clientsBtn = document.getElementById('sb-clients-btn');
+    if (clientsBtn) clientsBtn.style.display = 'block';
+    const usersBtn = document.getElementById('sb-users-btn');
+    if (usersBtn) usersBtn.style.display = 'block';
+    const ttBtn = document.getElementById('sb-testtypes-btn');
+    if (ttBtn) ttBtn.style.display = 'block';
+    loadClients(); // pre-load so it's ready when the tab is opened
+  }
+
+  // Hide Reports tab for Office Staff role
+  if (_session && _session.role === 'office') {
+    const reportsBtn = document.getElementById('sb-reports');
+    if (reportsBtn) reportsBtn.style.display = 'none';
+    const labLabel = document.getElementById('sb-labtool-label');
+    if (labLabel) labLabel.style.display = 'none';
+  }
+  // ── Client list state — must be declared before loadScanQueue() is called ──
+  let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
+  let _clientsLastLoaded = 0;
+  let _CLIENT_EMAILS     = {}; // map: clientName → report email
+  let _CLIENT_FLAGS      = {}; // map: clientName → warning message shown on scan card
+
+  // Load from Sheets then render
+  loadFromSheets().then(() => {
+    syncFromFieldApp();
+    render();
+  });
+  loadReviewQueue();
+  loadScans();
+  // Pre-load test types so review queue cards show dynamic test type options
+  let _allTestTypes = null;
+  fetch('/api/test-types-read').then(r=>r.json()).then(d=>{ _allTestTypes=d; }).catch(()=>{});
+
+  function populateSelects() {
+    ['send-client','initial-client'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = CLIENTS.map(c=>`<option value="${c.key}">${c.name}</option>`).join('');
+    });
+  }
+
+  function setDates() {
+    const today = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
+    ['send-date','initial-date'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value=today;
+    });
+  }
+
+  function syncFromFieldApp() {
+    // Inventory updates now happen server-side at the moment of submission
+    // (see update-inventory.js). This function is kept as a no-op fallback
+    // for any old local queue data that hasn't been migrated.
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
+  function render() {
+    renderOverview();
+    renderKits();
+    renderBottles();
+    renderKitStk();
+    renderLog();
+    renderCodes();
+    document.getElementById('kit-updated').textContent = new Date().toLocaleTimeString();
+  }
+
+  function renderOverview() {
+    // Summary stats
+    let totalStock=0, totalSampled=0;
+    CLIENTS.forEach(c => {
+      const inv = inventory[c.key]||{};
+      totalStock += inv.inStock||0;
+      totalSampled += inv.sampled||0;
+    });
+
+    const now = new Date();
+    const m = now.getMonth(), y = now.getFullYear();
+    let monthlyRecv = 0;
+    const monthlyByClient = {};
+    activityLog.forEach(e => {
+      if (e.type==='received' && e.date) {
+        const d = new Date(e.date+'T12:00:00');
+        if (d.getMonth()===m && d.getFullYear()===y) {
+          monthlyRecv += e.qty||0;
+          monthlyByClient[e.client] = (monthlyByClient[e.client]||0) + (e.qty||0);
+        }
+      }
+    });
+
+    document.getElementById('ov-in-field').textContent = totalStock;
+    document.getElementById('ov-sampled').textContent = totalSampled;
+    document.getElementById('ov-received').textContent = monthlyRecv;
+    document.getElementById('ov-month').textContent = now.toLocaleString('default',{month:'long',year:'numeric'});
+    document.getElementById('ov-assemblable').textContent = kitsAssemblable();
+
+    // High stock alert
+    const assemblable = kitsAssemblable();
+    const alertHigh = document.getElementById('alert-high');
+    if (assemblable >= 75) {
+      alertHigh.classList.add('visible');
+      document.getElementById('alert-high-msg').textContent = `${assemblable} kits assemblable from current bottle stock — consider sending out to clients.`;
+    } else {
+      alertHigh.classList.remove('visible');
+    }
+
+    // Top 5 by received this month (always show 5 rows)
+    const topSorted = [...CLIENTS]
+      .sort((a,b)=>{
+        const recvDiff = (monthlyByClient[b.key]||0)-(monthlyByClient[a.key]||0);
+        if (recvDiff !== 0) return recvDiff;
+        return (inventory[b.key]?.sampled||0)-(inventory[a.key]?.sampled||0);
+      })
+      .slice(0,5);
+    document.getElementById('ov-top-clients').innerHTML = topSorted.length
+      ? topSorted.map(c => {
+          const inv = inventory[c.key]||{};
+          return `<tr>
+            <td class="client-name">${c.name}</td>
+            <td class="c">${inv.inStock||0}</td>
+            <td class="c">${inv.sampled||0}</td>
+            <td class="c" style="font-weight:700;color:var(--teal);">${monthlyByClient[c.key]||0}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="4"><div class="empty-state">No client data loaded yet.</div></td></tr>';
+
+    // Bottle overview row
+    const ovBottleRow = document.getElementById('ov-bottle-row');
+    if (ovBottleRow) {
+      const ovIcons = {bacteria:'🧫',metals:'⚗️',radon:'☢️',unmade_kits:'📦'};
+      const ovEntries = Object.entries(bottles);
+      ovBottleRow.innerHTML = ovEntries.map(([key, b], i) => {
+        const count = b.count||0;
+        const cls = count>50?'stock-high':count>10?'stock-med':'stock-low';
+        const icon = ovIcons[key] || '🧪';
+        const border = i < ovEntries.length-1 ? 'border-right:1px solid var(--border);' : '';
+        return `<div style="padding:12px 8px;text-align:center;${border}">
+          <div style="font-size:22px;margin-bottom:4px;">${icon}</div>
+          <div class="${cls}" style="font-size:18px;font-weight:700;">${count}</div>
+          <div style="font-size:10px;color:var(--slate);margin-top:2px;">${b.label||key}</div>
+        </div>`;
+      }).join('');
+    }
+
+    // Bottom 5 by kits in stock (lowest first)
+    const lowSorted = [...CLIENTS]
+      .sort((a,b)=>(inventory[a.key]?.inStock||0)-(inventory[b.key]?.inStock||0))
+      .slice(0,5);
+    document.getElementById('ov-low-clients').innerHTML = lowSorted.map(c => {
+      const inv = inventory[c.key]||{};
+      const stock = inv.inStock||0;
+      const cls = stock>=75 ? 'stock-high' : stock>20 ? 'stock-med' : 'stock-low';
+      const flag = stock < 75
+        ? `<span style="background:var(--error-light);color:var(--error);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">⚠ LOW</span>`
+        : `<span style="background:var(--success-light);color:var(--success);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">✓ OK</span>`;
+      return `<tr>
+        <td class="client-name">${c.name}</td>
+        <td class="c"><span class="${cls}" style="font-size:18px;">${stock}</span></td>
+        <td class="c">${flag}</td>
+        <td><button class="action-btn" onclick="quickSend('${c.key}')">Send Kits →</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderKits() {
+    document.getElementById('kit-body').innerHTML = CLIENTS.map(c => {
+      const inv = inventory[c.key]||{inStock:0,sampled:0,totalSent:0,totalReceived:0};
+      const s = inv.inStock||0;
+      const cls = s>=75 ? 'stock-high' : s>20 ? 'stock-med' : 'stock-low';
+      const lowBadge = s<75 ? '<span style="color:var(--error);font-size:10px;font-weight:700;margin-left:5px;">⚠ LOW</span>' : '';
+      const tierL = c.tier==='wq'?'WQ':c.tier==='inspector'?'Inspector':'Public';
+      const tierC = `tier-${c.tier}`;
+      const rowStyle = s<75 ? 'style="background:#fff8f8;"' : '';
+      return `<tr ${rowStyle}>
+        <td class="client-name">${c.name}${lowBadge}</td>
+        <td><span class="tier-badge ${tierC}">${tierL}</span></td>
+        <td class="c"><span class="${cls}" style="font-size:16px;font-weight:700;">${s}</span></td>
+        <td class="c">${inv.sampled>0?`<span style="color:var(--warning);font-weight:700;">${inv.sampled}</span>`:0}</td>
+        <td class="c">${inv.totalSent||0}</td>
+        <td class="c">${inv.totalReceived||0}</td>
+        <td style="font-size:12px;color:var(--slate);">${inv.lastActivity?fmtDate(inv.lastActivity):'—'}</td>
+        <td><div class="btn-group">
+          <button class="action-btn" onclick="quickSend('${c.key}')">+Send</button>
+          <button class="action-btn" onclick="openAdjust('${c.key}')">✏️</button>
+        </div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderBottles() {
+    const assemblable = kitsAssemblable();
+    document.getElementById('bottles-assemblable').textContent = assemblable;
+    const bottleColors = ['#e8f5ee','#e3f2fd','#fff3e0','#f3e5f5'];
+    const bottleIcons = {bacteria:'🧫',metals:'⚗️',radon:'☢️',unmade_kits:'📦'};
+    document.getElementById('bottle-grid').innerHTML = Object.entries(bottles).map(([key, b], i) => {
+      const count = b.count || 0;
+      const cls = count>50?'stock-high':count>10?'stock-med':'stock-low';
+      const icon = bottleIcons[key] || '🧪';
+      const perKit = key==='metals' ? 2 : 1;
+      const subText = key==='unmade_kits' ? `${count} boxes available` : `${perKit} per kit · ${Math.floor(count/perKit)} kits' worth`;
+      return `<div class="bottle-card" style="background:${bottleColors[i%bottleColors.length]};">
+        <div class="bottle-icon">${icon}</div>
+        <div class="bottle-name">${b.label||key}</div>
+        <div class="bottle-count ${cls}">${count}</div>
+        <div class="bottle-sub">${subText}</div>
+        <div class="bottle-actions">
+          <button class="bottle-btn add" onclick="openBottleModal('${key}','add','${(b.label||key).replace(/'/g,'')}')">+ Add</button>
+          <button class="bottle-btn remove" onclick="openBottleModal('${key}','remove','${(b.label||key).replace(/'/g,'')}')">− Remove</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderLog() {
+    const tbody = document.getElementById('log-body');
+    if (!activityLog.length) {
+      tbody.innerHTML='<tr><td colspan="6"><div class="empty-state">No activity yet.</div></td></tr>';
+      return;
+    }
+    const typeL={sent:'Kits Sent',sampled:'Sampled / Pending',received:'Kits Recv\'d',initial:'Initial Stock',adjust:'Adjustment',bottle_add:'Bottles Added',bottle_remove:'Bottles Used',assemble:'Kits Assembled',check_in:'COC Check-In',coc_batch:'COC Batch',report_sent:'Report Sent',report_saved:'Report Saved'};
+    const typeC={sent:'log-sent',sampled:'log-sampled',received:'log-received',initial:'log-initial',adjust:'log-adjust',bottle_add:'log-received',bottle_remove:'log-sampled',assemble:'log-initial',check_in:'log-received',coc_batch:'log-initial',report_sent:'log-sent',report_saved:'log-sampled'};
+    tbody.innerHTML = activityLog.slice(0,150).map(e=>`<tr>
+      <td>${fmtDate(e.date)}${e.time ? '<div style=\"font-size:11px;color:var(--slate);\">'+e.time+'</div>' : ''}</td>
+      <td>${clientName(e.client)||e.client}</td>
+      <td><span class="log-type ${typeC[e.type]||''}">${typeL[e.type]||e.type}</span></td>
+      <td class="r" style="font-weight:600;">${e.qty}</td>
+      <td style="color:var(--slate);font-size:12px;">${e.notes||'—'}</td>
+      <td style="color:var(--slate);font-size:12px;">${e.by ? (clientName(e.by)||e.by) : (e.client ? clientName(e.client)||'' : '—')}</td>
+    </tr>`).join('');
+  }
+
+  function renderCodes() {
+    const codesBody = document.getElementById('codes-body');
+    if (!codesBody) return;
+    const tierL={wq:'WQ',inspector:'Inspector',public:'Public'};
+    const tierC={wq:'tier-wq',inspector:'tier-inspector',public:'tier-public'};
+    if (codesBody) codesBody.innerHTML = CLIENTS.map(c=>`<tr>
+      <td class="client-name">${c.name}<div style="font-size:11px;color:var(--slate);font-weight:400;margin-top:2px;">${c.contact||''}</div></td>
+      <td><span class="tier-badge ${tierC[c.tier]||''}">${tierL[c.tier]||c.tier}</span></td>
+      <td><code>${c.code||'—'}</code></td>
+      <td style="font-size:12px;color:var(--slate);">${c.email||'—'}</td>
+      <td style="font-size:12px;color:var(--slate);white-space:nowrap;">${c.phone||'—'}</td>
+      <td><a href="/?client=${c.key}" target="_blank" style="font-size:12px;color:var(--teal);">Open →</a></td>
+    </tr>`).join('');
+  }
+
+  // ── ACTIONS ───────────────────────────────────────────────────────────────
+  function submitSend() {
+    const key=document.getElementById('send-client').value;
+    const qty=parseInt(document.getElementById('send-qty').value);
+    const date=document.getElementById('send-date').value;
+    const notes=document.getElementById('send-notes').value.trim();
+    if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
+    // Check kit box availability for this client
+    const boxKey = BRANDED_BOX_CLIENTS[key] || 'box_chanalytical';
+    const availBoxes = kitBoxes[boxKey]?.count || 0;
+    if (qty > availBoxes) {
+      showToast(`⚠️ Only ${availBoxes} ${kitBoxes[boxKey]?.label||'kits'} available. Cannot send ${qty}.`);
+      return;
+    }
+    // Deduct kit boxes
+    kitBoxes[boxKey].count = Math.max(0, availBoxes - qty);
+    inventory[key].inStock=(inventory[key].inStock||0)+qty;
+    inventory[key].totalSent=(inventory[key].totalSent||0)+qty;
+    inventory[key].lastActivity=date;
+    const entry={date,client:key,type:'sent',qty,notes,by:getAdminName()};
+    logActivity(entry);
+    closeModal('send');render();writeInventory();writeBottles();
+    showToast(`✅ ${qty} kits sent to ${clientName(key)}`);
+    document.getElementById('send-qty').value='';
+    document.getElementById('send-notes').value='';
+  }
+
+  function submitReceive() {
+    const key=document.getElementById('receive-client').value;
+    const qty=parseInt(document.getElementById('receive-qty').value);
+    const date=document.getElementById('receive-date').value;
+    const notes=document.getElementById('receive-notes').value.trim();
+    if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
+    const fromSampled=Math.min(qty,inventory[key].sampled||0);
+    inventory[key].sampled=Math.max(0,(inventory[key].sampled||0)-fromSampled);
+    inventory[key].inStock=Math.max(0,(inventory[key].inStock||0)-(qty-fromSampled));
+    inventory[key].totalReceived=(inventory[key].totalReceived||0)+qty;
+    inventory[key].lastActivity=date;
+    logActivity({date,client:key,type:'received',qty,notes,by:getAdminName()});
+    closeModal('receive');render();writeInventory();
+    showToast(`✅ ${qty} kits received from ${clientName(key)}`);
+    document.getElementById('receive-qty').value='';
+    document.getElementById('receive-notes').value='';
+  }
+
+  function submitInitial() {
+    const key=document.getElementById('initial-client').value;
+    const qty=parseInt(document.getElementById('initial-qty').value);
+    const date=document.getElementById('initial-date').value;
+    if (isNaN(qty)||qty<0){showToast('Enter a valid quantity.');return;}
+    inventory[key].inStock=qty;
+    inventory[key].lastActivity=date;
+    logActivity({date,client:key,type:'initial',qty,notes:'Initial stock set',by:getAdminName()});
+    closeModal('initial');render();writeInventory();
+    showToast(`✅ ${clientName(key)} set to ${qty} kits`);
+    document.getElementById('initial-qty').value='';
+  }
+
+  function openAdjust(key) {
+    document.getElementById('adjust-key').value=key;
+    document.getElementById('adjust-name').textContent=clientName(key);
+    document.getElementById('adjust-qty').value='';
+    document.getElementById('adjust-notes').value='';
+    openModal('adjust');
+  }
+
+  function submitAdjust() {
+    const key=document.getElementById('adjust-key').value;
+    const type=document.getElementById('adjust-type').value;
+    const qty=parseInt(document.getElementById('adjust-qty').value);
+    const notes=document.getElementById('adjust-notes').value.trim();
+    if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    if (type==='add') inventory[key].inStock=(inventory[key].inStock||0)+qty;
+    else inventory[key].inStock=Math.max(0,(inventory[key].inStock||0)-qty);
+    inventory[key].lastActivity=date;
+    logActivity({date,client:key,type:'adjust',qty,notes:`Manual: ${notes}`,by:getAdminName()});
+    closeModal('adjust');render();writeInventory();
+    showToast('✅ Adjustment applied');
+  }
+
+  function openBottleModal(key, action, label) {
+    document.getElementById('bottle-key').value=key;
+    document.getElementById('bottle-action').value=action;
+    document.getElementById('bottle-modal-title').textContent=`${action==='add'?'➕ Add':'➖ Remove'} ${label}`;
+    document.getElementById('bottle-qty').value='';
+    document.getElementById('bottle-notes').value='';
+    openModal('bottle');
+  }
+
+  function submitBottle() {
+    const key=document.getElementById('bottle-key').value;
+    const action=document.getElementById('bottle-action').value;
+    const qty=parseInt(document.getElementById('bottle-qty').value);
+    const notes=document.getElementById('bottle-notes').value.trim();
+    if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
+    if (!bottles[key]) bottles[key] = {label:key, count:0};
+    if (action==='add') bottles[key].count=(bottles[key].count||0)+qty;
+    else bottles[key].count=Math.max(0,(bottles[key].count||0)-qty);
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const label = bottles[key].label || key;
+    const entry={date,client:label,type:action==='add'?'bottle_add':'bottle_remove',qty,notes:notes||label,by:getAdminName()};
+    logActivity(entry);
+    closeModal('bottle');render();writeBottles();
+    showToast(`✅ ${label} updated`);
+    document.getElementById('bottle-qty').value='';
+  }
+
+  function updateAssemblePreview() {
+    const qty=parseInt(document.getElementById('assemble-qty').value)||0;
+    const max=kitsAssemblable();
+    const el=document.getElementById('assemble-preview');
+    if (qty>max) {el.innerHTML=`<span style="color:var(--error);">⚠️ Not enough stock. Max: ${max} kits.</span>`;return;}
+    el.textContent=qty>0?`Will use: ${qty} bacteria, ${qty*2} metals, ${qty} radon + ${qty} unmade boxes. Adds to branded kit stock when sent.`:'';
+  }
+
+  function submitAssemble() {
+    const qty=parseInt(document.getElementById('assemble-qty').value);
+    const max=kitsAssemblable();
+    if (!qty||qty<1){showToast('Enter a valid quantity.');return;}
+    if (qty>max){showToast(`Not enough stock. Max: ${max}`);return;}
+    if (bottles.bacteria) bottles.bacteria.count=Math.max(0,(bottles.bacteria.count||0)-qty);
+    if (bottles.metals) bottles.metals.count=Math.max(0,(bottles.metals.count||0)-(qty*2));
+    if (bottles.radon) bottles.radon.count=Math.max(0,(bottles.radon.count||0)-qty);
+    if (bottles.unmade_kits) bottles.unmade_kits.count=Math.max(0,(bottles.unmade_kits.count||0)-qty);
+    const date=new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const entry={date,client:'Lab',type:'assemble',qty,notes:`${qty} kits assembled`,by:getAdminName()};
+    logActivity(entry);
+    closeModal('assemble');render();writeInventory();writeBottles();
+    showToast(`✅ ${qty} kits assembled`);
+    document.getElementById('assemble-qty').value='';
+  }
+
+  function quickSend(key){document.getElementById('send-client').value=key;openModal('send');}
+
+  function clearLog(){
+    if(confirm('Clear all activity log entries?')){
+      activityLog=[];renderLog();showToast('Log cleared.');
+    }
+  }
+
+  // ── HELPERS ───────────────────────────────────────────────────────────────
+  function renderKitStk() {
+    const grid = document.getElementById('kitstk-grid');
+    if (!grid) return;
+    const colors = ['#e6f4f6','#e8f5ee','#fff3e0','#f3e5f5','#fdf0ee'];
+    grid.innerHTML = Object.entries(kitBoxes).map(([key, box], i) => {
+      const count = box.count || 0;
+      const cls = count > 20 ? 'stock-high' : count > 5 ? 'stock-med' : 'stock-low';
+      return `<div class="bottle-card" style="background:${colors[i%colors.length]};">
+        <div class="bottle-icon">📦</div>
+        <div class="bottle-name">${box.label}</div>
+        <div class="bottle-count ${cls}">${count}</div>
+        <div class="bottle-sub">kits in stock</div>
+        <div class="bottle-actions">
+          <button class="bottle-btn add" onclick="openAssembleKitModal('${key}','${box.label}')">+ Add</button>
+          <button class="bottle-btn remove" onclick="openSendOutModal('${key}','${box.label}')">Send Out</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function openAssembleKitModal(key, label) {
+    // Assemble = use bottles + unmade box to create branded kit
+    document.getElementById('kitstk-update-key').value = key;
+    document.getElementById('kitstk-update-title').textContent = `🔧 Assemble ${label}`;
+    document.getElementById('kitstk-update-hint').textContent = `Uses 1 bacteria + 2 metals + 1 radon + 1 unmade box per kit. Max assemblable: ${kitsAssemblable()}`;
+    document.getElementById('kitstk-action').value = 'assemble';
+    document.getElementById('kitstk-update-qty').value = '';
+    document.getElementById('kitstk-update-notes').value = '';
+    document.getElementById('kitstk-send-client-row').style.display = 'none';
+    openModal('kitstk-update');
+  }
+
+  function openSendOutModal(key, label) {
+    document.getElementById('kitstk-update-key').value = key;
+    document.getElementById('kitstk-update-title').textContent = `📤 Send Out — ${label}`;
+    document.getElementById('kitstk-update-hint').textContent = `Available: ${kitBoxes[key]?.count||0} kits`;
+    document.getElementById('kitstk-action').value = 'send';
+    document.getElementById('kitstk-update-qty').value = '';
+    document.getElementById('kitstk-update-notes').value = '';
+    // Show client selector only for Chanalytical kits
+    const clientRow = document.getElementById('kitstk-send-client-row');
+    if (key === 'box_chanalytical') {
+      clientRow.style.display = 'block';
+      // Populate with non-branded clients only
+      const sel = document.getElementById('kitstk-send-client');
+      const nonBranded = CLIENTS.filter(c => !BRANDED_BOX_CLIENTS[c.key]);
+      sel.innerHTML = '<option value="">— Select client —</option>' +
+        nonBranded.map(c=>`<option value="${c.key}">${c.name}</option>`).join('');
+    } else {
+      clientRow.style.display = 'none';
+    }
+    openModal('kitstk-update');
+  }
+
+  function openKitstkUpdate(key, action, label) { openAssembleKitModal(key, label); }
+
+  function submitKitstkAdd() { /* no longer used — kit boxes are fixed */ }
+
+  function submitKitstkUpdate() {
+    const key = document.getElementById('kitstk-update-key').value;
+    const action = document.getElementById('kitstk-action').value;
+    const qty = parseInt(document.getElementById('kitstk-update-qty').value);
+    const notes = document.getElementById('kitstk-update-notes').value.trim();
+    if (!qty || qty < 1) { showToast('Enter a valid quantity.'); return; }
+    if (!kitBoxes[key]) kitBoxes[key] = { label: key, count: 0 };
+    const label = kitBoxes[key].label || key;
+    const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+    if (action === 'assemble') {
+      // Check we have enough bottles + unmade boxes
+      const maxAss = kitsAssemblable();
+      if (qty > maxAss) { showToast(`⚠️ Not enough supplies. Max assemblable: ${maxAss}`); return; }
+      // Deduct bottles and unmade boxes
+      bottles.bacteria.count = Math.max(0,(bottles.bacteria.count||0)-qty);
+      bottles.metals.count   = Math.max(0,(bottles.metals.count||0)-(qty*2));
+      bottles.radon.count    = Math.max(0,(bottles.radon.count||0)-qty);
+      bottles.unmade_kits.count = Math.max(0,(bottles.unmade_kits.count||0)-qty);
+      // Add to branded kit stock
+      kitBoxes[key].count = (kitBoxes[key].count||0) + qty;
+      logActivity({date, client:label, type:'assemble', qty, notes:`Assembled ${qty} ${label}`, by:getAdminName()});
+      closeModal('kitstk-update'); render(); writeBottles();
+      showToast(`✅ ${qty} ${label} assembled`);
+
+    } else if (action === 'send') {
+      // Determine which client to add to
+      let clientKey = null;
+      if (key === 'box_chanalytical') {
+        clientKey = document.getElementById('kitstk-send-client').value;
+        if (!clientKey) { showToast('Please select a client to send to.'); return; }
+      } else {
+        // Find the client that matches this branded box
+        clientKey = Object.entries(BRANDED_BOX_CLIENTS).find(([,bk]) => bk === key)?.[0];
+      }
+      if (!clientKey) { showToast('Could not determine client for this kit type.'); return; }
+      // Check stock
+      const avail = kitBoxes[key].count || 0;
+      if (qty > avail) { showToast(`⚠️ Only ${avail} ${label} in stock.`); return; }
+      // Deduct from kit stock
+      kitBoxes[key].count = Math.max(0, avail - qty);
+      // Add to client kit inventory
+      if (!inventory[clientKey]) inventory[clientKey] = {inStock:0,sampled:0,totalSent:0,totalReceived:0,lastActivity:null};
+      inventory[clientKey].inStock = (inventory[clientKey].inStock||0) + qty;
+      inventory[clientKey].totalSent = (inventory[clientKey].totalSent||0) + qty;
+      inventory[clientKey].lastActivity = date;
+      logActivity({date, client:clientKey, type:'sent', qty, notes:notes||`Sent ${label}`, by:getAdminName()});
+      closeModal('kitstk-update'); render(); writeBottles(); writeInventory();
+      showToast(`✅ ${qty} ${label} sent to ${clientName(clientKey)}`);
+    }
+    document.getElementById('kitstk-update-qty').value='';
+    document.getElementById('kitstk-update-notes').value='';
+  }
+
+  function deleteKitType(type) { /* no longer used */ }
+
+  // ── SIDEBAR INIT ──────────────────────────────────────────────────────
+  function initSidebar() {
+    const session = Auth.getSession();
+    if (session) {
+      document.getElementById('sb-username').textContent = session.name || session.email;
+    }
+  }
+  initSidebar();
+
+  function getAdminName() {
+    const s = Auth.getSession();
+    return s ? (s.name || s.email) : 'Admin';
+  }
+
+  // ── ADMIN PROFILE ─────────────────────────────────────────────────────
+  function loadAdminProfile() {
+    const s = Auth.getSession();
+    if (!s) return;
+    const users = Auth.getUsers();
+    const user = users[s.email] || {};
+    document.getElementById('adm-name').value = user.name || '';
+    document.getElementById('adm-email').value = s.email || '';
+  }
+
+  function saveAdminProfile() {
+    const name = document.getElementById('adm-name').value.trim();
+    const msgEl = document.getElementById('profile-msg');
+    if (!name) { showProfileMsg(msgEl,'err','Name cannot be blank.'); return; }
+    const s = Auth.getSession();
+    const users = Auth.getUsers();
+    users[s.email].name = name;
+    Auth.saveUsers(users);
+    const sess = Auth.getSession();
+    sess.name = name;
+    localStorage.setItem('cha_session', JSON.stringify(sess));
+    document.getElementById('sb-username').textContent = name;
+    showProfileMsg(msgEl,'ok','✅ Profile saved.');
+  }
+
+  function changeAdminPassword() {
+    const cur = document.getElementById('adm-pw-cur').value;
+    const nw = document.getElementById('adm-pw-new').value;
+    const conf = document.getElementById('adm-pw-confirm').value;
+    const msgEl = document.getElementById('pw-msg');
+    if (!cur||!nw||!conf){showProfileMsg(msgEl,'err','Fill in all fields.');return;}
+    if (nw.length<6){showProfileMsg(msgEl,'err','Password must be 6+ characters.');return;}
+    if (nw!==conf){showProfileMsg(msgEl,'err','Passwords do not match.');return;}
+    const s=Auth.getSession();
+    const users=Auth.getUsers();
+    if (users[s.email].password!==Auth.hashPassword(cur)){showProfileMsg(msgEl,'err','Current password incorrect.');return;}
+    users[s.email].password=Auth.hashPassword(nw);
+    Auth.saveUsers(users);
+    document.getElementById('adm-pw-cur').value='';
+    document.getElementById('adm-pw-new').value='';
+    document.getElementById('adm-pw-confirm').value='';
+    showProfileMsg(msgEl,'ok','✅ Password updated.');
+  }
+
+  function showProfileMsg(el, type, msg) {
+    el.className = `msg-inline ${type}`;
+    el.textContent = msg;
+    setTimeout(()=>{el.className='msg-inline';},4000);
+  }
+
+  function clientName(key){const c=CLIENTS.find(c=>c.key===key);return c?c.name:key;}
+  function fmtDate(d){
+    if(!d) return '—';
+    try {
+      // Handle both YYYY-MM-DD and other formats
+      const parts = d.includes('-') ? d.split('-') : [];
+      if (parts.length === 3 && parts[0].length === 4) {
+        // YYYY-MM-DD → MM-DD-YY
+        return `${parts[1]}-${parts[2]}-${parts[0].slice(-2)}`;
+      }
+      return d;
+    } catch { return d; }
+  }
+
+  function showSection(id,btn) {
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('active'));
+    const sec = document.getElementById(`section-${id}`);
+    if (sec) sec.classList.add('active');
+    if (btn) btn.classList.add('active');
+
+    // Stop any existing review auto-refresh when leaving
+    if (id !== 'review' && window._reviewRefreshTimer) {
+      clearInterval(window._reviewRefreshTimer);
+      window._reviewRefreshTimer = null;
+    }
+
+    if (id === 'review') {
+      loadScanQueue();
+      if (window._reviewRefreshTimer) {
+        clearInterval(window._reviewRefreshTimer);
+        window._reviewRefreshTimer = null;
+      }
+    }
+    if (id === 'results') initResultsTab();
+    if (id === 'reports') loadPendingLabIds();
+    // Office staff cannot access Reports, Clients, Users
+    if (_session?.role === 'office' && ['reports','clients','users'].includes(id)) {
+      showToast('⚠️ You do not have access to that section.');
+      return;
+    }
+
+    if (id === 'clients') loadClients();
+    if (id === 'users') loadUsersTab();
+    if (id === 'rejected') loadRejectedTab();
+    if (id === 'testtypes') loadTestTypesTab();
+    if (id === 'coc') { loadCOCSettings().then(() => renderPreview()); }
+    if (id === 'reports') {
+      populateLabIdDropdowns(controlSheetLabIds);
+    }
+  }
+  window.showSection = showSection;
+
+  function openModal(name){
+    setDates();
+    // Populate client selects
+    ['send-client','initial-client','kitstk-client-sel'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el && el.tagName==='SELECT' && !el.dataset.populated){
+        el.innerHTML=CLIENTS.map(c=>`<option value="${c.key}">${c.name}</option>`).join('');
+        el.dataset.populated='1';
+      }
+    });
+    document.getElementById(`modal-${name}`).classList.add('open');
+  }
+  function closeModal(name){document.getElementById(`modal-${name}`).classList.remove('open');}
+  document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+  // ── OCR SCAN QUEUE ────────────────────────────────────────────────────────
+  let scanQueueData = { pending: [], approved: [] };
+  let recentlyApprovedCache = []; // in-memory list since approved rows are deleted from sheet
+
+  async function refreshClientList() {
+    try {
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'read-clients' }),
+      });
+      const data = await res.json();
+      const clients = data.clients || [];
+      _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
+      _CLIENT_EMAILS = {};
+      for (const c of clients) {
+        if (c.clientName) {
+          // reportEmail = Aliases field (Report Email Address)
+          _CLIENT_EMAILS[c.clientName] = c.reportEmail || c.email || '';
+          // Also index by abbrev for matching
+          if (c.abbrev && c.abbrev !== 'PUBLIC') {
+            _CLIENT_EMAILS[c.abbrev] = c.reportEmail || c.email || '';
+          }
+        }
+      }
+      // Also store abbrev map for business clients
+      window._CLIENT_ABBREVS = {};
+      for (const c of clients) {
+        if (c.clientName && c.abbrev && c.abbrev !== 'PUBLIC') {
+          window._CLIENT_ABBREVS[c.clientName] = c.abbrev;
+        }
+      }
+    } catch(e) { console.error('refreshClientList failed:', e); }
+  }
+
+  var _rqLoading = false;
+  async function loadReviewQueue() {
+    if (_rqLoading) return; // prevent concurrent calls
+    _rqLoading = true;
+    const container = document.getElementById('rq-scan-cards');
+    if (!container) return;
+    container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
+    try {
+      await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
+      const res  = await fetch('/api/get-scan-queue');
+      const data = await res.json();
+      const scans = data.pending || [];
+
+      // Update today's approved — read from accession-status with today action
+      const approvedBody = document.getElementById('rq-approved-body');
+      const todayEl      = document.getElementById('rq-today');
+      try {
+        const todayRes  = await fetch('/api/accession-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'today-approved' }),
+        });
+        const todayData = await todayRes.json();
+        const approved  = todayData.approved || [];
+        if (todayEl) todayEl.textContent = approved.length;
+        if (approvedBody) {
+          approvedBody.innerHTML = approved.length
+            ? approved.map(a => `<tr>
+                <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||a.labId||'—'}</td>
+                <td class="client-name">${a.customer||'—'}</td>
+                <td style="font-size:12px;">${a.coaTest||a.test||'—'}</td>
+                <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
+              </tr>`).join('')
+            : '<tr><td colspan="4"><div class="empty-state">No approvals today yet.</div></td></tr>';
+        }
+      } catch(e) { console.error('Recently approved failed:', e); }
+
+      if (!scans.length) {
+        container.innerHTML = '<div class="empty-state" style="padding:32px;">✅ No pending scans — queue is clear</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      scans.forEach((r, i) => {
+        const card = document.createElement('div');
+        card.innerHTML = buildScanCard(r);
+        container.appendChild(card.firstElementChild);
+      });
+
+      // Initialize any post-render card logic
+      container.querySelectorAll('[data-rejected="true"]').forEach(div => {
+        const cb = div.querySelector('input[value="Rejected - Timeout"]');
+        if (cb && typeof setRejectedTimeoutExclusion === 'function') setRejectedTimeoutExclusion(div, true);
+      });
+
+    } catch(e) {
+      if (container) container.innerHTML = `<div class="empty-state" style="padding:32px;">⚠️ ${e.message}</div>`;
+    } finally {
+      _rqLoading = false;
+    }
+  }
+
+  async function refreshQueueSafe() {
+    try {
+      await loadReviewQueue();
+      showToast('✅ Queue refreshed');
+    } catch(e) {
+      showToast('⚠️ ' + e.message);
+    }
+  }
+
+  async function loadScanQueue() {
+    try {
+      const res  = await fetch('/api/accession-status');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load queue');
+      // Merge in-memory recently approved cache with server approved list
+      const serverApproved = data.reported || [];
+      const allApproved    = [...recentlyApprovedCache, ...serverApproved];
+      scanQueueData = { pending: data.pending || [], approved: allApproved };
+      // Update badge
+      const badge = document.getElementById('rq-badge');
+      if (badge) {
+        badge.style.display = scanQueueData.pending.length ? 'inline-block' : 'none';
+        badge.textContent   = scanQueueData.pending.length;
+      }
+      return scanQueueData;
+    } catch(e) {
+      console.error('[loadScanQueue]', e.message);
+      return scanQueueData;
+    }
+  }
+
+  async function renderScanQueue() {
+    // renderScanQueue handles pending lab ID badge only
+    // rq-approved-body is managed by loadReviewQueue → today-approved action
+    const pending  = scanQueueData.pending  || [];
+    const badge    = document.getElementById('rq-badge');
+    if (badge) {
+      badge.style.display = pending.length ? 'inline-block' : 'none';
+      badge.textContent   = pending.length;
+    }
+  }
+
+  function buildPendingCard(r) {
+    const name    = r.customer || r.fullIds?.[0] || 'Unknown';
+    const labId   = r.fullIds?.[0] || r.baseId || '';
+    const tests   = r.tests || [];
+    const testStr = tests.join(' | ');
+    return `<div class="scan-card" data-baseid="${r.baseId}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:var(--navy);">${name}</div>
+          <div style="font-family:monospace;font-size:12px;color:var(--teal);">${labId}</div>
+        </div>
+        <span style="font-size:11px;padding:3px 8px;border-radius:6px;background:var(--warning-light);color:var(--warning);">Pending</span>
+      </div>
+      <div style="font-size:12px;color:var(--slate);margin-bottom:4px;">📋 ${testStr || '—'}</div>
+      <div style="font-size:11px;color:var(--slate);">
+        ${r.location||''} ${r.city||''} ${r.state||''}
+        ${r.dateDrawn ? '· Drawn: '+r.dateDrawn+' '+r.timeDrawn : ''}
+      </div>
+    </div>`;
+  }
+
+
+
+  // ── CLIENTS MANAGEMENT ────────────────────────────────────────────────────
+  let _clientsData = [];
+  let _editingRow  = null;
+
+  // ── USERS TAB ─────────────────────────────────────────────────────────────
+  let _usersData = [];
+  let _activeUserEmail = '';
+
+  function calcTempPassword(name, dateStr) {
+    const d = dateStr ? new Date(dateStr) : new Date();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    const yy = String(d.getFullYear()).slice(-2);
+    const first = (name||'User').split(' ')[0];
+    return first + mm + dd + yy;
+  }
+
+  function toggleAdminCode(btn) {
+    const el = document.getElementById('admin-code-display');
+    if (!el) return;
+    if (el.textContent === '••••••••') {
+      el.textContent = 'chan2022';
+      btn.textContent = '🙈 Hide';
+    } else {
+      el.textContent = '••••••••';
+      btn.textContent = '👁 Reveal';
+    }
+  }
+
+  async function loadUsersTab() {
+    document.getElementById('users-body').innerHTML = '<tr><td colspan="7"><div class="empty-state">Loading...</div></td></tr>';
+    try {
+      const res = await fetch('/api/users-manage', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'list' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const serverUsers = (data.users || []).map(u => ({ ...u, source: 'server' }));
+      const serverEmails = new Set(serverUsers.map(u => u.email.toLowerCase()));
+
+      // Merge local accounts (this device only)
+      const localRaw = Auth.getUsers();
+      const localUsers = Object.values(localRaw)
+        .filter(u => !serverEmails.has((u.email||'').toLowerCase()))
+        .map(u => ({
+          email: u.email||'', name: u.name||'',
+          role: u.role||'public', clientKey: u.clientKey||'',
+          regCode: '', createdBy: 'Self-registered', createdAt: u.createdAt||'',
+          mustReset: false, active: true, source: 'local',
+        }));
+
+      _usersData = [...serverUsers, ...localUsers];
+      renderUsersTable();
+    } catch(err) {
+      document.getElementById('users-body').innerHTML = `<tr><td colspan="7"><div class="empty-state">⚠️ ${err.message}</div></td></tr>`;
+    }
+  }
+
+  function renderUsersTable() {
+    const body = document.getElementById('users-body');
+    const roleLabel = { admin:'🔑 Admin', office:'🗂️ Office Staff', lab:'🔬 Lab Staff', wq:'🏢 WQ/Inspector', client:'🏢 WQ/Inspector', public:'🌐 Public', deactivated:'🚫 Deactivated' };
+    if (!_usersData.length) {
+      body.innerHTML = '<tr><td colspan="7"><div class="empty-state">No accounts found.</div></td></tr>';
+      return;
+    }
+
+    // Show badge if there are pending reset requests
+    const pendingResets = _usersData.filter(u => !u.source || u.source === 'server').filter(u => u.mustReset).length;
+    const badge = document.getElementById('reset-requests-badge');
+    if (badge) {
+      if (pendingResets > 0) {
+        badge.textContent = `${pendingResets} password reset${pendingResets > 1 ? 's' : ''} needed`;
+        badge.style.display = 'inline';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+    body.innerHTML = _usersData.map(u => {
+      const isLocal = u.source === 'local';
+      return `<tr style="border-bottom:1px solid var(--border);${u.role==='deactivated'?'background:#fff5f5;':''}${!u.active&&u.role!=='deactivated'?'opacity:0.5;':''}">
+        <td style="padding:10px 12px;font-weight:600;">${u.name||'—'}</td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${u.email}</td>
+        <td style="padding:10px 12px;">${u.role?roleLabel[u.role]||u.role:''}</td>
+        <td style="padding:10px 12px;font-size:12px;font-family:monospace;">${u.regCode||u.clientKey||''}</td>
+        <td style="padding:10px 12px;">
+          ${isLocal?'<span style="background:#e3f2fd;color:#1565c0;border-radius:4px;padding:2px 8px;font-size:11px;">💻 Local</span>':''}
+          ${!isLocal&&u.mustReset?'<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:2px 8px;font-size:11px;">⏳ Password Reset</span>':''}
+          ${!u.active?'<span style="background:#f8d7da;color:#721c24;border-radius:4px;padding:2px 8px;font-size:11px;">Deactivated</span>':''}
+          ${!isLocal&&u.active&&!u.mustReset?'<span style="color:var(--success);font-size:12px;">✓ Active</span>':''}
+        </td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${u.createdBy||'—'}</td>
+        <td style="padding:10px 12px;text-align:right;">
+          ${isLocal
+            ? `<span style="font-size:11px;color:var(--slate);">Local only</span>`
+            : `<button onclick="openUserMenu(event,this,'${u.email}','${u.role||''}',${u.active})" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;">⋯</button>`
+          }
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openUserMenu(event, btn, email, role, active) {
+    event.stopPropagation();
+    _activeUserEmail = email;
+    const dd = document.getElementById('user-dropdown');
+    const rect = btn.getBoundingClientRect();
+    dd.innerHTML = `
+      <button onclick="openEditUser('${email}')" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;">✏️ Edit</button>
+      <button onclick="openResetPw('${email}')" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;">🔑 Reset Password</button>
+      ${role === 'deactivated'
+        ? `<button onclick="openSetRole('${email}','lab')" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--success);">✅ Reactivate</button>`
+        : `<button onclick="doDeactivate('${email}')" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--error);">🚫 Deactivate</button>`
+      }`;
+
+    // Position: open upward if near bottom of screen
+    const menuH = 120;
+    const top = rect.bottom + menuH > window.innerHeight
+      ? rect.top - menuH
+      : rect.bottom + 4;
+    dd.style.left  = (rect.right - 160) + 'px';
+    dd.style.top   = top + 'px';
+    dd.style.display = 'block';
+
+    const close = (e) => { if (!dd.contains(e.target) && e.target !== btn) { dd.style.display='none'; document.removeEventListener('click', close); }};
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+
+  function openSetRole(email, currentRole) {
+    document.getElementById('user-dropdown').style.display = 'none';
+    _activeUserEmail = email;
+    document.getElementById('role-email-display').textContent = email;
+    document.getElementById('sr-role').value = currentRole || 'lab';
+    document.getElementById('modal-set-role').style.display = 'flex';
+  }
+
+  async function doSetRole() {
+    const role = document.getElementById('sr-role').value;
+    try {
+      const res = await fetch('/api/users-manage', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'setrole', email: _activeUserEmail, role }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      showToast(`✅ Role updated to ${role}.`);
+      document.getElementById('modal-set-role').style.display = 'none';
+      loadUsersTab();
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+  function openCreateUser() {
+    document.getElementById('cu-name').value = '';
+    document.getElementById('cu-email').value = '';
+    document.getElementById('cu-code').value = '';
+    document.getElementById('create-user-err').textContent = '';
+    // Show preview temp password
+    const today = new Date().toISOString();
+    document.getElementById('cu-temp-preview').textContent = '(enter name to see)';
+    document.getElementById('cu-name').addEventListener('input', function() {
+      document.getElementById('cu-temp-preview').textContent = 'W3lcom3!';
+    });
+    document.getElementById('modal-create-user').style.display = 'flex';
+  }
+
+  async function doCreateUser() {
+    const name  = document.getElementById('cu-name').value.trim();
+    const email = document.getElementById('cu-email').value.trim();
+    const role  = document.getElementById('cu-role').value;
+    const code  = document.getElementById('cu-code').value.trim().toUpperCase();
+    const errEl = document.getElementById('create-user-err');
+    if (!name || !email) { errEl.textContent = 'Name and email are required.'; return; }
+    try {
+      const res = await fetch('/api/users-manage', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'create', name, email, role, regCode: code, createdBy: getAdminName() }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const pw = data.tempPassword || 'W3lcom3!';
+      showToast(`✅ Account created. Temp password: ${pw}`);
+      document.getElementById('modal-create-user').style.display = 'none';
+      loadUsersTab();
+    } catch(e) { errEl.textContent = e.message; }
+  }
+
+  function openEditUser(email) {
+    document.getElementById('user-dropdown').style.display = 'none';
+    const user = _usersData.find(u => u.email === email);
+    if (!user) return;
+    document.getElementById('edit-orig-email').value = email;
+    document.getElementById('edit-name').value  = user.name || '';
+    document.getElementById('edit-email').value = user.email || '';
+    document.getElementById('edit-role').value  = user.role || 'public';
+    document.getElementById('edit-code').value  = user.regCode || user.clientKey || '';
+    document.getElementById('modal-edit-user').style.display = 'flex';
+  }
+
+  async function doEditUser() {
+    const origEmail = document.getElementById('edit-orig-email').value;
+    const name      = document.getElementById('edit-name').value.trim();
+    const newEmail  = document.getElementById('edit-email').value.trim();
+    const role      = document.getElementById('edit-role').value;
+    const code      = document.getElementById('edit-code').value.trim().toUpperCase();
+    try {
+      const res = await fetch('/api/users-manage', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'edit', email: origEmail, name, newEmail, role, regCode: code, clientKey: code }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      showToast('✅ Account updated.');
+      document.getElementById('modal-edit-user').style.display = 'none';
+      loadUsersTab();
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+  function openResetPw(email) {
+    document.getElementById('user-dropdown').style.display = 'none';
+    _activeUserEmail = email;
+    const user = _usersData.find(u => u.email === email);
+    document.getElementById('resetpw-email-display').textContent = email;
+    const pw = 'W3lcom3!';
+    document.getElementById('reset-pw-preview').textContent = pw;
+    document.getElementById('modal-reset-pw').style.display = 'flex';
+  }
+
+  async function doResetPw() {
+    try {
+      const res = await fetch('/api/users-manage', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'resetpw', email: _activeUserEmail }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      const pw = data.tempPassword || 'W3lcom3!';
+      showToast(`✅ Password reset. Temp: ${pw}`);
+      document.getElementById('modal-reset-pw').style.display = 'none';
+      loadUsersTab();
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+  async function doDeactivate(email) {
+    document.getElementById('user-dropdown').style.display = 'none';
+    if (!confirm(`Deactivate ${email}?\n\nThey will not be able to log in until reactivated.`)) return;
+    const res = await fetch('/api/users-manage', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'deactivate', email }),
+    });
+    const d = await res.json();
+    if (d.success) { showToast('Account deactivated.'); loadUsersTab(); }
+    else showToast('⚠️ ' + d.error);
+  }
+
+  // ── REJECTED SAMPLES TAB ─────────────────────────────────────────────────
+  function enforceOneRejType(cb) {
+    if (cb.checked) {
+      document.querySelectorAll('.rej-type-cb').forEach(c => { if (c !== cb) c.checked = false; });
+    }
+  }
+
+  async function loadRejectedTab() {
+    await loadRejectionHistory();
+  }
+
+  async function lookupRejLabId() {
+    const input = document.getElementById('rej-labid').value.trim();
+    const resultEl = document.getElementById('rej-lookup-result');
+    if (!input) { resultEl.style.display='none'; return; }
+    // Extract base ID (MMDDYY-NNN) — user only needs to type the base, no suffix needed
+    const baseId = input.split(' ')[0].trim();
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = '⏳ Looking up...';
+    try {
+      // Use list-intake action which correctly matches by base ID
+      const res = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list-intake', baseId }),
+      });
+      const data = await res.json();
+      const matches = data.matches || [];
+      if (matches.length) {
+        resultEl.innerHTML = matches.map(r =>
+          `<div style="margin-bottom:4px;">✅ <strong>${r.field_1}</strong> — ${r.field_2||''}</div>`
+        ).join('');
+        // Auto-fill with the full lab ID if only one match
+        if (matches.length === 1) {
+          document.getElementById('rej-labid').value = matches[0].field_1;
+        }
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--slate);">No match found for <strong>${baseId}</strong>. You can still enter the Lab ID and reject.</span>`;
+      }
+    } catch(e) {
+      resultEl.innerHTML = `<span style="color:var(--slate);">Lookup unavailable — enter Lab ID manually.</span>`;
+    }
+  }
+
+  async function doRejectSample() {
+    const labId = document.getElementById('rej-labid').value.trim();
+    const rejTypeEl = document.querySelector('.rej-type-cb:checked');
+    const rejType = rejTypeEl?.value;
+    const reason = document.getElementById('rej-reason').value.trim();
+    const statusEl = document.getElementById('rej-status');
+
+    if (!labId)   { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Lab ID is required.'; return; }
+    if (!rejType) { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Select a rejection type.'; return; }
+    if (!reason)  { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Reason is required.'; return; }
+
+    statusEl.style.color = 'var(--slate)';
+    statusEl.textContent = '⏳ Saving rejection...';
+
+    try {
+      const res = await fetch('/api/reject-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labId, rejectionType: rejType, reason, rejectedBy: getAdminName() }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = `✅ Sample ${labId} marked as ${rejType}`;
+      document.getElementById('rej-labid').value = '';
+      document.getElementById('rej-reason').value = '';
+      document.querySelectorAll('.rej-type-cb').forEach(c => c.checked = false);
+      document.getElementById('rej-lookup-result').style.display = 'none';
+      await loadRejectionHistory();
+    } catch(e) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ ' + e.message;
+    }
+  }
+
+  async function loadRejectionHistory() {
+    const tbody = document.getElementById('rej-history');
+    if (!tbody) return;
+    try {
+      const res = await fetch('/api/get-rejections');
+      if (!res.ok) throw new Error('Could not load rejections');
+      const data = await res.json();
+      const rows = data.rows || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No rejections recorded yet.</div></td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${r[0]?.split('T')[0]||''}</td>
+        <td style="padding:10px 12px;font-family:monospace;font-size:13px;">${r[1]||''}</td>
+        <td style="padding:10px 12px;font-size:13px;color:var(--error);">${r[2]||''}</td>
+        <td style="padding:10px 12px;font-size:13px;">${r[3]||''}</td>
+        <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${r[4]||''}</td>
+      </tr>`).join('');
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">⚠️ Could not load rejection history.</div></td></tr>';
+    }
+  }
+
+  // ── SAMPLE CORRECTION TAB ────────────────────────────────────────────────
+  let _scCurrentData = null; // holds the looked-up sample data
+
+  // ── Sample Correction test type helpers ────────────────────────────────────
+  const SC_PACKAGES = ['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)',
+    'WW - Expanded Safety','Comprehensive','Pro Plus','Radon Water','AIO FHA','AIO Portability',
+    'Rejected - Timeout','Rejected - Missing Information','Rejected - Chlorine',
+    'Rejected - Bleach/Chlorinated','Rejected - Other','WQ - Reject','RW - Reject'];
+
+  function scEnforcePackage(changed) {
+    const isPackage = SC_PACKAGES.includes(changed.value);
+    if (changed.checked && isPackage) {
+      // Uncheck all other packages when a package is selected
+      document.querySelectorAll('.sc-test-cb').forEach(cb => {
+        if (cb !== changed && SC_PACKAGES.includes(cb.value)) cb.checked = false;
+      });
+    }
+    // Update hidden field with pipe-separated value
+    scBuildCoaTest();
+  }
+
+  function scBuildCoaTest() {
+    const checked = [...document.querySelectorAll('.sc-test-cb:checked')].map(cb => cb.value);
+    document.getElementById('sc-edit-coaTest').value = checked.join(' | ');
+    return checked.join(' | ');
+  }
+
+  function scSetCheckboxes(coaTest) {
+    // Uncheck all first
+    document.querySelectorAll('.sc-test-cb').forEach(cb => cb.checked = false);
+    if (!coaTest) return;
+    const tests = coaTest.split(/[|,]/).map(t => t.trim()).filter(Boolean);
+    tests.forEach(t => {
+      const cb = [...document.querySelectorAll('.sc-test-cb')].find(el => el.value === t);
+      if (cb) cb.checked = true;
+    });
+    scBuildCoaTest();
+  }
+
+  async function lookupSampleForCorrection() {
+    const labIdRaw = document.getElementById('sc-lookup-id').value.trim();
+    const statusEl = document.getElementById('sc-lookup-status');
+    const formEl   = document.getElementById('sc-edit-form');
+    if (!labIdRaw) { statusEl.textContent = 'Enter a Lab ID first.'; return; }
+
+    const baseId = labIdRaw.match(/(\d{6}-\d{3})/)?.[1] || labIdRaw;
+    statusEl.textContent = '⏳ Looking up...';
+    statusEl.style.color = 'var(--slate)';
+    formEl.style.display = 'none';
+
+    try {
+      // Use list-intake action — correctly matches by base ID
+      const res = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list-intake', baseId }),
+      });
+      if (!res.ok) throw new Error('Could not search Archived Intake');
+      const data = await res.json();
+      const matches = data.matches || [];
+
+      if (!matches.length) {
+        statusEl.textContent = `⚠️ Lab ID ${baseId} not found in Archived Intake.`;
+        statusEl.style.color = 'var(--error)';
+        return;
+      }
+
+      // Use first match (primary sample row)
+      const raw = matches[0];
+      const found = {
+        labId:        raw.field_1  || '',
+        coaTest:      raw.field_2  || '',
+        customer:     raw.field_3  || '',
+        dateDrawn:    raw.field_4  || '',
+        timeDrawn:    raw.field_5  || '',
+        receivedDate: raw.field_6  || '',
+        receivedTime: raw.field_7  || '',
+        location:     raw.field_8  || '',
+        city:         raw.field_9  || '',
+        state:        raw.field_10 || 'ME',
+        zip:          raw.field_11 || '',
+        notes:        raw.field_13 || '',
+        _id:          raw._id,
+      };
+      _scCurrentData = { ...found, baseId };
+
+      // Populate fields from raw Archived Intake fields
+      scSetCheckboxes(found.coaTest || '');
+      document.getElementById('sc-edit-customer').value     = raw.field_3  || '';
+      document.getElementById('sc-edit-dateDrawn').value    = raw.field_4  || '';
+      document.getElementById('sc-edit-timeDrawn').value    = raw.field_5  || '';
+      document.getElementById('sc-edit-receivedDate').value = raw.field_6  || '';
+      document.getElementById('sc-edit-receivedTime').value = raw.field_7  || '';
+      document.getElementById('sc-edit-location').value     = raw.field_8  || '';
+      document.getElementById('sc-edit-city').value         = raw.field_9  || '';
+      document.getElementById('sc-edit-state').value        = raw.field_10 || 'ME';
+      document.getElementById('sc-edit-zip').value          = raw.field_11 ? String(raw.field_11).padStart(5,'0') : '';
+      document.getElementById('sc-edit-notes').value        = raw.field_13 || '';
+      document.getElementById('sc-save-status').textContent = '';
+
+      statusEl.textContent = `✅ Found: ${found.labId} — ${found.customer||'Unknown'}`;
+      statusEl.style.color = 'var(--success)';
+      formEl.style.display = 'block';
+    } catch(e) {
+      statusEl.textContent = '⚠️ ' + e.message;
+      statusEl.style.color = 'var(--error)';
+    }
+  }
+
+  async function saveSampleCorrection() {
+    if (!_scCurrentData) return;
+    const saveBtn  = document.getElementById('sc-save-btn');
+    const statusEl = document.getElementById('sc-save-status');
+
+    const g = id => document.getElementById(id).value.trim();
+    const orig = _scCurrentData || {};
+
+    // Only include fields that actually changed from original values
+    const allFields = {
+      coaTest:      scBuildCoaTest(),
+      customer:     g('sc-edit-customer'),
+      dateDrawn:    g('sc-edit-dateDrawn'),
+      timeDrawn:    g('sc-edit-timeDrawn'),
+      receivedDate: g('sc-edit-receivedDate'),
+      receivedTime: g('sc-edit-receivedTime'),
+      location:     g('sc-edit-location'),
+      city:         g('sc-edit-city'),
+      state:        g('sc-edit-state'),
+      zip:          g('sc-edit-zip'),
+      notes:        g('sc-edit-notes'),
+    };
+    const origMap = {
+      coaTest:      orig.coaTest      || '',
+      customer:     orig.customer     || '',
+      dateDrawn:    orig.dateDrawn    || '',
+      timeDrawn:    orig.timeDrawn    || '',
+      receivedDate: orig.receivedDate || '',
+      receivedTime: orig.receivedTime || '',
+      location:     orig.location     || '',
+      city:         orig.city         || '',
+      state:        orig.state        || '',
+      zip:          orig.zip          || '',
+      notes:        orig.notes        || '',
+    };
+    const updates = {};
+    for (const [k, v] of Object.entries(allFields)) {
+      const original = String(origMap[k] || '').trim();
+      if (v !== original) updates[k] = v;
+    }
+    if (!Object.keys(updates).length) {
+      statusEl.style.color = 'var(--slate)';
+      statusEl.textContent = 'No changes detected.';
+      saveBtn.disabled = false; saveBtn.textContent = '💾 Save Changes';
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Saving...';
+    statusEl.textContent = '';
+
+    try {
+      const res = await fetch('/api/update-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseId: _scCurrentData.baseId, updates, updatedBy: getAdminName() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+
+      statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s) across Archived Intake, COA, and RW sheets.`;
+      statusEl.style.color = 'var(--success)';
+      showToast(`✅ Sample ${_scCurrentData.baseId} updated successfully`);
+    } catch(e) {
+      statusEl.textContent = '⚠️ ' + e.message;
+      statusEl.style.color = 'var(--error)';
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 Save Changes';
+    }
+  }
+
+  // ── TEST TYPES TAB ───────────────────────────────────────────────────────
+  let _ttData = { testTypes: [], elements: [] };
+
+  async function loadTestTypesTab() {
+    document.getElementById('tt-packages-body').innerHTML = '<tr><td colspan="6"><div class="empty-state">Loading...</div></td></tr>';
+    document.getElementById('tt-elements-body').innerHTML = '<tr><td colspan="5"><div class="empty-state">Loading...</div></td></tr>';
+    try {
+      const res  = await fetch('/api/test-types-read');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      _ttData = data;
+      renderTestTypesTab();
+      // Also refresh the scan queue test type list so new types appear immediately
+      if (typeof _allTestTypes !== 'undefined') _allTestTypes = data;
+    } catch(e) {
+      document.getElementById('tt-packages-body').innerHTML = `<tr><td colspan="6"><div class="empty-state">⚠️ ${e.message}</div></td></tr>`;
+    }
+  }
+
+  function renderTestTypesTab() {
+    const catLabel = { Package:'📦 Package', AIO:'🟣 AIO', Special:'⭐ Special', Individual:'🔬 Individual' };
+    const pkgs = _ttData.testTypes || [];
+    const els  = _ttData.elements  || [];
+
+    document.getElementById('tt-packages-body').innerHTML = pkgs.length
+      ? pkgs.map(t => `<tr style="border-bottom:1px solid var(--border);${!t.active?'opacity:0.45;':''}">
+          <td style="padding:10px 12px;font-weight:600;">${t.name}</td>
+          <td style="padding:10px 12px;font-size:12px;">${catLabel[t.category]||t.category}</td>
+          <td style="padding:10px 12px;">$${t.price}</td>
+          <td style="padding:10px 12px;font-family:monospace;font-size:12px;">${t.suffix||'—'}</td>
+          <td style="padding:10px 12px;font-size:11px;color:var(--slate);max-width:260px;">${t.includes||'—'}</td>
+          <td style="padding:10px 12px;white-space:nowrap;">
+            <button onclick="openTestTypeModal(${t._row})" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;margin-right:4px;">✏️ Edit</button>
+            <button onclick="deleteTestType(${t._row})" data-name="${t.name}" style="background:none;border:1px solid var(--error);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:var(--error);">${t.active?'🗑 Remove':'↩ Restore'}</button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="6"><div class="empty-state">No test packages yet.</div></td></tr>';
+
+    document.getElementById('tt-elements-body').innerHTML = els.length
+      ? els.map(e => `<tr style="border-bottom:1px solid var(--border);${!e.active?'opacity:0.45;':''}">
+          <td style="padding:10px 12px;font-weight:600;">${e.name}</td>
+          <td style="padding:10px 12px;font-family:monospace;font-size:12px;">${e.abbrev||'—'}</td>
+          <td style="padding:10px 12px;">$${e.price}</td>
+          <td style="padding:10px 12px;font-size:12px;">${e.active?'<span style="color:var(--success);">✓ Active</span>':'<span style="color:var(--error);">Inactive</span>'}</td>
+          <td style="padding:10px 12px;white-space:nowrap;">
+            <button onclick="openElementModal(${e._row})" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;margin-right:4px;">✏️ Edit</button>
+            <button onclick="deleteElement(${e._row})" data-name="${e.name}" style="background:none;border:1px solid var(--error);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:var(--error);">${e.active?'🗑 Remove':'↩ Restore'}</button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="5"><div class="empty-state">No elements yet.</div></td></tr>';
+  }
+
+  function openTestTypeModal(rowNum) {
+    document.getElementById('tt-modal-title').textContent = rowNum ? 'Edit Test Package' : 'New Test Package';
+    document.getElementById('tt-row-num').value = rowNum || '';
+    document.getElementById('tt-name').value   = '';
+    document.getElementById('tt-price').value  = '';
+    document.getElementById('tt-suffix').value = '';
+
+    let currentIncludes = [];
+    if (rowNum) {
+      const tt = _ttData.testTypes.find(t => t._row === rowNum);
+      if (tt) {
+        document.getElementById('tt-name').value     = tt.name;
+        document.getElementById('tt-category').value = tt.category || 'Package';
+        document.getElementById('tt-price').value    = tt.price;
+        document.getElementById('tt-suffix').value   = tt.suffix;
+        currentIncludes = tt.includes ? tt.includes.split(',').map(s=>s.trim()) : [];
+      }
+    }
+
+    const cbContainer = document.getElementById('tt-elements-checkboxes');
+
+    const renderCbs = (els) => {
+      if (!els.length) {
+        cbContainer.innerHTML = '<div style="color:var(--slate);font-size:13px;padding:8px;">No elements found. Add elements first using the + New Element button.</div>';
+        return;
+      }
+      cbContainer.innerHTML = els.filter(e=>e.active).map(e =>
+        `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 0;">
+          <input type="checkbox" value="${e.name}" ${currentIncludes.some(i=>i.toLowerCase()===e.name.toLowerCase())?'checked':''} style="width:15px;height:15px;flex-shrink:0;cursor:pointer;" />${e.name}
+        </label>`
+      ).join('');
+    };
+
+    // If elements not loaded yet, fetch them first
+    if (_ttData.elements.length === 0) {
+      cbContainer.innerHTML = '<div style="color:var(--slate);padding:8px;">⏳ Loading elements...</div>';
+      fetch('/api/test-types-read').then(r=>r.json()).then(d=>{
+        _ttData = d;
+        renderCbs(d.elements || []);
+      }).catch(() => {
+        cbContainer.innerHTML = '<div style="color:var(--error);padding:8px;">⚠️ Could not load elements.</div>';
+      });
+    } else {
+      renderCbs(_ttData.elements);
+    }
+
+    document.getElementById('modal-test-type').style.display = 'flex';
+  }
+
+  async function saveTestType() {
+    const rowNum   = document.getElementById('tt-row-num').value;
+    const name     = document.getElementById('tt-name').value.trim();
+    const category = document.getElementById('tt-category').value;
+    const price    = document.getElementById('tt-price').value.trim();
+    const suffix   = document.getElementById('tt-suffix').value.trim().toUpperCase();
+    const checked  = Array.from(document.querySelectorAll('#tt-elements-checkboxes input:checked')).map(c=>c.value);
+    const includes = checked.join(',');
+
+    if (!name) { showToast('⚠️ Package name is required.'); return; }
+    try {
+      const res = await fetch('/api/test-types-write', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'saveTestType', name, category, price, suffix, includes, rowNum: rowNum ? parseInt(rowNum) : null }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      showToast(`✅ "${name}" saved.`);
+      document.getElementById('modal-test-type').style.display = 'none';
+      loadTestTypesTab();
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+  async function deleteTestType(rowNum, evt) { const name = (evt?.target || evt?.currentTarget || document.querySelector(`[data-name]`))?.dataset?.name || rowNum;
+    const tt = _ttData.testTypes.find(t => t._row === rowNum);
+    const action = tt?.active ? `Remove "${name}"?` : `Restore "${name}"?`;
+    if (!confirm(action)) return;
+    const res = await fetch('/api/test-types-write', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'deleteTestType', rowNum, active: tt?.active ? 'FALSE' : 'TRUE' }),
+    });
+    const d = await res.json();
+    if (d.success) { showToast('Done.'); loadTestTypesTab(); }
+    else showToast('⚠️ ' + d.error);
+  }
+
+  function openElementModal(rowNum) {
+    document.getElementById('el-modal-title').textContent = rowNum ? 'Edit Element' : 'New Element';
+    document.getElementById('el-row-num').value  = rowNum || '';
+    document.getElementById('el-name').value     = '';
+    document.getElementById('el-abbrev').value   = '';
+    document.getElementById('el-price').value    = '';
+    if (rowNum) {
+      const el = _ttData.elements.find(e => e._row === rowNum);
+      if (el) {
+        document.getElementById('el-name').value   = el.name;
+        document.getElementById('el-abbrev').value = el.abbrev;
+        document.getElementById('el-price').value  = el.price;
+      }
+    }
+    document.getElementById('modal-element').style.display = 'flex';
+  }
+
+  async function saveElement() {
+    const rowNum = document.getElementById('el-row-num').value;
+    const name   = document.getElementById('el-name').value.trim();
+    const abbrev = document.getElementById('el-abbrev').value.trim().toUpperCase();
+    const price  = document.getElementById('el-price').value.trim();
+    if (!name) { showToast('⚠️ Element name is required.'); return; }
+    try {
+      const res = await fetch('/api/test-types-write', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'saveElement', name, abbrev, price, rowNum: rowNum ? parseInt(rowNum) : null }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      showToast(`✅ "${name}" saved.`);
+      document.getElementById('modal-element').style.display = 'none';
+      loadTestTypesTab();
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+  async function deleteElement(rowNum) { const elItem = _ttData.elements.find(e=>e._row===rowNum); const name = elItem?.name || ''; if (!name) return;
+    const el = _ttData.elements.find(e => e._row === rowNum);
+    const action = elItem?.active ? `Remove "${name}"?` : `Restore "${name}"?`;
+    if (!confirm(action)) return;
+    const active = elItem?.active ? 'FALSE' : 'TRUE';
+    const res = await fetch('/api/test-types-write', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'deleteElement', rowNum, active }),
+    });
+    const d = await res.json();
+    if (d.success) { showToast('Done.'); loadTestTypesTab(); }
+    else showToast('⚠️ ' + d.error);
+  }
+
+
+  // ── Sync top scrollbar with table scroll ──────────────────────────────────
+  function initClientsScroll() {
+    const wrap  = document.getElementById('clients-table-wrap');
+    const top   = document.getElementById('clients-top-scroll');
+    const inner = document.getElementById('clients-top-scroll-inner');
+    if (!wrap || !top || !inner) return;
+    inner.style.width = wrap.scrollWidth + 'px';
+    let syncing = false;
+    top.addEventListener('scroll', () => {
+      if (syncing) return; syncing = true;
+      wrap.scrollLeft = top.scrollLeft;
+      requestAnimationFrame(() => { syncing = false; });
+    });
+    wrap.addEventListener('scroll', () => {
+      if (syncing) return; syncing = true;
+      top.scrollLeft = wrap.scrollLeft;
+      requestAnimationFrame(() => { syncing = false; });
+    });
+  }
+
+    async function loadClients() {
+    document.getElementById('clients-body').innerHTML =
+      '<tr><td colspan="10"><div class="empty-state">Loading...</div></td></tr>';
+    try {
+      // Use accession-status read-clients action (always up to date)
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'read-clients' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      _clientsData = data.clients || [];
+      renderClientsTable();
+      setTimeout(initClientsScroll, 100);
+    } catch (err) {
+      document.getElementById('clients-body').innerHTML =
+        `<tr><td colspan="10"><div class="empty-state">⚠️ ${err.message}</div></td></tr>`;
+    }
+  }
+
+  function renderClientsTable() {
+    const tbody = document.getElementById('clients-body');
+    if (!_clientsData.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No clients found.</div></td></tr>';
+      return;
+    }
+    // Normalize field names — handle both old API response (aliases/notes/active)
+    // and new API response (reportEmail/billingEmail/phone/status)
+    _clientsData = _clientsData.map(c => ({
+      ...c,
+      reportEmail:  c.reportEmail  || c.aliases   || '',
+      billingEmail: c.billingEmail || c.notes      || '',
+      phone:        c.phone        || (typeof c.active === 'string' ? c.active : '') || '',
+      status:       c.status       || (c.active === false || c.active === 'No' ? 'Inactive' : 'Active'),
+    }));
+    const statusColor = s => s === 'Inactive' ? 'var(--error)' : 'var(--success)';
+    const statusBg    = s => s === 'Inactive' ? 'var(--error-light)' : 'var(--success-light)';
+    tbody.innerHTML = _clientsData.map(c => `
+      <tr id="client-row-${c._id}" style="${c.status === 'Inactive' ? 'opacity:0.6;' : ''}">
+        <td style="font-weight:600;position:sticky;left:0;background:white;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.08);">${c.clientName}</td>
+        <td style="font-family:monospace;font-size:12px;">${c.clientCode || ''}</td>
+        <td style="font-family:monospace;font-size:12px;font-weight:600;color:var(--teal);">${c.abbrev || ''}</td>
+        <td style="font-size:12px;">${c.reportEmail || ''}</td>
+        <td style="font-size:12px;">${c.billingEmail || ''}</td>
+        <td style="font-size:12px;">${c.phone || ''}</td>
+        <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.billingAddress || ''}">${c.billingAddress || ''}</td>
+        <td style="font-size:11px;">${c.billingPreference || ''}</td>
+        <td style="font-size:11px;">${c.frequency || ''}</td>
+        <td style="font-size:11px;">${c.pricingCategory || ''}</td>
+        <td><span style="padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;
+            background:${statusBg(c.status)};color:${statusColor(c.status)};">
+            ${c.status || 'Active'}</span></td>
+        <td style="white-space:nowrap;">
+          <button class="action-btn" style="margin-right:4px;" onclick="openEditClientModal('${c._id}')">✏️ Edit</button>
+          <button class="action-btn" style="color:${c.status==='Inactive'?'var(--success)':'var(--error)'};border-color:${c.status==='Inactive'?'var(--success)':'var(--error)'};"
+            onclick="toggleClientStatus('${c._id}','${c.status}')">
+            ${c.status === 'Inactive' ? '✅ Activate' : '⛔ Deactivate'}</button>
+        </td>
+      </tr>`).join('');
+  }
+
+
+  function openAddClientModal() {
+    _editingRow = null;
+    document.getElementById('client-modal-title').textContent = 'Add New Client';
+    ['cm-name','cm-code','cm-abbrev','cm-main-contact','cm-dba','cm-report-email',
+     'cm-billing-email','cm-phone','cm-billing-addr','cm-radon-lic'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('cm-billing-pref').value = '';
+    document.getElementById('cm-frequency').value    = '';
+    document.getElementById('cm-pricing').value      = '';
+    document.getElementById('cm-status').value       = 'Active';
+    document.getElementById('cm-start-date').value   =
+      new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    document.getElementById('cm-status-msg').textContent = '';
+    document.getElementById('client-modal').style.display = 'flex';
+  }
+
+  function openEditClientModal(itemId) {
+    const client = _clientsData.find(c => c._id === itemId);
+    if (!client) return;
+    _editingRow = itemId;
+    document.getElementById('client-modal-title').textContent = `Edit — ${client.clientName}`;
+    document.getElementById('cm-name').value           = client.clientName     || '';
+    document.getElementById('cm-code').value           = client.clientCode     || '';
+    document.getElementById('cm-abbrev').value         = client.abbrev         || '';
+    document.getElementById('cm-main-contact').value   = client.mainContact    || '';
+    document.getElementById('cm-dba').value            = client.dbaName        || '';
+    document.getElementById('cm-report-email').value   = client.reportEmail    || '';
+    document.getElementById('cm-billing-email').value  = client.billingEmail   || '';
+    document.getElementById('cm-phone').value          = client.phone          || '';
+    document.getElementById('cm-billing-addr').value   = client.billingAddress || '';
+    document.getElementById('cm-billing-pref').value   = client.billingPreference || '';
+    document.getElementById('cm-frequency').value      = client.frequency      || '';
+    document.getElementById('cm-pricing').value        = client.pricingCategory|| '';
+    document.getElementById('cm-status').value         = client.status         || 'Active';
+    document.getElementById('cm-start-date').value     = client.startDate      || '';
+    document.getElementById('cm-radon-lic').value      = client.radonLic       || '';
+    document.getElementById('cm-status-msg').textContent = '';
+    document.getElementById('client-modal').style.display = 'flex';
+  }
+
+  function closeClientModal() {
+    document.getElementById('client-modal').style.display = 'none';
+    _editingRow = null;
+  }
+
+  async function saveClient() {
+    const statusEl = document.getElementById('cm-status-msg');
+    const name = document.getElementById('cm-name').value.trim();
+    if (!name) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ Client Name is required.';
+      return;
+    }
+    const client = {
+      clientName:       name,
+      clientCode:       document.getElementById('cm-code').value.trim(),
+      abbrev:           document.getElementById('cm-abbrev').value.trim().toUpperCase(),
+      mainContact:      document.getElementById('cm-main-contact').value.trim(),
+      dbaName:          document.getElementById('cm-dba').value.trim(),
+      reportEmail:      document.getElementById('cm-report-email').value.trim(),
+      billingEmail:     document.getElementById('cm-billing-email').value.trim(),
+      phone:            document.getElementById('cm-phone').value.trim(),
+      billingAddress:   document.getElementById('cm-billing-addr').value.trim(),
+      billingPreference: document.getElementById('cm-billing-pref').value,
+      frequency:        document.getElementById('cm-frequency').value,
+      pricingCategory:  document.getElementById('cm-pricing').value,
+      status:           document.getElementById('cm-status').value,
+      startDate:        document.getElementById('cm-start-date').value,
+      radonLic:         document.getElementById('cm-radon-lic').value.trim(),
+    };
+    statusEl.style.color = 'var(--slate)';
+    statusEl.textContent = '⏳ Saving...';
+    try {
+      const res = await fetch('/api/clients-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: _editingRow ? 'update' : 'add', itemId: _editingRow, client }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = `✅ ${_editingRow ? 'Updated' : 'Added'} successfully`;
+      showToast(`✅ ${name} ${_editingRow ? 'updated' : 'added'}`);
+      setTimeout(() => { closeClientModal(); loadClients(); }, 800);
+    } catch (err) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ ' + err.message;
+    }
+  }
+
+  async function toggleClientStatus(itemId, currentStatus) {
+    const client = _clientsData.find(c => c._id === itemId);
+    if (!client) return;
+    const action = currentStatus === 'Inactive' ? 'activate' : 'deactivate';
+    try {
+      const res = await fetch('/api/clients-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, itemId, client }),
+      });
+      if (res.ok) { showToast(`✅ ${client.clientName} ${action}d`); loadClients(); }
+      else { const d = await res.json(); showToast('⚠️ ' + d.error); }
+    } catch(e) { showToast('⚠️ ' + e.message); }
+  }
+
+
+  // ── Sample timeout checker ──────────────────────────────────────────────────
+  // Returns { flags: [{type:'rejected'|'expired'|'close', element, hours, over, remaining, limit}] }
+  function checkSampleTimeout(tests, dateDrawn, timeDrawn, receivedDate, receivedTime) {
+    // Time limits in hours from draw to receipt
+    const TIME_LIMITS = {
+      'Bacteria': 30, 'Total Coliform': 30, 'E.Coli': 30,
+      'Coliform MPN': 30, 'Ecoli MPN': 30,
+      'Nitrate': 48, 'Nitrite': 48,
+    };
+    const CLOSE_THRESHOLD = 6; // warn if within 6hrs of limit
+
+    // Packages that include time-sensitive elements
+    const PACKAGE_CONTAINS_BACTERIA = /basic safety|standard safety|expanded safety|ww.*expanded|comprehensive|pro plus|bacteria/i;
+    const PACKAGE_CONTAINS_NITRATE  = /basic safety|standard safety|expanded safety|ww.*expanded|comprehensive|pro plus/i;
+
+    if (!dateDrawn || !receivedDate) return { flags: [] };
+    try {
+      const parseDate = (d, t) => {
+        if (!d) return null;
+        const parts = d.split(/[-\/]/);
+        if (parts.length !== 3) return null;
+        let mm, dd, yy;
+        // Detect ISO format YYYY-MM-DD vs MM-DD-YY
+        if (parts[0].length === 4) {
+          // YYYY-MM-DD
+          [yy, mm, dd] = parts.map(Number);
+        } else {
+          // MM-DD-YY or MM-DD-YYYY
+          [mm, dd, yy] = parts.map(Number);
+          if (yy < 100) yy = 2000 + yy;
+        }
+        const timeParts = (t || '00:00').replace(/[APap][Mm]?$/,'').trim().split(':').map(Number);
+        let h = timeParts[0] || 0;
+        if (/pm/i.test(t||'') && h < 12) h += 12;
+        if (/am/i.test(t||'') && h === 12) h = 0;
+        const dt = new Date(yy, mm - 1, dd, h, timeParts[1] || 0);
+        return isNaN(dt.getTime()) ? null : dt;
+      };
+
+      const drawn    = parseDate(dateDrawn, timeDrawn);
+      const received = parseDate(receivedDate, receivedTime);
+      if (!drawn || !received) return { flags: [] };
+      const hoursElapsed = (received - drawn) / 3600000;
+      if (hoursElapsed < 0) return { flags: [] };
+
+      const testStr = (tests || []).join(' ').toLowerCase();
+
+      // Build effective element list — expand packages to their time-sensitive elements
+      const effectiveElements = new Set();
+      // Direct element matches
+      Object.keys(TIME_LIMITS).forEach(el => {
+        if (testStr.includes(el.toLowerCase())) effectiveElements.add(el);
+      });
+      // Package expansion
+      if (PACKAGE_CONTAINS_BACTERIA.test(testStr)) {
+        effectiveElements.add('Bacteria');
+        effectiveElements.add('Total Coliform');
+      }
+      if (PACKAGE_CONTAINS_NITRATE.test(testStr)) {
+        effectiveElements.add('Nitrate');
+        effectiveElements.add('Nitrite');
+      }
+
+      const flags = [];
+      for (const element of effectiveElements) {
+        const limit     = TIME_LIMITS[element];
+        const hours     = Math.round(hoursElapsed * 10) / 10;
+        const over      = Math.round((hoursElapsed - limit) * 10) / 10;
+        const remaining = Math.round((limit - hoursElapsed) * 10) / 10;
+        if (hoursElapsed > limit) {
+          flags.push({ type: 'rejected', element, hours, over, limit });
+        } else if (hoursElapsed > limit - CLOSE_THRESHOLD) {
+          flags.push({ type: 'close', element, hours, remaining, limit });
+        }
+      }
+      // Deduplicate by element name
+      const seen = new Set();
+      return { flags: flags.filter(f => seen.has(f.element) ? false : seen.add(f.element)) };
+    } catch(e) { return { flags: [] }; }
+  }
+
+  function setRejectedTimeoutExclusion(cardDiv, checked) {
+    const cb = cardDiv?.querySelector('input[value="Rejected - Timeout"]');
+    if (cb) cb.checked = checked;
+  }
+
+  function buildScanCard(r) {
+    const confColor = r.confidence >= 90 ? 'var(--success)' : r.confidence >= 70 ? 'var(--warning)' : 'var(--error)';
+    const confBg    = r.confidence >= 90 ? 'var(--success-light)' : r.confidence >= 70 ? 'var(--warning-light)' : 'var(--error-light)';
+    const tests     = r.tests || [];
+    const isBarcodeMatch = r.ocrStatus === 'Barcode Match';
+    const ALL_TESTS = [
+      // ── PACKAGES ──────────────────────────────────────────────────────────
+      'Basic Safety (FHA)',
+      'Standard Safety',
+      'Expanded Safety (Mortgage Test)',
+      'WW - Expanded Safety',
+      'Comprehensive',
+      'Pro Plus',
+      'Radon Water',
+      // ── INDIVIDUAL ELEMENTS ───────────────────────────────────────────────
+      'Alkalinity',
+      'Antimony',
+      'Arsenic, Total',
+      'Arsenic, Speciation',
+      'Bacteria',
+      'Bromide',
+      'Cadmium, Total',
+      'Calcium, Total',
+      'Chloride, Total',
+      'Chromium',
+      'Cobalt',
+      'Copper, Total',
+      'Fluoride',
+      'Iron, Total',
+      'Lead, Total',
+      'Magnesium, Total',
+      'Manganese, Total',
+      'Nitrate',
+      'Nitrite',
+      'pH',
+      'Sodium, Total',
+      'Sulfate',
+      'Tannins',
+      'Total Dissolved Solids (TDS)',
+      'Total Hardness',
+      'Uranium, Total',
+    ];
+
+    // _ALL_CLIENTS is loaded from the Clients sheet by refreshClientList() before cards render
+    // No hardcoded fallback — if it's empty it means the sheet hasn't loaded yet
+
+    const paddedZip = r.zip ? String(r.zip).padStart(5,'0') : '';
+
+    // Normalize any time format to HH:MM 24-hour
+    const normTime = (t) => {
+      if (!t) return '';
+      const m = t.match(/(\d{1,2}):(\d{2})/);
+      if (!m) return '';
+      let h = parseInt(m[1]);
+      if (/pm/i.test(t) && h < 12) h += 12;
+      if (/am/i.test(t) && h === 12) h = 0;
+      return String(h).padStart(2,'0') + ':' + m[2];
+    };
+
+    const PACKAGE_TESTS_LIST = _allTestTypes
+      ? _allTestTypes.testTypes.filter(t=>t.active && (t.category==='Package')).map(t=>t.name)
+      : ['Basic Safety (FHA)','Standard Safety','Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','Pro Plus'];
+    const AIO_TESTS_LIST = _allTestTypes
+      ? _allTestTypes.testTypes.filter(t=>t.active && t.category==='AIO').map(t=>t.name)
+      : ['AIO FHA','AIO Portability'];
+    const isAIOClient = (r.customer||'').toLowerCase().includes('all in one') || (r.customer||'').toLowerCase().includes('aio');
+
+    // Use Eastern Time for date defaults in the browser
+    const today = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'}); // YYYY-MM-DD in ET
+
+    // Parse processedDate (format: "MM-DD-YY HH:MM AM/PM") into received date + 24hr time
+    // This is when the COC was scanned — used as the default received date/time
+    let scanReceivedDate = today;
+    let scanReceivedTime = '';
+    if (r.processedDate) {
+      const parts = r.processedDate.trim().split(/\s+/); // ["MM-DD-YY", "HH:MM", "AM/PM"]
+      if (parts[0]) {
+        const dp = parts[0].split('-');
+        if (dp.length === 3) {
+          const yr = dp[2].length === 2 ? '20' + dp[2] : dp[2];
+          scanReceivedDate = `${yr}-${dp[0]}-${dp[1]}`;
+        }
+      }
+      // Try HH:MM from parts[1], with optional AM/PM in parts[2]
+      const timePart = parts[1] || '';
+      const ampm = (parts[2] || '').toUpperCase().replace(/[^APM]/g,'');
+      const tm = timePart.match(/(\d{1,2}):(\d{2})/);
+      if (tm) {
+        let h = parseInt(tm[1]), m = parseInt(tm[2]);
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+          scanReceivedTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        }
+      }
+    }
+    // Final fallback: use current ET time if still empty
+    if (!scanReceivedTime) {
+      const now = new Date();
+      const etH = parseInt(now.toLocaleString('en-US',{timeZone:'America/New_York',hour:'2-digit',hour12:false}));
+      const etM = now.toLocaleString('en-US',{timeZone:'America/New_York',minute:'2-digit'}).padStart(2,'0');
+      scanReceivedTime = `${String(etH).padStart(2,'0')}:${etM}`;
+    }
+
+    // Timeout detection — use scan received time (more reliable than OCR Lab Use Only box)
+    // r.receivedDate/Time from queue may be blank or invalid; scanReceivedDate is always populated
+    const effectiveReceivedDate = scanReceivedDate || r.receivedDate;
+    const effectiveReceivedTime = scanReceivedTime || normTime(r.receivedTime);
+    const timeoutResult = checkSampleTimeout(tests, r.dateDrawn, r.timeDrawn, effectiveReceivedDate, effectiveReceivedTime);
+    const hasRejectedTimeout = timeoutResult?.flags?.some(f => f.type === 'rejected');
+    const hasExpiredInPackage = timeoutResult?.flags?.some(f => f.type === 'expired');
+    // Build readable timeout warning showing hours elapsed vs limit
+    const timeoutWarningText = timeoutResult?.flags?.length
+      ? timeoutResult.flags.map(f =>
+          `${f.element}: ${f.hours}hrs elapsed (limit ${f.limit}hrs)`
+        ).join('; ')
+      : '';
+
+    // Auto-convert to Rejected - Timeout — but ONLY for standalone elements
+    // If bacteria/nitrate/nitrite expire inside a PACKAGE, keep the package and add a note
+    let displayTests = [...tests];
+    let timeoutNotes = [];
+    if (hasRejectedTimeout || hasExpiredInPackage) {
+      const allPackages = [...(PACKAGE_TESTS_LIST||[]), ...(AIO_TESTS_LIST||[])];
+      const rejectedFlags = (timeoutResult?.flags||[]).filter(f=>f.type==='rejected'||f.type==='expired');
+      const selectedPackage = displayTests.find(t => allPackages.includes(t));
+      const expiredElements = rejectedFlags.map(f=>f.element);
+
+      // If ALL time-sensitive elements in the package are expired → reject the whole sample
+      // If only SOME are expired (e.g. metals still valid) → keep package with note
+      const PACKAGE_TIME_SENSITIVE = ['Bacteria','Total Coliform','E.Coli','Nitrate','Nitrite'];
+      const allTimeSensitiveExpired = PACKAGE_TIME_SENSITIVE.every(el =>
+        expiredElements.includes(el) || !expiredElements.some(e => e === el) && 
+        !(timeoutResult?.flags||[]).some(f => f.element === el && f.type === 'close')
+      );
+      // Simpler check: if any key element is rejected AND hours > 100, reject the whole sample
+      const hoursElapsedRough = rejectedFlags[0]?.hours || 0;
+      const shouldRejectAll = hasRejectedTimeout && (hoursElapsedRough > 100 ||
+        (expiredElements.includes('Bacteria') && expiredElements.includes('Nitrate')));
+
+      if (selectedPackage && expiredElements.length && !shouldRejectAll) {
+        // Some elements expired inside a package but not all — keep package, add note
+        timeoutNotes = expiredElements.map(el => {
+          const flag = rejectedFlags.find(f=>f.element===el);
+          return `${el} over time limit (${flag?.hours||'?'} hrs old, limit ${flag?.limit||'?'} hrs)`;
+        });
+        displayTests = displayTests.filter(t => allPackages.includes(t) || !expiredElements.includes(t));
+      } else {
+        // All key elements expired OR standalone elements — reject entire sample
+        timeoutNotes = rejectedFlags.map(f =>
+          `${f.element} over time limit (${f.hours||'?'} hrs old, limit ${f.limit||'?'} hrs)`
+        );
+        displayTests = ['Rejected - Timeout'];
+      }
+    }
+
+    // Timeout / expiry banner
+    let timeoutBanner = '';
+    if (timeoutResult && timeoutResult.flags.length > 0) {
+      const hasRejected = timeoutResult.flags.some(f=>f.type==='rejected');
+      const hasExpired  = timeoutResult.flags.some(f=>f.type==='expired');
+      const hasClose    = timeoutResult.flags.some(f=>f.type==='close');
+      const inPackage   = hasExpired && !hasRejected;
+      const bgColor     = hasRejected ? '#fff0f0' : inPackage ? '#fff8e6' : '#fffbe6';
+      const borderColor = hasRejected ? 'var(--error)' : inPackage ? '#f59e0b' : '#d97706';
+      const icon        = hasRejected ? '⛔' : inPackage ? '⚠️' : '⏰';
+      const headline    = hasRejected ? 'Sample(s) REJECTED — Timeout'
+                        : inPackage   ? 'Element(s) over time limit — package kept'
+                        : 'Close to timeout';
+      const flagLines = timeoutResult.flags.map(f => {
+        if (f.type === 'close') {
+          return `<li><strong>${f.element}</strong>: ${f.hours} hrs elapsed of ${f.limit} hr limit — <strong>${f.remaining} hrs remaining</strong></li>`;
+        } else if (f.type === 'rejected' || f.type === 'expired') {
+          return `<li><strong>${f.element}</strong>: ${f.hours} hrs elapsed — <strong>${f.over} hrs over ${f.limit} hr limit</strong></li>`;
+        }
+        return `<li>${f.element}: ${f.hours} hrs elapsed (${f.limit} hr limit)</li>`;
+      }).join('');
+      timeoutBanner = `<div style="background:${bgColor};border-left:4px solid ${borderColor};padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;">
+        ${icon} <strong>${headline}</strong>
+        <ul style="margin:6px 0 0;padding-left:18px;line-height:1.8;">
+          ${flagLines}
+        </ul>
+      </div>`;
+    }
+
+    const STOP_WORDS = new Set(['water','home','inspection','inspections','inc','llc','ltd',
+      'corp','co','systems','services','plumbing','well','environmental','testing',
+      'labs','laboratory','laboratories','and','the','of','for']);
+    const customerLower = (r.customer||'').toLowerCase().trim();
+    const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
+      const cl = c.toLowerCase();
+      // Exact match
+      if (cl === customerLower) return true;
+      // One fully contains the other (handles abbreviations like "FPI" in "FPI / ChanCorp")
+      if (cl.includes(customerLower) || customerLower.includes(cl)) return true;
+      // Significant word match — only non-stop words of 4+ chars
+      const sigWords = cl.split(/[\s,./]+/).filter(w => w.length >= 4 && !STOP_WORDS.has(w));
+      if (!sigWords.length) return false;
+      // ALL significant words must appear in customer (not just one)
+      return sigWords.length >= 2
+        ? sigWords.filter(w => customerLower.includes(w)).length >= 2
+        : sigWords.every(w => customerLower.includes(w));
+    }) : null;
+    const isPublicClient = !matchedClient;
+
+    // Client-specific flag banner — must be after matchedClient is declared
+    const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
+    const flagBanner = clientFlag
+      ? `<div style="background:#fff8e6;border-left:4px solid #f59e0b;padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;font-weight:600;">
+          ⚠️ ${clientFlag}
+        </div>`
+      : '';
+
+
+    // Client-specific test restrictions
+    const _CLIENT_TEST_RULES = {
+      'Critical Plumbing Inc. a/k/a Ward Water': {
+        disable: ['Expanded Safety (Mortgage Test)'],
+        note: 'Ward Water uses WW - Expanded Safety',
+      },
+    };
+    const clientTestRule = matchedClient ? _CLIENT_TEST_RULES[matchedClient] : null;
+    const clientOptions = ['<option value="">— Select or type below —</option>',
+      ..._ALL_CLIENTS.filter(c => !c.startsWith('Public-')).map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
+    ].join('');
+
+    const testCheckboxes =
+      '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Packages <span style="font-weight:400;color:var(--slate);text-transform:none;">(max one)</span></div>' +
+      PACKAGE_TESTS_LIST.map(t => {
+        const isDisabled = clientTestRule?.disable?.includes(t);
+        return `<label style="display:flex;align-items:center;gap:6px;font-size:13px;${isDisabled?'cursor:not-allowed;opacity:0.35;':'cursor:pointer;'}margin-bottom:4px;" title="${isDisabled?clientTestRule.note:''}">
+          <input type="checkbox" value="${t}" aria-label="${t}" ${displayTests.includes(t) ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}
+            onchange="enforceOnePackage(this,'${r.fileId}')"
+            style="width:16px;height:16px;${isDisabled?'cursor:not-allowed;':'cursor:pointer;'}" />${t}${isDisabled?` <span style="font-size:10px;color:var(--error);">(not available for this client)</span>`:''}
+        </label>`;
+      }).join('') +
+      // AIO section — always show if AIO client, otherwise show dimmed
+      `<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:#8b5cf6;text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;padding-top:8px;border-top:1px solid var(--border);">AIO Only${!isAIOClient?' <span style="font-weight:400;font-size:10px;opacity:0.6;">(All In One clients only)</span>':''}</div>` +
+      AIO_TESTS_LIST.map(t =>
+        `<label style="display:flex;align-items:center;gap:6px;font-size:13px;${isAIOClient?'cursor:pointer;':'cursor:not-allowed;opacity:0.35;'}margin-bottom:4px;">
+          <input type="checkbox" value="${t}" aria-label="${t}" ${displayTests.includes(t) ? 'checked' : ''} ${!isAIOClient ? 'disabled' : ''}
+            onchange="enforceOnePackage(this,'${r.fileId}')"
+            style="width:16px;height:16px;${isAIOClient?'cursor:pointer;':'cursor:not-allowed;'}" />${t}
+        </label>`
+      ).join('') +
+      '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;padding-top:8px;border-top:1px solid var(--border);">Radon Water</div>' +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:8px;">
+        <input type="checkbox" value="Radon Water" aria-label="Radon Water" ${displayTests.includes('Radon Water') ? 'checked' : ''}
+          style="width:16px;height:16px;cursor:pointer;" />Radon Water
+      </label>` +
+      '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--error);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;border-top:1px solid var(--border);padding-top:8px;">Rejection</div>' +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+        <input type="checkbox" value="Rejected - Timeout" aria-label="Rejected - Timeout" ${displayTests.includes('Rejected - Timeout') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />Rejected - Timeout
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+        <input type="checkbox" value="Rejected - Missing Information" aria-label="Rejected - Missing Information" ${displayTests.includes('Rejected - Missing Information') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />Rejected - Missing Information
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;" title="Water quality test rejected — Radon Water still processed normally">
+        <input type="checkbox" value="WQ - Reject" aria-label="WQ - Reject" ${displayTests.includes('WQ - Reject') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />WQ — Reject <span style="font-size:11px;color:var(--slate);margin-left:4px;">(water quality rejected, RW proceeds)</span>
+      </label>` +
+      `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:8px;" title="Radon Water rejected — water quality test still processed normally">
+        <input type="checkbox" value="RW - Reject" aria-label="RW - Reject" ${displayTests.includes('RW - Reject') ? 'checked' : ''}
+          onchange="enforceRejectedTimeout(this,'${r.fileId}')"
+          style="width:16px;height:16px;cursor:pointer;" />RW — Reject <span style="font-size:11px;color:var(--slate);margin-left:4px;">(radon rejected, WQ proceeds)</span>
+      </label>` +
+      '<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 2px;border-top:1px solid var(--border);padding-top:8px;">Individual Elements</div>' +
+      ALL_TESTS.filter(t => !PACKAGE_TESTS_LIST.includes(t) && !AIO_TESTS_LIST.includes(t) && t !== 'Radon Water').map(t =>
+        `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+          <input type="checkbox" value="${t}" aria-label="${t}" ${displayTests.includes(t) ? 'checked' : ''}
+            style="width:16px;height:16px;cursor:pointer;" />${t}
+        </label>`
+      ).join('');
+
+    // Customer dropdown — with the OCR value pre-selected if it matches, otherwise blank
+    // Check if OCR customer matches any known client
+    // Use strict matching — avoid common words that cause false positives
+
+    // Email — auto-filled from Clients list for known clients, OCR for new
+    const clientEmail  = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
+    const isNewClient  = !matchedClient; // r.IsNewClient === 'Yes' or client not found
+    const safeQ = s => (s||'').replace(/"/g,'&quot;');
+
+    const emailFieldHtml = `
+      <div class="form-field" style="grid-column:1/-1;">
+        <label for="sc-${r.fileId}-email">Email Address${isNewClient ? ' <span style="font-size:11px;color:var(--warning);font-weight:400;">⚠️ New client</span>' : ''}</label>
+        <input type="text" id="sc-${r.fileId}-email" inputmode="email" autocomplete="new-password" spellcheck="false"
+          value="${safeQ(clientEmail)}" placeholder="For report delivery"
+          style="width:100%;padding:9px 12px;border:1.5px solid ${isNewClient?'var(--warning)':'var(--border)'};border-radius:8px;font-size:14px;" />
+      </div>
+      ${isNewClient ? `
+      <div class="form-field">
+        <label for="sc-${r.fileId}-phone">Phone # <span style="font-size:11px;color:var(--slate);font-weight:400;">(new client)</span></label>
+        <input type="tel" id="sc-${r.fileId}-phone"
+          value="${safeQ(r.phone)}" placeholder="207-555-0100"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+      </div>
+      <div class="form-field" style="grid-column:1/-1;">
+        <label for="sc-${r.fileId}-billingaddr">Billing Address <span style="font-size:11px;color:var(--slate);font-weight:400;">(new client — street, city, state zip)</span></label>
+        <input type="text" id="sc-${r.fileId}-billingaddr"
+          value="${safeQ(r.billingAddress)}" placeholder="e.g. 24 Freedom Dr, Standish, ME 04084"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+      </div>` : ''}`;
+
+    // Use Eastern Time for date defaults in the browser
+
+    // Convert value to safe date string for date inputs
+    // For dateDrawn (Date Sampled): NEVER default to today if blank — leave it empty
+    const safeDate = (val, allowBlank=false) => {
+      if (!val) return allowBlank ? '' : today;
+      const s = String(val).trim();
+      // Already YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      // Excel serial number (e.g. 46216) → convert to date
+      const n = Number(s);
+      if (!isNaN(n) && n > 40000 && n < 60000) {
+        const d = new Date(Date.UTC(1900, 0, 1) + (n - 2) * 86400000);
+        return d.toISOString().split('T')[0];
+      }
+      // Try parsing as date string
+      try {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      } catch {}
+      // Unrecognised format — if blank allowed return '', otherwise today
+      // For dateDrawn (Date Sampled) allowBlank=true so bad OCR → ''
+      return allowBlank ? '' : today;
+    };
+
+    const inp = (id, type, val, lbl, hint='') => {
+      const isTime = type === 'time';
+      // dateDrawn always uses allowBlank — never default to today for Date Sampled
+      const safeVal = type === 'date'
+        ? (id === 'dateDrawn' ? safeDate(val, true) : safeDate(val))
+        : String(val||'');
+      const inputAttrs = isTime
+        ? `type="text" placeholder="HH:MM" pattern="[0-2][0-9]:[0-5][0-9]" maxlength="5"`
+        : `type="${type}"`;
+      return `<div class="form-field">
+        <label for="sc-${r.fileId}-${id}">${lbl}${hint ? `<span style="font-size:10px;color:var(--slate);font-weight:400;margin-left:4px;">${hint}</span>` : ''}</label>
+        <input ${inputAttrs} id="sc-${r.fileId}-${id}" name="sc-${id}" value="${safeVal.replace(/"/g,'&quot;')}"
+          autocomplete="new-password" data-form-type="other" data-lpignore="true"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;" />
+      </div>`;
+    };
+
+    return `<div class="card" id="scan-card-${r.fileId}" data-filename="${r.fileName||''}" style="border-left:4px solid ${confColor};">
+      <div class="card-header">
+        <div>
+          <div class="card-title">
+            ${isBarcodeMatch ? '✅' : '📄'} ${r.customer || 'Unknown Customer'}
+            ${isBarcodeMatch ? '<span style="font-size:11px;background:var(--success-light);color:var(--success);padding:2px 8px;border-radius:8px;margin-left:8px;">Barcode Match</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--slate);margin-top:2px;">
+            ${r.barcodeId ? `Barcode: <strong style="font-family:monospace;color:var(--teal);">${r.barcodeId}</strong> · ` : ''}Scanned: ${r.processedDate||''}
+          </div>
+        </div>
+        <div style="background:${confBg};color:${confColor};padding:4px 12px;border-radius:10px;font-size:12px;font-weight:700;">${r.confidence}% confidence</div>
+      </div>
+
+      ${r.validationErrors ? `<div style="background:var(--error-light);color:var(--error);padding:10px 16px;font-size:13px;font-weight:600;">⚠️ ${r.validationErrors}</div>` : ''}
+      ${flagBanner}
+      ${timeoutBanner}
+
+      <div style="padding:20px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--slate);margin-bottom:14px;">Review and correct any errors before approving ↓</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+
+          <!-- Customer dropdown -->
+          <div class="form-field" style="grid-column:1/-1;">
+            <label for="sc-${r.fileId}-customer-select">Customer / Company <span style="font-size:10px;color:var(--slate);font-weight:400;margin-left:4px;">(Report To section)</span></label>
+            <select id="sc-${r.fileId}-customer-select" onchange="
+              const typed = document.getElementById('sc-${r.fileId}-customer');
+              typed.value = this.value;
+              const em = document.getElementById('sc-${r.fileId}-email');
+              if (em) {
+                if (this.value) {
+                  // Known client selected — fill email from client map
+                  const lookup = (_CLIENT_EMAILS && _CLIENT_EMAILS[this.value]) || '';
+                  if (lookup) em.value = lookup;
+                } else {
+                  // Dropdown cleared — user will type a name; clear email so they can fill it
+                  em.value = '';
+                }
+              }
+            "
+              style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:var(--font-body);background:white;margin-bottom:6px;">
+              ${clientOptions}
+            </select>
+            <input type="text" id="sc-${r.fileId}-customer" placeholder="Or type name if not listed above"
+              value="${String(r.customer||'').replace(/"/g,'&quot;')}"
+              autocomplete="new-password" data-form-type="other" data-lpignore="true"
+              style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;color:var(--slate);" />
+          </div>
+
+          ${emailFieldHtml}
+
+          ${inp('dateDrawn','date', r.dateDrawn||'', 'Date Sampled', '(collection date)')}
+          ${inp('timeDrawn','time', normTime(r.timeDrawn), 'Time Sampled 24hr', '(HH:MM)')}
+          ${inp('receivedDate','date', scanReceivedDate, 'Date Received', '(scan date)')}
+          ${inp('receivedTime','time', scanReceivedTime || normTime(r.receivedTime), 'Time Received 24hr', '(HH:MM)')}
+          ${inp('location','text', r.location, 'Street Address', '(Well Owner section)')}
+          ${inp('city','text', r.city, 'City / Town', '(Well Owner section)')}
+          ${inp('state','text', r.state||'ME', 'State', '')}
+          ${inp('zip','text', paddedZip, 'Zip Code', '(5 digits)')}
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:8px;">Tests Ordered</label>
+          <div id="sc-${r.fileId}-tests" data-fileid="${r.fileId}" data-rejected="${displayTests.includes('Rejected - Timeout')}" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px;">${testCheckboxes}</div>
+        </div>
+
+        <div class="form-field" style="margin-bottom:16px;">
+          <label for="sc-${r.fileId}-notes">Notes</label>
+          <input type="text" id="sc-${r.fileId}-notes"
+            value="${(() => {
+              const existingNotes = String(r.notes||'');
+              const timeoutNote = timeoutNotes.length ? timeoutNotes.join('; ') : '';
+              if (!timeoutNote) return existingNotes.replace(/"/g,'&quot;');
+              return (existingNotes ? existingNotes + '; ' + timeoutNote : timeoutNote).replace(/"/g,'&quot;');
+            })()}"
+            autocomplete="new-password" data-form-type="other" data-lpignore="true"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+        </div>
+
+        <div id="sc-${r.fileId}-status" style="font-size:13px;color:var(--slate);margin-bottom:12px;min-height:18px;"></div>
+
+        <div style="display:flex;gap:10px;">
+          <button class="btn-ok" style="flex:1;padding:12px;" id="approve-btn-${r.fileId}"
+            onclick="this.disabled=true;this.textContent='⏳ Approving...';approveScan('${r.fileId}', ${r._rowIndex})">
+            ✅ Approve — Generate Lab ID &amp; Write to Sheets
+          </button>
+          <button style="padding:12px 20px;background:var(--error);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-body);"
+            onclick="discardScanCard('${r.fileId}', ${r._rowIndex})">
+            🗑 Delete Scan
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function updateCardTest(fileId, checkbox) {
+    // Nothing needed — we read checkboxes fresh on approve
+  }
+
+  async function approveScan(fileId, rowIndex) {
+    const statusEl = document.getElementById(`sc-${fileId}-status`);
+
+    // Collect values from the card
+    const g = (field) => {
+      const el = document.getElementById(`sc-${fileId}-${field}`);
+      return el ? el.value.trim() : '';
+    };
+
+    // Collect checked tests
+    const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox]:checked`);
+    const tests   = Array.from(testEls).map(el => el.value);
+    const hasRadon = tests.includes('Radon Water');
+    const wqReject = tests.includes('WQ - Reject');
+    const rwReject = tests.includes('RW - Reject');
+
+    // ── REQUIRED FIELD VALIDATION ─────────────────────────────────────────
+    const missing = [];
+    const isMissingInfo = tests.some(t => t === 'Rejected - Missing Information');
+    const isPartialReject = wqReject || rwReject; // WQ/RW reject still need basic info
+
+    if (!isMissingInfo) {
+      // Full validation — skip for Missing Information rejections
+      if (!g('customer'))      missing.push('Customer / Company');
+      if (!g('dateDrawn'))     missing.push('Date Sampled');
+      if (!g('timeDrawn'))     missing.push('Time Sampled (HH:MM)');
+      if (!g('receivedDate'))  missing.push('Date Received');
+      if (!g('receivedTime'))  missing.push('Time Received (HH:MM)');
+      if (!g('location'))      missing.push('Street Address');
+      if (!g('city'))          missing.push('City');
+      if (!g('state'))         missing.push('State');
+      const zipVal = g('zip');
+      if (!zipVal)                          missing.push('Zip Code');
+      else if (!/^\d{5}$/.test(zipVal))     missing.push('Zip Code must be 5 digits');
+      // Require email for public/unmatched clients
+      const customerVal = g('customer').toLowerCase().trim();
+      // Check if customer matches any known client (fuzzy — contains or is contained)
+      const isKnownClient = _ALL_CLIENTS.some(c => {
+        const cl = c.toLowerCase().trim();
+        return cl === customerVal || cl.includes(customerVal) || customerVal.includes(cl);
+      });
+      // Check if customer looks like a business (never treat businesses as public)
+      const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|home|real estate)\b/i;
+      const looksLikeBusiness = BWORDS.test(g('customer')) || g('customer').includes('/') || g('customer').includes('&');
+      const isPublicApprove = !isKnownClient && !looksLikeBusiness;
+      if (isPublicApprove && !g('email')) missing.push('Email Address (required for clients not on the client list)');
+      // Validate time format HH:MM
+      const timeRe = /^\d{2}:\d{2}$/;
+      if (g('timeDrawn') && !timeRe.test(g('timeDrawn'))) missing.push('Time Sampled must be HH:MM (e.g. 14:30)');
+      if (g('receivedTime') && !timeRe.test(g('receivedTime'))) missing.push('Time Received must be HH:MM (e.g. 14:30)');
+    }
+    if (!tests.length) missing.push('At least one test');
+
+    if (missing.length) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = `⚠️ Required: ${missing.join(', ')}`;
+      ['customer','dateDrawn','timeDrawn','receivedDate','receivedTime','location','city','state','zip'].forEach(field => {
+        const el = document.getElementById(`sc-${fileId}-${field}`);
+        if (el && !el.value.trim()) el.style.borderColor = 'var(--error)';
+      });
+      const btn = document.getElementById(`approve-btn-${fileId}`);
+      if (btn) { btn.disabled = false; btn.textContent = '✅ Approve — Generate Lab ID & Write to Sheets'; }
+      return;
+    }
+
+    statusEl.textContent = '⏳ Generating Lab ID and writing to sheets...';
+    statusEl.style.color = 'var(--slate)';
+
+    // Reset any error highlights
+    ['customer','dateDrawn','timeDrawn','receivedDate','receivedTime'].forEach(field => {
+      const el = document.getElementById(`sc-${fileId}-${field}`);
+      if (el) el.style.borderColor = '';
+    });
+
+    try {
+      const res = await fetch('/api/approve-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId,
+          reviewQueueRow: rowIndex,
+          reviewedBy:   getAdminName(),
+          customer:     g('customer'),
+          // If nothing was selected from the dropdown, the client was typed manually → treat as public
+          isPublicOverride: !document.getElementById(`sc-${fileId}-customer-select`)?.value,
+          dateDrawn:    g('dateDrawn'),
+          timeDrawn:    g('timeDrawn'),
+          receivedDate: g('receivedDate'),
+          receivedTime: g('receivedTime'),
+          location:     g('location'),
+          city:         g('city'),
+          state:        g('state'),
+          zip:          g('zip'),
+          email:        g('email'),
+          phone:        document.getElementById(`sc-${fileId}-phone`)?.value?.trim() || '',
+          billingAddress: document.getElementById(`sc-${fileId}-billingaddr`)?.value?.trim() || '',
+          tests,
+          hasRadon,
+          wqReject,
+          rwReject,
+          notes:        g('notes'),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({ error: 'Server returned invalid response' }));
+      if (!res.ok || !data.success) {
+        // Re-enable button so user can fix and retry
+        const btn = document.getElementById(`approve-btn-${fileId}`);
+        if (btn) { btn.disabled=false; btn.textContent='✅ Approve — Generate Lab ID & Write to Sheets'; }
+        if (statusEl) {
+          statusEl.style.color = 'var(--error)';
+          statusEl.textContent = `⚠️ ${data.error || `HTTP ${res.status}`}`;
+        }
+        return;
+      }
+      const labIdStr = (data.labIds || []).join(' · ') || 'Lab ID assigned';
+      if (statusEl) {
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ ${labIdStr}`;
+        if (data.archiveNote) statusEl.textContent += ` — ${data.archiveNote}`;
+        if (data.warning) {
+          statusEl.style.color = 'var(--warning)';
+          statusEl.textContent += ` ⚠️ ${data.warning}`;
+        }
+      }
+
+      // Write lab IDs to control sheet from browser (avoids Netlify function timeout)
+      if (data.labIds?.length) {
+        (async () => {
+          const CS_URL = '/api/control-sheet';
+          const CS_HDR = { 'Content-Type': 'application/json' };
+          const post = (body, signal) => fetch(CS_URL, { method:'POST', headers:CS_HDR, body:JSON.stringify(body), signal });
+
+          try {
+            // Step 1: Try to write — if file exists this is all we need (20s timeout)
+            const ctrl1   = new AbortController();
+            const timer1  = setTimeout(() => ctrl1.abort(), 24000);
+            const addRes  = await post({ action:'addLabIds', labIds:data.labIds }, ctrl1.signal).catch(e=>({ ok:false, status:0, json:()=>({ success:false, error:e.name==='AbortError'?'timeout':e.message }) }));
+            clearTimeout(timer1);
+            const addData = await Promise.resolve(addRes.json ? addRes.json() : addRes).catch(()=>({ success:false, error:'parse error' }));
+            console.log('[control-sheet] addLabIds:', addRes.status, addData.success ? `✅ wrote ${addData.written} IDs to row ${addData.startRow}` : addData.error);
+
+            if (addData.success) return; // Done
+
+            // Step 2: File missing — auto-create from template
+            console.log('[control-sheet] Creating control sheet...');
+            const createRes  = await post({ action:'create' });
+            const createData = await createRes.json().catch(()=>({}));
+            console.log('[control-sheet] create:', createRes.status, createData.message || createData.error);
+
+            if (!createData.success && !createData.alreadyExists) return;
+
+            // Step 3: Wait for SharePoint to finish copying (async operation)
+            await new Promise(r => setTimeout(r, 10000));
+
+            // Step 4: Retry writing
+            const retryRes  = await post({ action:'addLabIds', labIds:data.labIds });
+            const retryData = await retryRes.json().catch(()=>({}));
+            console.log('[control-sheet] retry:', retryRes.status, retryData.success ? `✅ wrote ${retryData.written} IDs to row ${retryData.startRow}` : retryData.error);
+
+          } catch(e) { console.warn('[control-sheet] error:', e.message); }
+        })();
+      }
+      showToast(`✅ ${labIdStr} written to sheets`);
+
+      // Add to in-memory recently approved cache so it shows in Recently Approved table
+      recentlyApprovedCache.push({
+        labId:       data.labIds.join(', '),
+        customer:    data.formalName || g('customer'),
+        tests,
+        scannedBy:   '',
+        approvedBy:  getAdminName(),
+        processedDate: new Date().toLocaleString(),
+      });
+
+      // ── ACTIVITY LOG: always record approval ──────────────────────────────
+      const etDate = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
+      await logActivity({
+        date:   etDate,
+        client: g('customer') || 'Unknown',
+        type:   'check_in',
+        qty:    (data.labIds||[]).length || 1,
+        notes:  `COC checked in — Lab ID(s): ${(data.labIds||[]).join(', ')}`,
+        by:     getAdminName(),
+      }).catch(e => console.warn('[logActivity] Failed:', e.message));
+
+      // ── INVENTORY: subtract one kit on approval (only for known clients) ──
+      const approvedClient = CLIENTS.find(c =>
+        c.name.toLowerCase() === (g('customer')||'').toLowerCase()
+      );
+      if (approvedClient) {
+        const key = approvedClient.key;
+        if (!inventory[key]) inventory[key] = {inStock:0,sampled:0,totalSent:0,totalReceived:0,lastActivity:null};
+        const hasSampled = (inventory[key].sampled||0) > 0;
+        if (hasSampled) {
+          inventory[key].sampled = Math.max(0, (inventory[key].sampled||0) - 1);
+        } else {
+          inventory[key].inStock = Math.max(0, (inventory[key].inStock||0) - 1);
+        }
+        inventory[key].lastActivity = etDate;
+        writeInventory();
+        render();
+      }
+
+      // Fade out and remove THIS card only — do not refresh entire queue
+      // (refreshing would wipe edits the user has made to other pending cards)
+      const card = document.getElementById(`scan-card-${fileId}`);
+      if (card) {
+        card.style.transition = 'opacity 0.5s';
+        card.style.opacity = '0.3';
+        card.style.pointerEvents = 'none';
+        setTimeout(() => card.remove(), 2000);
+      }
+
+      // Update the stats counters
+      if (scanQueueData.pending) {
+        scanQueueData.pending = scanQueueData.pending.filter(r => r.fileId !== fileId);
+        const badge = document.getElementById('review-badge');
+        if (badge) {
+          badge.style.display = scanQueueData.pending.length ? 'inline-block' : 'none';
+          badge.textContent = scanQueueData.pending.length;
+        }
+      }
+
+      // Refresh Recently Approved from Archived Intake (small delay to let sheet write complete)
+      setTimeout(() => loadScanQueue().then(renderScanQueue).catch(renderScanQueue), 1500);
+
+    } catch (err) {
+      const btn = document.getElementById(`approve-btn-${fileId}`);
+      if (btn) { btn.disabled=false; btn.textContent='✅ Approve — Generate Lab ID & Write to Sheets'; }
+      if (statusEl) { statusEl.style.color = 'var(--error)'; statusEl.textContent = '⚠️ ' + (err.message||'Error'); }
+      console.error('[approveScan]', err);
+    }
+  }
+
+  async function discardScanCard(fileId, rowIndex) {
+    if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
+
+    // Remove card from UI immediately
+    const card = document.getElementById(`scan-card-${fileId}`);
+    if (card) {
+      card.style.transition = 'opacity 0.2s, transform 0.2s';
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(-20px)';
+      setTimeout(() => card.remove(), 220);
+    }
+
+    try {
+      const res  = await fetch('/api/mark-scan-processed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId, fileName: document.getElementById(`scan-card-${fileId}`)?.dataset?.filename || '', rowIndex, outcome: 'discarded', processedBy: getAdminName() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.driveDeleted) {
+        showToast('✅ Scan deleted.');
+      } else {
+        showToast('✅ Removed from queue.');
+      }
+    } catch(err) {
+      // Don't freeze — card is already removed from UI, failure is non-critical
+      console.warn('Delete scan cleanup failed:', err.message);
+      showToast('✅ Removed from queue.');
+    }
+  }
+
+
+
+  // ── BARCODE BRIDGE: three-outcome resolution ──────────────────────────────
+  // Outcome 1: matched + customer name resolves to a known business client
+  // Outcome 2: matched but no client resolution (generic/public submission)
+  // Outcome 3: no match at all — falls back to manual/OCR entry path
+
+  function resolveClientFromName(customerName) {
+    if (!customerName) return null;
+    const nameLower = customerName.trim().toLowerCase();
+    // Exact match first
+    let match = CLIENTS.find(c => c.name.toLowerCase() === nameLower);
+    if (match) return match;
+    // Partial/contains match as fallback (handles "FPI" matching "FPI / ChanCorp, Inc.")
+    match = CLIENTS.find(c =>
+      c.name.toLowerCase().includes(nameLower) || nameLower.includes(c.name.toLowerCase().split(' ')[0].toLowerCase())
+    );
+    return match || null;
+  }
+
+  function lookupBarcode() {
+    const input = document.getElementById('rq-barcode-input');
+    const code = input.value.trim();
+    const resultEl = document.getElementById('rq-lookup-result');
+    if (!code) { showToast('Enter a barcode to look up.'); return; }
+
+    const found = [...reviewQueueData.pending, ...reviewQueueData.accessioned].find(r => r.barcodeId === code);
+
+    if (!found) {
+      // Outcome 3: no match — needs manual/OCR entry
+      resultEl.innerHTML = `<div style="background:var(--error-light);border:1px solid #f0c0b0;border-radius:8px;padding:14px;">
+        <div style="font-weight:700;color:var(--error);margin-bottom:6px;">⚠️ No App Submission Found</div>
+        <div style="font-size:13px;color:var(--text);margin-bottom:10px;">No matching record for <strong>${code}</strong>. This COC wasn't submitted through the field app — enter it manually from the physical paperwork.</div>
+        <button class="btn-ok" style="width:auto;padding:8px 20px;" onclick="openManualEntry('${code}')">Enter Manually →</button>
+      </div>`;
+      return;
+    }
+
+    const isAccessioned = reviewQueueData.accessioned.some(r => r.barcodeId === code);
+    const clientMatch = resolveClientFromName(found.customer);
+
+    // Outcome 1 vs 2 banner
+    const outcomeBanner = clientMatch
+      ? `<div style="display:inline-block;background:var(--success-light);color:var(--success);font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;margin-bottom:8px;">✓ Matched Client: ${clientMatch.name}</div>`
+      : `<div style="display:inline-block;background:var(--warning-light);color:var(--warning);font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;margin-bottom:8px;">⚠ Generic/Unmatched — client identity not confirmed</div>`;
+
+    resultEl.innerHTML = `<div style="background:var(--teal-light);border-radius:8px;padding:14px;">
+      <div style="font-weight:700;color:var(--navy);margin-bottom:6px;">${isAccessioned ? '✅ Already Accessioned' : '🟡 Pending Review'}${isAccessioned ? ' — Lab ID: ' + (found.labNum||'—') : ''}</div>
+      ${outcomeBanner}
+      <div style="font-size:13px;color:var(--text);">
+        <div><strong>Customer:</strong> ${found.customer}</div>
+        <div><strong>Date Drawn:</strong> ${found.dateDrawn} ${found.timeDrawn}</div>
+        <div><strong>Location:</strong> ${found.location}, ${found.city}</div>
+        <div><strong>Tests:</strong> ${found.services}</div>
+        ${found.notes ? `<div><strong>Notes:</strong> ${found.notes}</div>` : ''}
+      </div>
+      ${!isAccessioned ? `<button class="btn-ok" style="margin-top:12px;width:auto;padding:8px 20px;" onclick="openReviewApprove('${found.barcodeId}')">Review & Approve →</button>` : ''}
+    </div>`;
+  }
+
+  // ── OUTCOME 3: Manual entry fallback (no app submission found) ────────────
+  function openManualEntry(barcodeId) {
+    currentLookupRecord = {
+      barcodeId,
+      customer: '',
+      email: '',
+      dateDrawn: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+      timeDrawn: '',
+      location: '',
+      city: '',
+      state: 'ME',
+      zip: '',
+      services: '',
+      notes: '',
+      isManual: true,
+    };
+
+    document.getElementById('rv-barcode').value = barcodeId;
+    document.getElementById('rv-summary').innerHTML = `
+      <div style="background:var(--warning-light);color:var(--warning);padding:8px 12px;border-radius:6px;margin-bottom:12px;font-weight:600;">
+        📝 Manual Entry — fill in from the physical Chain of Custody
+      </div>
+      <div class="form-field"><label for="rv-manual-customer">Customer / Company</label><input type="text" id="rv-manual-customer" placeholder="Customer name" /></div>
+      <div class="form-field"><label for="rv-manual-date">Date Drawn</label><input type="date" id="rv-manual-date" /></div>
+      <div class="form-field"><label for="rv-manual-location">Location</label><input type="text" id="rv-manual-location" placeholder="Sample address" /></div>
+      <div class="form-field"><label for="rv-manual-city">City</label><input type="text" id="rv-manual-city" placeholder="City/Town" /></div>
+    `;
+    document.getElementById('rv-tests-list').innerHTML = `<input type="text" id="rv-manual-tests" aria-label="Manual test entry" placeholder="e.g. Standard Safety, Radon Water" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />`;
+    document.getElementById('rv-labid-preview').textContent = 'Will be generated on approval...';
+    document.getElementById('rv-notes').value = '';
+    openModal('review-approve');
+  }
+
+  function openReviewApprove(barcodeId) {
+    const record = reviewQueueData.pending.find(r => r.barcodeId === barcodeId);
+    if (!record) { showToast('Record not found.'); return; }
+    currentLookupRecord = { ...record, isManual: false };
+
+    const clientMatch = resolveClientFromName(record.customer);
+    const matchBanner = clientMatch
+      ? `<div style="background:var(--success-light);color:var(--success);font-size:12px;font-weight:700;padding:5px 10px;border-radius:6px;margin-bottom:10px;">✓ Resolved to client: ${clientMatch.name}</div>`
+      : `<div style="background:var(--warning-light);color:var(--warning);font-size:12px;font-weight:700;padding:5px 10px;border-radius:6px;margin-bottom:10px;">⚠ No client match — will accession with name as typed</div>`;
+
+    document.getElementById('rv-barcode').value = barcodeId;
+    document.getElementById('rv-summary').innerHTML = `
+      ${matchBanner}
+      <div><strong>Barcode:</strong> ${record.barcodeId}</div>
+      <div><strong>Customer:</strong> ${record.customer}</div>
+      <div><strong>Email:</strong> ${record.email || '—'}</div>
+      <div><strong>Date Drawn:</strong> ${record.dateDrawn} ${record.timeDrawn}</div>
+      <div><strong>Location:</strong> ${record.location}, ${record.city}, ${record.state} ${record.zip}</div>
+      ${record.notes ? `<div><strong>Notes:</strong> ${record.notes}</div>` : ''}
+    `;
+    document.getElementById('rv-tests-list').textContent = record.services || '—';
+    document.getElementById('rv-labid-preview').textContent = 'Will be generated on approval...';
+    document.getElementById('rv-notes').value = '';
+    openModal('review-approve');
+  }
+
+  async function confirmAccession() {
+    if (!currentLookupRecord) return;
+    const notes = document.getElementById('rv-notes').value.trim();
+
+    let record = currentLookupRecord;
+    let tests;
+
+    if (record.isManual) {
+      // Pull values from the manual entry fields
+      const customer = document.getElementById('rv-manual-customer').value.trim();
+      const dateDrawn = document.getElementById('rv-manual-date').value;
+      const location = document.getElementById('rv-manual-location').value.trim();
+      const city = document.getElementById('rv-manual-city').value.trim();
+      const testsRaw = document.getElementById('rv-manual-tests').value.trim();
+
+      if (!customer || !testsRaw) {
+        showToast('Customer and test type are required.');
+        return;
+      }
+
+      record = { ...record, customer, dateDrawn, location, city };
+      tests = testsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      tests = record.services.split(';').map(s => s.trim()).filter(Boolean);
+    }
+
+    const clientMatch = resolveClientFromName(record.customer);
+
+    try {
+      const accRes = await fetch('/api/generate-accession', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          barcodeId: record.barcodeId,
+          clientKey: clientMatch ? clientMatch.key : '',
+          clientName: record.customer,
+          tests,
+          reviewedBy: getAdminName(),
+          notes,
+        }),
+      });
+      if (!accRes.ok) throw new Error(await accRes.text());
+      const accData = await accRes.json();
+
+      const markRes = await fetch('/api/mark-reviewed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          barcodeId: record.barcodeId,
+          labId: accData.baseLabId,
+          fullSampleIds: accData.fullSampleIds,
+          reviewedBy: getAdminName(),
+          manualData: record.isManual ? {
+            customer: record.customer,
+            dateDrawn: record.dateDrawn,
+            timeDrawn: record.timeDrawn || '',
+            location: record.location,
+            city: record.city,
+            state: record.state || 'ME',
+            zip: record.zip || '',
+            services: tests.join('; '),
+            notes: notes,
+            email: '',
+            phone: '',
+          } : null,
+        }),
+      });
+      if (!markRes.ok) throw new Error(await markRes.text());
+
+      logActivity({
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+        client: record.customer,
+        type: 'received',
+        qty: 1,
+        notes: `Accessioned ${record.barcodeId} → Lab ID ${accData.baseLabId}${record.isOcr ? ' (OCR scan)' : record.isManual ? ' (manual entry)' : ''}`,
+        by: getAdminName(),
+      });
+
+      // If this came from an OCR scan, mark the source file as processed
+      if (record.isOcr && record.ocrFileId) {
+        fetch('/api/mark-scan-processed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileId: record.ocrFileId,
+            fileName: record.ocrFileName,
+            outcome: 'accessioned',
+            barcodeId: accData.baseLabId,
+            confidence: record.ocrConfidence,
+            processedBy: getAdminName(),
+          }),
+        }).then(() => loadScans()).catch(e => console.error('Mark scan processed failed:', e));
+      }
+
+      closeModal('review-approve');
+      showToast(`✅ Accessioned — Lab ID ${accData.baseLabId}`);
+      document.getElementById('rq-lookup-result').innerHTML = '';
+      document.getElementById('rq-barcode-input').value = '';
+      loadReviewQueue();
+
+    } catch (err) {
+      console.error('Accession failed:', err);
+      showToast('⚠️ Accession failed. Please try again.');
+    }
+  }
+
+  // ── OCR FALLBACK: scanned COCs ─────────────────────────────────────────────
+  let scansData = [];
+  let currentOcrFile = null;
+  let currentOcrExtraction = null;
+
+  async function triggerScanNow(btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Scanning drive...';
+    try {
+      // Trigger OCR scan of incoming SharePoint folder
+      const res  = await fetch('/api/scan-folder', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Scan failed');
+      const found = data.newScans ?? data.processed ?? data.count ?? 0;
+      showToast(found > 0 ? `✅ Processing scan — queue will refresh automatically` : '✅ Drive checked — no new scans');
+      // Poll every 2s until a new card appears (max 30s)
+      const prevCount = document.querySelectorAll('#rq-scan-cards > *').length;
+      let attempts = 0;
+      const poll = async () => {
+        attempts++;
+        await loadReviewQueue();
+        const newCount = document.querySelectorAll('#rq-scan-cards > *').length;
+        if (newCount > prevCount || attempts >= 15) return;
+        await new Promise(res => setTimeout(res, 2000));
+        return poll();
+      };
+      if (found > 0) await poll();
+      await loadScans();
+    } catch(e) {
+      showToast('⚠️ ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  async function loadScans() {
+    const grid = document.getElementById('scans-grid');
+    if (!grid) return;
+    // list-scans endpoint may not be deployed — skip silently
+    try {
+      const res = await fetch('/api/list-scans');
+      if (!res.ok) { scansData = []; renderScans(); return; }
+      const data = await res.json();
+      scansData = data.unprocessed || [];
+      renderScans();
+    } catch (err) {
+      scansData = []; renderScans();
+      console.error('Failed to load scans:', err);
+      grid.innerHTML = '<div class="empty-state">⚠️ Could not load scans. Check Drive connection.</div>';
+    }
+  }
+
+  function renderScans() {
+    const grid = document.getElementById('scans-grid');
+    if (!scansData.length) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">✅ No unprocessed scans — Drive folder is all caught up.</div>';
+      return;
+    }
+    grid.innerHTML = scansData.map(f => `
+      <div style="border:1.5px solid var(--border);border-radius:8px;padding:10px;text-align:center;background:var(--off-white);">
+        <div style="font-size:32px;margin-bottom:6px;">${f.mimeType === 'application/pdf' ? '📄' : '🖼️'}</div>
+        <div style="font-size:11px;color:var(--slate);word-break:break-all;margin-bottom:8px;" title="${f.name}">${f.name.length > 22 ? f.name.slice(0,20)+'…' : f.name}</div>
+        <button class="action-btn" style="width:100%;background:var(--teal);color:white;border-color:var(--teal);" onclick="runOcr('${f.id}','${(f.name||'').replace(/'/g,'')}')">🔍 Run OCR</button>
+      </div>
+    `).join('');
+  }
+
+  async function runOcr(fileId, fileName) {
+    showToast('Running OCR — this takes a few seconds...', 8000);
+    try {
+      const res = await fetch('/api/ocr-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'OCR failed');
+
+      currentOcrFile = { id: fileId, name: fileName };
+      currentOcrExtraction = data.extracted;
+      openOcrReview(data.extracted);
+
+    } catch (err) {
+      console.error('OCR failed:', err);
+      showToast('⚠️ ' + (err.message || 'OCR failed. Try again or enter manually.'), 5000);
+    }
+  }
+
+  function openOcrReview(extracted) {
+    const conf = extracted.confidence != null ? extracted.confidence : 0;
+    const banner = document.getElementById('ocr-confidence-banner');
+    if (conf >= 90) {
+      banner.innerHTML = `<div style="background:var(--success-light);color:var(--success);padding:8px 12px;border-radius:6px;font-size:13px;font-weight:600;">✅ High confidence read (${conf}%) — verify and continue</div>`;
+    } else if (conf >= 70) {
+      banner.innerHTML = `<div style="background:var(--warning-light);color:var(--warning);padding:8px 12px;border-radius:6px;font-size:13px;font-weight:600;">⚠️ Review needed (${conf}%) — double-check fields against the scan</div>`;
+    } else {
+      banner.innerHTML = `<div style="background:var(--error-light);color:var(--error);padding:8px 12px;border-radius:6px;font-size:13px;font-weight:600;">🔴 Low confidence (${conf}%) — carefully verify every field</div>`;
+    }
+
+    document.getElementById('ocr-customer').value = extracted.customer || '';
+    document.getElementById('ocr-email').value = extracted.email || '';
+    document.getElementById('ocr-phone').value = extracted.phone || '';
+    document.getElementById('ocr-date').value = extracted.dateDrawn || '';
+    document.getElementById('ocr-time').value = extracted.timeDrawn || '';
+    document.getElementById('ocr-location').value = extracted.location || '';
+    document.getElementById('ocr-city').value = extracted.city || '';
+    document.getElementById('ocr-state').value = extracted.state || 'ME';
+    document.getElementById('ocr-zip').value = extracted.zip || '';
+    document.getElementById('ocr-tests').value = (extracted.tests || []).join(', ');
+    document.getElementById('ocr-notes').value = extracted.notes || '';
+    document.getElementById('ocr-file-id').value = currentOcrFile.id;
+
+    openModal('ocr-review');
+  }
+
+  async function discardScan() {
+    if (!currentOcrFile) return;
+    if (!confirm('Mark this scan as blank/discarded? It will be removed from the review list.')) return;
+    try {
+      await fetch('/api/mark-scan-processed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: currentOcrFile.id,
+          fileName: currentOcrFile.name,
+          outcome: 'discarded',
+          confidence: currentOcrExtraction?.confidence,
+          processedBy: getAdminName(),
+        }),
+      });
+      closeModal('ocr-review');
+      showToast('Scan discarded.');
+      loadScans();
+    } catch (err) {
+      console.error('Discard failed:', err);
+      showToast('⚠️ Failed to discard. Try again.');
+    }
+  }
+
+  function proceedFromOcr() {
+    // Build a manual-entry-style record from the (edited) OCR fields,
+    // generate a barcode placeholder for OCR-sourced samples, and open
+    // the same approve/accession modal used for outcome 3.
+    const customer = document.getElementById('ocr-customer').value.trim();
+    const tests = document.getElementById('ocr-tests').value.trim();
+    if (!customer || !tests) { showToast('Customer and tests are required.'); return; }
+
+    const ocrBarcodeId = `OCR-${currentOcrFile.id.slice(0,8)}`;
+
+    currentLookupRecord = {
+      barcodeId: ocrBarcodeId,
+      customer,
+      email: document.getElementById('ocr-email').value.trim(),
+      dateDrawn: document.getElementById('ocr-date').value,
+      timeDrawn: document.getElementById('ocr-time').value,
+      location: document.getElementById('ocr-location').value.trim(),
+      city: document.getElementById('ocr-city').value.trim(),
+      state: document.getElementById('ocr-state').value.trim() || 'ME',
+      zip: document.getElementById('ocr-zip').value.trim(),
+      services: tests.split(',').map(s=>s.trim()).filter(Boolean).join('; '),
+      notes: document.getElementById('ocr-notes').value.trim(),
+      isManual: true,
+      isOcr: true,
+      ocrFileId: currentOcrFile.id,
+      ocrFileName: currentOcrFile.name,
+      ocrConfidence: currentOcrExtraction?.confidence,
+    };
+
+    closeModal('ocr-review');
+
+    const clientMatch = resolveClientFromName(customer);
+    const matchBanner = clientMatch
+      ? `<div style="background:var(--success-light);color:var(--success);font-size:12px;font-weight:700;padding:5px 10px;border-radius:6px;margin-bottom:10px;">✓ Resolved to client: ${clientMatch.name}</div>`
+      : `<div style="background:var(--warning-light);color:var(--warning);font-size:12px;font-weight:700;padding:5px 10px;border-radius:6px;margin-bottom:10px;">⚠ No client match — will accession with name as typed</div>`;
+
+    document.getElementById('rv-barcode').value = ocrBarcodeId;
+    document.getElementById('rv-summary').innerHTML = `
+      ${matchBanner}
+      <div style="background:var(--teal-light);color:var(--teal);font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;display:inline-block;margin-bottom:8px;">📄 Source: OCR Scan</div>
+      <div><strong>Customer:</strong> ${currentLookupRecord.customer}</div>
+      <div><strong>Date Drawn:</strong> ${currentLookupRecord.dateDrawn} ${currentLookupRecord.timeDrawn}</div>
+      <div><strong>Location:</strong> ${currentLookupRecord.location}, ${currentLookupRecord.city}, ${currentLookupRecord.state} ${currentLookupRecord.zip}</div>
+      ${currentLookupRecord.notes ? `<div><strong>Notes:</strong> ${currentLookupRecord.notes}</div>` : ''}
+    `;
+    document.getElementById('rv-tests-list').textContent = currentLookupRecord.services;
+    document.getElementById('rv-labid-preview').textContent = 'Will be generated on approval...';
+    document.getElementById('rv-notes').value = '';
+    openModal('review-approve');
+  }
+
+
+  // ── RESULTS ENTRY ──────────────────────────────────────────────────────────
+  const MANUAL_PARAMS = [
+    { name: 'pH Electrometric',           unit: '',       placeholder: 'e.g. 7.2',       instrument: 'pH Meter' },
+    { name: 'Radon Water',                unit: 'pCi/L',  placeholder: 'e.g. 1250',       instrument: 'LSC' },
+    { name: 'Radon Bubble Size',          unit: 'mm',     placeholder: 'e.g. 3.5',        instrument: 'LSC' },
+    { name: 'Turbidity',                  unit: 'NTU',    placeholder: 'e.g. 0.5',        instrument: 'Turbidity Meter' },
+    { name: 'Total Coliform',             unit: 'MPN',    placeholder: 'Absent or count', instrument: 'Manual' },
+    { name: 'E. Coli',                    unit: 'MPN',    placeholder: 'Absent or count', instrument: 'Manual' },
+    { name: 'Hardness by calculation',    unit: 'mg/L',   placeholder: 'e.g. 120',        instrument: 'Calculated' },
+    { name: 'Alkalinity',                 unit: 'mg/L',   placeholder: 'e.g. 80',         instrument: 'Manual' },
+    { name: 'Tannins',                    unit: 'mg/L',   placeholder: 'e.g. 0.01',       instrument: 'Manual' },
+    { name: 'Total Dissolved Solids (TDS)', unit: 'ppm',  placeholder: 'e.g. 150',        instrument: 'TDS Meter' },
+  ];
+
+  let currentManualLabId = '';
+  let currentManualResults = {};
+  let currentSampleInfo = {};
+
+  async function loadManualResults() {
+    const labId = document.getElementById('manual-labid').value.trim().toUpperCase();
+    if (!labId) return;
+    currentManualLabId = labId;
+
+    // Try to find this Lab ID in accession log to get sample info
+    try {
+      const res = await fetch(`/api/review-queue`);
+      if (res.ok) {
+        const data = await res.json();
+        const matched = [...(data.pending || []), ...(data.accessioned || [])]
+          .find(r => (r.labNum || '').toUpperCase().includes(labId));
+        if (matched) {
+          currentSampleInfo = {
+            customer: matched.customer,
+            location: matched.location,
+            city: matched.city,
+            state: matched.state || 'ME',
+            services: matched.services ? matched.services.split(';').map(s => s.trim()) : [],
+            dateDrawn: matched.dateDrawn,
+            timeDrawn: matched.timeDrawn,
+            dateReceived: matched.dateReceived || '',
+          };
+        }
+      }
+    } catch (e) {}
+
+    // Load any existing manual results from Sheets (via admin-read or direct fetch)
+    // For now, show the param entry grid
+    const grid = document.getElementById('manual-params-grid');
+    grid.innerHTML = MANUAL_PARAMS.map(p => `
+      <div style="background:var(--off-white);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">${p.name}</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" id="mr-${p.name.replace(/[^a-zA-Z0-9]/g,'_')}" placeholder="${p.placeholder}"
+            style="flex:1;padding:8px;border:1.5px solid var(--border);border-radius:6px;font-size:14px;font-family:var(--font-body);"
+            value="${currentManualResults[p.name]?.value || ''}" />
+          <span style="font-size:11px;color:var(--slate);white-space:nowrap;">${p.unit}</span>
+        </div>
+      </div>
+    `).join('');
+    document.getElementById('manual-results-grid').style.display = 'block';
+  }
+
+  async function saveManualResults() {
+    const labId = currentManualLabId;
+    if (!labId) { showToast('Enter a Lab ID first.'); return; }
+    const msgEl = document.getElementById('manual-save-msg');
+
+    const entries = [];
+    MANUAL_PARAMS.forEach(p => {
+      const key = `mr-${p.name.replace(/[^a-zA-Z0-9]/g,'_')}`;
+      const el = document.getElementById(key);
+      if (el && el.value.trim()) {
+        entries.push({ parameter: p.name, value: el.value.trim(), unit: p.unit, instrument: p.instrument || 'Manual' });
+      }
+    });
+
+    if (!entries.length) { showToast('Enter at least one result.'); return; }
+
+    try {
+      msgEl.textContent = 'Saving...';
+      const res = await fetch('/api/enter-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labId, entries, enteredBy: getAdminName() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      msgEl.style.color = 'var(--success)';
+      msgEl.textContent = `✅ Saved ${data.parsed} results for ${labId}.`;
+      showToast(`✅ Results saved for ${labId}.`);
+      // Cache locally for report generation
+      entries.forEach(e => { currentManualResults[e.parameter] = { value: e.value, unit: e.unit }; });
+    } catch (err) {
+      msgEl.style.color = 'var(--error)';
+      msgEl.textContent = '⚠️ Failed to save: ' + err.message;
+    }
+  }
+
+  function openGenerateReport() {
+    if (!currentManualLabId) { showToast('Enter a Lab ID first.'); return; }
+    document.getElementById('gr-labid-display').textContent = `Lab ID: ${currentManualLabId}`;
+    document.getElementById('gr-authorized-by').value = getAdminName();
+    document.getElementById('gr-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    document.getElementById('gr-status').textContent = '';
+    openModal('generate-report');
+  }
+
+  async function generateReport() {
+    const statusEl = document.getElementById('gr-status');
+    statusEl.textContent = '⏳ Generating report...';
+
+    try {
+      const res = await fetch('/api/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labId: currentManualLabId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Report generation failed');
+      }
+
+      // Response is base64-encoded docx
+      const b64 = await res.text();
+      const filename = res.headers.get('X-Filename') || `${currentManualLabId}_report.docx`;
+      const byteChars = atob(b64);
+      const bytes = new Uint8Array(byteChars.length).map((_, i) => byteChars.charCodeAt(i));
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+
+      closeModal('generate-report');
+      showToast(`✅ ${filename} downloaded!`);
+
+    } catch (err) {
+      statusEl.textContent = '⚠️ Failed: ' + err.message;
+      console.error('Report generation failed:', err);
+    }
+  }
+
+  async function importInstrumentFile(source) {
+    const fileInput = document.getElementById(`${source}-file`);
+    const resultEl = document.getElementById(`${source}-result`);
+    if (!fileInput.files.length) { resultEl.textContent = '⚠️ Select a file first.'; return; }
+
+    const file = fileInput.files[0];
+    resultEl.textContent = '⏳ Reading file...';
+    resultEl.style.color = 'var(--slate)';
+
+    try {
+      // Gallery exports UTF-16 — read as text with encoding handling
+      const csvContent = await file.text();
+      const endpoint = source === 'gallery' ? '/api/parse-gallery' : '/api/parse-icpms';
+
+      resultEl.textContent = '⏳ Importing...';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csvContent, uploadedBy: getAdminName() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      resultEl.style.color = 'var(--success)';
+      const samples = data.samples ? data.samples.join(', ') : '';
+      resultEl.textContent = `✅ Imported ${data.parsed} results. Samples: ${samples}`;
+      showToast(`✅ ${source === 'gallery' ? 'Gallery' : 'ICP-MS'} data imported — ${data.parsed} results.`);
+    } catch (err) {
+      resultEl.style.color = 'var(--error)';
+      resultEl.textContent = '⚠️ Import failed: ' + err.message;
+    }
+  }
+
+  // ── LAB ID DROPDOWN STATE ─────────────────────────────────────────────────
+  let controlSheetLabIds = []; // populated when a control sheet is imported
+  let reportHistory = [];
+
+  function previewControlSheet(input) {
+    // Just note the file is selected — actual parsing on import click
+    const resultEl = document.getElementById('control-sheet-result');
+    if (input.files.length) {
+      resultEl.style.color = 'var(--slate)';
+      resultEl.textContent = `📎 ${input.files[0].name} selected — click Import to process.`;
+    }
+  }
+
+  function populateLabIdDropdowns(labIds) {
+    controlSheetLabIds = labIds;
+
+    // Also gather RW IDs from the accessioned review queue data
+    const rwIds = [];
+    try {
+      const accData = reviewQueueData?.accessioned || [];
+      accData.forEach(r => { if (r.labNum && r.labNum.trim()) rwIds.push(r.labNum.trim().toUpperCase()); });
+    } catch(e) {}
+
+    // Merge and deduplicate, sorted
+    const allIds = [...new Set([...labIds, ...rwIds])].sort();
+
+    const opts = ['<option value="">— Select Lab ID —</option>',
+      ...allIds.map(id => `<option value="${id}">${id}</option>`)
+    ].join('');
+
+    const manualSel = document.getElementById('manual-labid-select');
+    if (manualSel) manualSel.innerHTML = opts;
+
+    // rpt-labid-select is now populated from Accession Log — don't overwrite it
+  }
+
+  // ── PENDING LAB IDs from Accession Log ───────────────────────────────────
+  let _pendingLabIds = []; // cache for detail lookup
+
+  async function loadPendingLabIds() {
+    const sel = document.getElementById('rpt-labid-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">⏳ Loading...</option>';
+    try {
+      const res  = await fetch('/api/accession-status');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      _pendingLabIds = data.pending || [];
+      if (_pendingLabIds.length === 0) {
+        sel.innerHTML = '<option value="">— No pending Lab IDs —</option>';
+      } else {
+        // Sort oldest first by baseId (MMDDYY-NNN)
+        _pendingLabIds.sort((a,b) => a.baseId > b.baseId ? 1 : -1);
+        sel.innerHTML = ['<option value="">— Select Lab ID —</option>',
+          ..._pendingLabIds.map(r =>
+            `<option value="${r.baseId}">${r.baseId} — ${r.customer||'Unknown'} — ${r.tests.join(', ')}</option>`
+          )
+        ].join('');
+      }
+    } catch(err) {
+      sel.innerHTML = `<option value="">⚠️ ${err.message}</option>`;
+    }
+  }
+
+  function onManualLabIdChange() {
+    const sel = document.getElementById('manual-labid-select');
+    const input = document.getElementById('manual-labid');
+    if (sel && sel.value) {
+      input.value = sel.value;
+      loadManualResults();
+    }
+  }
+
+  // ── REPORT GENERATION — EDITABLE PREVIEW ─────────────────────────────────
+  let currentReportData = null;
+
+  function onReportLabIdChange() {
+    document.getElementById('rpt-preview-wrapper').style.display = 'none';
+    document.getElementById('rpt-gen-status').style.display = 'none';
+    const sel     = document.getElementById('rpt-labid-select');
+    const detail  = document.getElementById('rpt-labid-detail');
+    const baseId  = sel?.value;
+    if (!baseId || !detail) return;
+    const entry = _pendingLabIds.find(r => r.baseId === baseId);
+    if (entry) {
+      // Show sample details
+      detail.innerHTML = `
+        <div style="margin-top:8px;padding:10px 14px;background:var(--off);border-radius:8px;font-size:13px;">
+          <div><strong>${entry.fullIds.join(', ')}</strong> — ${entry.tests.join(' · ')}</div>
+          <div style="color:var(--slate);margin-top:4px;">
+            ${entry.customer||''}
+            ${entry.location ? ' · ' + entry.location : ''}
+            ${entry.city ? ', ' + entry.city : ''}
+            ${entry.state ? ' ' + entry.state : ''}
+          </div>
+          <div style="color:var(--slate);font-size:11px;margin-top:2px;">
+            Drawn: ${entry.dateDrawn||'—'}${entry.timeDrawn?' '+entry.timeDrawn:''} &nbsp;|&nbsp;
+            Received: ${entry.dateReceived||'—'}${entry.timeReceived?' '+entry.timeReceived:''}
+          </div>
+        </div>`;
+      // Auto-populate send-to email field if visible
+      const emailEl = document.getElementById('rpt-send-email-input');
+      if (emailEl) {
+        // Try entry.email from accession-status first
+        let resolvedEmail = entry.email || '';
+        // If not found, look up directly from _clientsData (already loaded)
+        if (!resolvedEmail && entry.customer) {
+          const custLower = entry.customer.toLowerCase().trim();
+          const match = _clientsData.find(c => {
+            const n = (c.clientName || '').toLowerCase().trim();
+            const fmt = n.startsWith('public-') ?
+              n.slice('public-'.length).replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim() : n;
+            return n === custLower || fmt === custLower;
+          });
+          resolvedEmail = match?.email || '';
+        }
+        if (resolvedEmail) emailEl.value = resolvedEmail;
+      }
+    }
+  }
+
+  async function generateReportPreview() {
+    const sel = document.getElementById('rpt-labid-select');
+    const manual = document.getElementById('rpt-labid-manual');
+    const labId = (sel?.value || manual?.value || '').trim().toUpperCase();
+    const statusEl = document.getElementById('rpt-gen-status');
+
+    if (!labId) { showToast('Select or enter a Lab ID first.'); return; }
+
+    statusEl.style.display = 'block';
+    statusEl.style.color = 'var(--slate)';
+    statusEl.textContent = '⏳ Loading report data...';
+    document.getElementById('rpt-preview-wrapper').style.display = 'none';
+
+    try {
+      // ── Step 1: Fast call — Sheets metadata only (should complete in <5s) ──
+      const res = await fetch('/api/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          labId,
+          meta: _pendingLabIds.find(r => r.baseId === labId) || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to load report data' }));
+        throw new Error(err.error);
+      }
+      const data = await res.json();
+
+      // Map new format → old format for renderEditableReport
+      currentReportData = {
+        labId: data.labId,
+        isRadon: data.isRadon,
+        isArsenicSpec: data.isArsenicSpec,
+        needsFHA: data.needsFHA,
+        reportType: data.reportType,
+        meta: data.meta,
+        activeParams: data.paramRows || [],
+        fhaParams: data.fhaRows || [],
+        resultsMap: {},
+        _comments: '',
+      };
+
+      // Build resultsMap from paramRows (includes prepDT, analDT from SharePoint)
+      [...(data.paramRows||[]), ...(data.fhaRows||[])].forEach(p => {
+        currentReportData.resultsMap[p.name] = {
+          value:  p.value,
+          unit:   p.unit,
+          prepDT: p.prepDT || '',
+          analDT: p.analDT || p.time || '',
+          time:   p.analDT || p.time || '',
+          epa:    p.epa    || '',
+          rl:     p.rl     || '',
+        };
+      });
+      // Log SharePoint data fetch results for debugging
+      if (data.log && data.log.length) {
+        console.log('[Report] SharePoint log:\n' + data.log.join('\n'));
+        // Show in UI as collapsible debug info
+        const filled = (data.paramRows||[]).filter(p => p.value).length;
+        const total  = (data.paramRows||[]).length;
+        statusEl.innerHTML = `✅ <strong>${labId}</strong> loaded — ${filled}/${total} results populated
+          <details style="margin-top:6px;font-size:11px;color:var(--slate);">
+            <summary style="cursor:pointer;color:var(--teal);">Data sources log (click to expand)</summary>
+            <div style="background:var(--off-white);padding:8px;border-radius:6px;margin-top:4px;font-family:monospace;">
+              ${data.log.map(l => `<div>${l}</div>`).join('')}
+            </div>
+          </details>`;
+        statusEl.style.color = 'var(--success)';
+        statusEl.style.display = 'block';
+      }
+      // Add radon to resultsMap
+      if (data.isRadon && data.radon) {
+        currentReportData.resultsMap['Radon Water'] = {
+          value: data.radon.display,
+          unit: 'pCi/L',
+          time: data.radon.time,
+          _raw: data.radon.raw,
+          _color: data.radon.color,
+        };
+      }
+
+      // Populate email field from meta or _clientsData lookup
+      const emailInput = document.getElementById('rpt-send-email-input');
+      let reportEmail = data.meta?.email || '';
+      if (!reportEmail && data.meta?.customer) {
+        const custLower = data.meta.customer.toLowerCase().trim();
+        // Try _clientsData (already in memory)
+        const cMatch = _clientsData.find(c => {
+          const n = (c.clientName || '').toLowerCase().trim();
+          const fmt = n.startsWith('public-') ?
+            n.slice('public-'.length).replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim() : n;
+          return n === custLower || fmt === custLower;
+        });
+        reportEmail = cMatch?.email || '';
+      }
+      if (emailInput && reportEmail) emailInput.value = reportEmail;
+
+      // Set authorization fields
+      document.getElementById('rpt-authorized-by').value = getAdminName();
+      document.getElementById('rpt-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+      renderEditableReport(currentReportData);
+      document.getElementById('rpt-preview-wrapper').style.display = 'block';
+      document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
+      statusEl.style.color = 'var(--success)';
+
+    } catch (err) {
+      statusEl.textContent = '⚠️ ' + err.message;
+      statusEl.style.color = 'var(--error)';
+      console.error('Report preview failed:', err);
+    }
+  }
+
+  function resetReportEdits() {
+    if (!currentReportData) return;
+    renderEditableReport(currentReportData);
+    showToast('Report reset to original data.');
+  }
+
+  function editable(value, key, style='') {
+    const safeVal = String(value || '');
+    return `<span contenteditable="true" data-key="${key}"
+      style="display:inline-block;min-width:60px;border-bottom:1px dashed #aaa;padding:1px 4px;cursor:text;outline:none;${style}"
+      onblur="onReportFieldEdit(this)">${safeVal}</span>`;
+  }
+
+  function onReportFieldEdit(el) {
+    if (!currentReportData) return;
+    const key = el.dataset.key;
+    const val = el.textContent.trim();
+    if (key.startsWith('result:')) {
+      const param = key.replace('result:', '');
+      if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
+      currentReportData.resultsMap[param].value = val;
+      const color = getResultColor(param, val, currentReportData);
+      el.parentElement.style.background = color ? `#${color}` : '';
+    } else if (key.startsWith('prepDT:')) {
+      const param = key.replace('prepDT:', '');
+      if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
+      currentReportData.resultsMap[param].prepDT = val;
+    } else if (key.startsWith('analDT:')) {
+      const param = key.replace('analDT:', '');
+      if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
+      currentReportData.resultsMap[param].analDT = val;
+      currentReportData.resultsMap[param].time   = val;
+    } else if (key.startsWith('meta:')) {
+      const field = key.replace('meta:', '');
+      currentReportData.meta[field] = val;
+    } else if (key === 'comments') {
+      currentReportData._comments = val;
+    }
+  }
+
+  function getResultColor(paramName, val, reportData) {
+    if (!val && val !== 0) return null;
+    const s = String(val);
+    // <RL values are always green
+    if (s.startsWith('<')) return '00FF00';
+    const param = [...(reportData.activeParams||[]), ...(reportData.fhaParams||[])]
+      .find(p => p.name === paramName);
+    if (!param) return null;
+    if (paramName === 'pH Electrometric') {
+      const n = parseFloat(s);
+      return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '00FF00' : 'FF0000';
+    }
+    const epa = param.epa || param.limit || '';
+    if (!epa) return null; // No EPA limit → no color indicator
+    const n = parseFloat(s);
+    if (isNaN(n)) return '0000FF';
+    return n <= parseFloat(epa) ? '00FF00' : 'FF0000';
+  }
+
+  function buildParamTable(params, resultsMap, reportData) {
+    const hStyle = 'background:#1F3864;color:white;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #333;';
+    const cStyle = 'padding:5px 8px;border:1px solid #ccc;font-size:12px;';
+
+    let rows = `<tr>
+      <th style="${hStyle}">Parameter</th>
+      <th style="${hStyle}text-align:center;width:28px;"></th>
+      <th style="${hStyle}text-align:center;">Your Result</th>
+      <th style="${hStyle}text-align:center;">EPA Limit</th>
+      <th style="${hStyle}text-align:center;">Unit</th>
+      <th style="${hStyle}text-align:center;">Method</th>
+      <th style="${hStyle}text-align:center;">Prep Date/Time</th>
+      <th style="${hStyle}text-align:center;">Analysis Date/Time</th>
+    </tr>`;
+
+    params.forEach(p => {
+      const res    = resultsMap[p.name] || {};
+      const val    = res.value !== undefined ? res.value : '';
+      const color  = getResultColor(p.name, val, reportData);
+      // Color box: colored when value+limit, grey placeholder when no value, transparent when value but no limit
+      const boxBg  = color ? `#${color}` : (val ? 'transparent' : '#e8e8e8');
+      const prepDT = res.prepDT || '';
+      const analDT = fmtDisplayDT(res.analDT || res.time || '');
+      const prepDTd = fmtDisplayDT(prepDT);
+      rows += `<tr>
+        <td style="${cStyle}">${p.name}</td>
+        <td style="${cStyle}text-align:center;padding:0;"><div style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;"></div></td>
+        <td style="${cStyle}text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;')}</td>
+        <td style="${cStyle}text-align:center;">${p.limit || p.epa || ''}</td>
+        <td style="${cStyle}text-align:center;">${p.unit}</td>
+        <td style="${cStyle}text-align:center;">${p.method}</td>
+        <td style="${cStyle}text-align:center;">${editable(prepDTd, 'prepDT:' + p.name, 'font-size:11px;')}</td>
+        <td style="${cStyle}text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;')}</td>
+      </tr>`;
+    });
+
+    return `<table style="width:100%;border-collapse:collapse;margin-bottom:12px;">${rows}</table>`;
+  }
+
+  // Format datetime string to ensure colon in time: "07/08/26 1604" → "07/08/26 16:04"
+  function fmtDisplayDT(dt) {
+    if (!dt) return dt;
+    return String(dt).replace(/(\d{2}\/\d{2}\/\d{2})\s+(\d{2})(\d{2})$/, '$1 $2:$3');
+  }
+
+  function renderEditableReport(data) {
+    const { meta, isRadon, needsFHA, activeParams, fhaParams, resultsMap } = data;
+    const container = document.getElementById('rpt-live-preview');
+    const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+    const hdrHtml = `
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:700;font-size:16px;">Chanalytical Laboratories, Inc.</div>
+        <div style="font-size:13px;">347 Main St., Unit 1B &nbsp; Gorham, ME 04038</div>
+        <div style="font-size:13px;">Phone: 207-747-1815 &nbsp; Email: Labs@chanalytical.com</div>
+      </div>
+      <h2 style="text-align:center;font-size:22px;margin-bottom:16px;color:#003A5C;">Certificate of Analysis</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:13px;">
+        <div><strong>Attention:</strong> ${editable(meta.customer,'meta:customer')}</div>
+        <div><strong>Lab ID Number:</strong> ${editable(meta.labId,'meta:labId','font-family:monospace;font-weight:700;')}</div>
+        <div><strong>Date/Time Collected:</strong> ${editable(meta.dtCollected||meta.dateDrawn||'','meta:dtCollected','font-family:monospace;')}</div>
+        <div><strong>Date/Time Received:</strong> ${editable(meta.dtReceived||meta.dateReceived||'','meta:dtReceived','font-family:monospace;')}</div>
+        <div><strong>Date Reported:</strong> ${editable(meta.dateReported||today,'meta:dateReported')}</div>
+        <div></div>
+        <div><strong>Location:</strong> ${editable(meta.location,'meta:location')}, ${editable(meta.city,'meta:city')}, ${editable(meta.state,'meta:state')} ${editable(meta.zip,'meta:zip')}</div>
+        <div><strong>Sample Type:</strong> ${isRadon ? 'Radon Water' : 'Potability'}</div>
+      </div>`;
+
+    const legendHtml = isRadon ? `
+      <div style="border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:14px;font-size:12px;display:inline-block;">
+        <strong>Legend:</strong><br>
+        <span style="background:#00FF00;padding:2px 12px;margin-right:6px;">&nbsp;</span> At or below Maine's MEG (4,000 pCi/L)<br>
+        <span style="background:#0000FF;padding:2px 12px;margin-right:6px;">&nbsp;</span> Above Maine's MEG (4,000 pCi/L)
+      </div>` : `
+      <div style="border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:14px;font-size:12px;display:inline-block;">
+        <strong>Legend:</strong><br>
+        <span style="background:#00FF00;padding:2px 12px;margin-right:6px;">&nbsp;</span> Meets Acceptable EPA Limits<br>
+        <span style="background:#0000FF;padding:2px 12px;margin-right:6px;">&nbsp;</span> See Notation<br>
+        <span style="background:#FF0000;padding:2px 12px;margin-right:6px;">&nbsp;</span> Does Not Meet EPA Limits
+      </div>`;
+
+    let bodyHtml = hdrHtml + legendHtml;
+
+    if (isRadon) {
+      const radonRes = resultsMap['Radon Water'] || {};
+      const rawVal = parseFloat(radonRes.value) || 0;
+      const displayVal = !radonRes.value ? '' : rawVal < 100 ? '<100' : String(Math.round(rawVal / 100) * 100);
+      const bg = rawVal > 4000 ? '#0000FF' : '#00FF00';
+      bodyHtml += `
+        <table style="width:60%;border-collapse:collapse;margin-bottom:12px;">
+          <tr>
+            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;">Parameter</th>
+            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Your Result</th>
+            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">EPA Limit</th>
+            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Unit</th>
+            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Analysis Date/Time</th>
+          </tr>
+          <tr>
+            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;">Radon Water</td>
+            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;background:${bg};">${editable(displayVal,'result:Radon Water','text-align:center;')}</td>
+            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">4,000</td>
+            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">pCi/l</td>
+            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">${radonRes.time || ''}</td>
+          </tr>
+        </table>`;
+    } else {
+      bodyHtml += buildParamTable(activeParams, resultsMap, data);
+    }
+
+    const commentsVal = data._comments || '';
+    bodyHtml += `
+      <div style="margin-top:14px;font-size:13px;">
+        <strong>Comments:</strong><br>
+        <div contenteditable="true" data-key="comments"
+          style="min-height:40px;border:1px dashed #aaa;border-radius:4px;padding:6px 8px;margin-top:4px;outline:none;"
+          onblur="onReportFieldEdit(this)">${commentsVal}</div>
+      </div>`;
+
+    if (needsFHA) {
+      bodyHtml += `
+        <div style="margin-top:32px;padding-top:24px;border-top:3px solid #003A5C;">
+          <h3 style="text-align:center;font-size:18px;color:#003A5C;margin-bottom:12px;">Certificate of Analysis — FHA</h3>
+          <div style="font-size:13px;margin-bottom:10px;"><strong>Sample Type:</strong> Potability (FHA)</div>
+          ${buildParamTable(fhaParams, resultsMap, data)}
+        </div>`;
+    }
+
+    if (!isRadon) {
+      bodyHtml += `
+        <div style="margin-top:32px;padding-top:20px;border-top:2px solid #003A5C;font-size:12px;color:#333;">
+          <strong>The following Notations may be referenced above.</strong><br><br>
+          <strong>Notation 1:</strong> The Maximum Contaminant Level (MCL) is a health-based guideline set by the Maine Center for Disease Control and Prevention (MECDCP).<br><br>
+          <strong>Notation 2:</strong> The Secondary Maximum Contaminant Level (SMCL) is set by the USEPA through the National Secondary Drinking Water Regulations.<br><br>
+          <strong>Notation 3:</strong> Contaminants at or above the MCL may cause aesthetic characteristics. Total coliform bacteria are used as indicator organisms for the presence of pathogens.<br><br>
+          <em>This report shall not be reproduced, except in full, without written permission from Chanalytical Laboratories Inc.</em><br><br>
+          <strong>If you have any questions regarding your report please call 207-747-1815</strong>
+        </div>`;
+    }
+
+    if (isRadon) {
+      bodyHtml += `
+        <div style="margin-top:20px;font-size:12px;color:#333;">
+          <strong>Notations — Radon Guidelines for Drinking Water</strong><br>
+          Maine's current Maximum Exposure Guideline (MEG) for radon in well water is 4,000 pCi/l.<br>
+          Radon in water can be reduced by a number of different methods. Any remedial work should be done by a mitigation contractor registered with the state of Maine.<br><br>
+          <em>Maine Disclose: This lab meets EPA requirements for radon testing. The State of Maine Radon Registration Act (22 MRSA sec. 777 et seq.) requires this laboratory to report the test results, zip codes and street addresses of the structures tested.</em>
+        </div>`;
+    }
+
+    container.innerHTML = bodyHtml;
+  }
+
+  async function saveAndSendReport(sendEmail) {
+    if (!currentReportData) { showToast('Generate a report first.'); return; }
+
+    const authorizedBy = document.getElementById('rpt-authorized-by').value.trim();
+    const reviewDate   = document.getElementById('rpt-review-date').value;
+    const statusEl     = document.getElementById('rpt-send-status');
+    const emailInput   = document.getElementById('rpt-send-email-input');
+    const overrideEmail = emailInput?.value.trim() || '';
+
+    if (!authorizedBy) { showToast('Enter authorized by name before sending.'); return; }
+    if (sendEmail && !overrideEmail && !currentReportData.meta?.email) {
+      showToast('No client email found. Enter one in the Send To field.'); return;
+    }
+
+    statusEl.textContent = '⏳ Preparing report...';
+    statusEl.style.color = 'var(--slate)';
+
+    try {
+      const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
+
+      if (sendEmail) {
+        // ── Step 1: Generate PDF from template ──────────────────────────────
+        statusEl.textContent = '⏳ Generating PDF from template...';
+        const pdfRes = await fetch('/api/render-report-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData = await pdfRes.json().catch(() => ({}));
+        if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+
+        // ── Step 2: Email the PDF ────────────────────────────────────────────
+        statusEl.textContent = '⏳ Sending email...';
+        const res = await fetch('/api/send-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            labId,
+            pdfBase64:  pdfData.pdfBase64,
+            fileName:   pdfData.fileName,
+            reportType: currentReportData.reportType,
+            authorizedBy,
+            overrideEmail,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Send failed');
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
+        showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
+      } else {
+        // ── Save PDF: generate from template and download ─────────────────────
+        statusEl.textContent = '⏳ Generating PDF from template...';
+        const pdfRes2 = await fetch('/api/render-report-pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData2 = await pdfRes2.json().catch(() => ({}));
+        if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
+        const bytes2 = Uint8Array.from(atob(pdfData2.pdfBase64), c => c.charCodeAt(0));
+        const blob2  = new Blob([bytes2], { type: 'application/pdf' });
+        const url2   = URL.createObjectURL(blob2);
+        const a2     = document.createElement('a');
+        a2.href = url2; a2.download = pdfData2.fileName || (labId + '_COA.pdf');
+        document.body.appendChild(a2); a2.click();
+        document.body.removeChild(a2); URL.revokeObjectURL(url2);
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ PDF downloaded: ${pdfData2.fileName}`;
+        showToast('✅ PDF saved');
+        // These lines prevent the print fallback from running
+        const rLabId3 = currentReportData.labId || '';
+        logActivity({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }), client: currentReportData.meta?.customer || rLabId3, type: 'report_saved', qty: 1, notes: 'PDF — ' + rLabId3, by: authorizedBy });
+        reportHistory.unshift({ labId: rLabId3, emailed: false, by: authorizedBy, time: new Date().toLocaleTimeString() });
+        renderReportHistory();
+        return;
+      }
+      // ── Fallback browser print (should not normally reach here) ───────────
+      if (false) {
+        statusEl.textContent = '⏳ Opening print dialog...';
+        const reportEl = document.getElementById('rpt-live-preview');
+        const printWindow = window.open('', '_blank');
+        const m = currentReportData.meta || {};
+        const rmap = currentReportData.resultsMap || {};
+        const params = currentReportData.activeParams || [];
+        const fhaRows = currentReportData.fhaParams || [];
+        const needsFHA = currentReportData.needsFHA;
+        const today = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
+
+        function _colorHex(color) {
+          return color === 'green' ? '#00B050' : color === 'red' ? '#FF0000' : color === 'blue' ? '#0070C0' : '#E0E0E0';
+        }
+        function _inlineColor(name, val, epa) {
+          if (!val) return '#E0E0E0';
+          var s = String(val);
+          if (s.startsWith('<')) return '#00B050';
+          if (name === 'pH Electrometric') { var n = parseFloat(s); return isNaN(n) ? '#E0E0E0' : (n >= 6.5 && n <= 8.5) ? '#00B050' : '#FF0000'; }
+          if (!epa) return '#0070C0';
+          var n = parseFloat(s); if (isNaN(n)) return '#0070C0';
+          return n <= parseFloat(epa) ? '#00B050' : '#FF0000';
+        }
+        function _paramRow(p) {
+          // p is from activeParams which already has value, color, prepDT, analDT from server
+          // Check resultsMap for user-edited values
+          var res = rmap[p.name] || {};
+          var val = (res.value !== undefined && res.value !== '') ? res.value : (p.value || '');
+          var bg = val ? _inlineColor(p.name, val, p.epa) : '#E0E0E0';
+          var prepDT = res.prepDT || p.prepDT || '';
+          var analDT = res.analDT || res.time || p.analDT || p.time || '';
+          return '<tr>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">' + p.name + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;background:' + bg + ';text-align:center;font-weight:600;">' + val + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">' + (p.epa || '') + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;text-align:center;">' + (p.unit || '') + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">' + (p.method || '') + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">' + prepDT + '</td>' +
+            '<td style="border:1px solid #ccc;padding:4px 6px;font-size:11px;">' + analDT + '</td>' +
+            '</tr>';
+        }
+        function _paramTable(rows) {
+          var hdr = '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:11px;"><thead><tr style="background:#1F3864;color:white;">' +
+            '<th style="padding:6px 8px;text-align:left;border:1px solid #333;width:22%;">Parameter</th>' +
+            '<th style="padding:6px 8px;text-align:center;border:1px solid #333;width:10%;">Your Result</th>' +
+            '<th style="padding:6px 8px;text-align:center;border:1px solid #333;width:9%;">EPA Limit</th>' +
+            '<th style="padding:6px 8px;text-align:center;border:1px solid #333;width:7%;">Unit</th>' +
+            '<th style="padding:6px 8px;text-align:left;border:1px solid #333;width:13%;">Method</th>' +
+            '<th style="padding:6px 8px;text-align:center;border:1px solid #333;width:16%;">Preparation Date/Time</th>' +
+            '<th style="padding:6px 8px;text-align:center;border:1px solid #333;width:16%;">Analysis Date/Time</th>' +
+            '</tr></thead><tbody>';
+          return hdr + rows.map(_paramRow).join('') + '</tbody></table>';
+        }
+
+        var addrLine = [m.city, m.state, m.zip].filter(Boolean).join(', ');
+        var html = '<!DOCTYPE html><html><head><title>' + labId + ' COA</title>' +
+          '<style>' +
+          '* { box-sizing:border-box; margin:0; padding:0; }' +
+          'body { font-family:Arial,sans-serif; font-size:11px; color:#000; padding:16px; }' +
+          '.page { max-width:800px; margin:0 auto; }' +
+          '.hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px; border-bottom:3px solid #1F3864; padding-bottom:6px; }' +
+          '.logo { font-size:14px; font-weight:700; color:#1F3864; line-height:1.4; }' +
+          'h1 { text-align:center; font-size:20px; color:#1F3864; margin:14px 0 12px; }' +
+          '.info-row { display:flex; gap:6px; padding:2px 0; font-size:11px; }' +
+          '.info-label { font-weight:700; white-space:nowrap; }' +
+          '.legend { border:1px solid #999; padding:8px; font-size:10px; }' +
+          '.legend-title { font-weight:700; text-align:center; margin-bottom:4px; }' +
+          '.legend-row { display:flex; align-items:center; gap:6px; margin:2px 0; }' +
+          '.legend-box { width:16px; height:12px; display:inline-block; }' +
+          '.notations { font-size:10px; margin-top:12px; }' +
+          '.notations p { margin-bottom:6px; }' +
+          '@media print { @page { margin:0.75cm; size:letter portrait; } body { padding:0; } }' +
+          '</style></head><body><div class="page">' +
+
+          '<div class="hdr">' +
+            '<div class="logo">Chanalytical Laboratories, Inc.' +
+              '<div style="font-size:11px;font-weight:400;">347 Main St., Unit 1B &nbsp; Gorham, ME 04038<br>Phone: 207-747-1815 &nbsp; Email: Labs@chanalytical.com</div>' +
+            '</div>' +
+            '<div style="font-size:10px;color:#555;">' + today + ' &nbsp;&nbsp; ' + labId + ' COA</div>' +
+          '</div>' +
+
+          '<h1>Certificate of Analysis</h1>' +
+
+          '<div style="display:flex;gap:20px;margin-bottom:14px;">' +
+            '<div style="flex:1;">' +
+              '<div class="info-row"><span class="info-label">Attention:</span><span>' + (m.customer||'') + '</span></div>' +
+              '<div class="info-row"><span class="info-label">Date/Time Collected:</span><span>' + (m.dtCollected||'') + '</span></div>' +
+              '<div class="info-row"><span class="info-label">Date Reported:</span><span>' + today + '</span></div>' +
+              '<div class="info-row" style="margin-top:4px;"><span class="info-label">Location:</span><span>' + (m.location||'') + '</span></div>' +
+              '<div class="info-row"><span class="info-label" style="opacity:0;">.</span><span>' + addrLine + '</span></div>' +
+              '<div class="info-row"><span class="info-label">Sample Type:</span><span>Potability</span></div>' +
+            '</div>' +
+            '<div style="width:220px;">' +
+              '<div style="text-align:right;margin-bottom:8px;">' +
+                '<div class="info-row" style="justify-content:flex-end;"><span class="info-label">Lab ID Number:</span><span>' + labId + '</span></div>' +
+                '<div class="info-row" style="justify-content:flex-end;"><span class="info-label">Date/Time Received:</span><span>' + (m.dtReceived||'') + '</span></div>' +
+              '</div>' +
+              '<div class="legend">' +
+                '<div class="legend-title">Legend</div>' +
+                '<div class="legend-row"><span class="legend-box" style="background:#00B050;"></span> Meets Acceptable EPA Limits</div>' +
+                '<div class="legend-row"><span class="legend-box" style="background:#0070C0;"></span> See Notation</div>' +
+                '<div class="legend-row"><span class="legend-box" style="background:#FF0000;"></span> Does Not Meet EPA Limits</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          _paramTable(params) +
+
+          '<div><strong>Comments:</strong></div>' +
+          '<div style="border:1px solid #ccc;min-height:40px;padding:6px;margin:8px 0 16px;font-size:11px;">' + (currentReportData._comments||'') + '</div>' +
+
+          (needsFHA ?
+            '<div style="page-break-before:always;padding-top:20px;">' +
+            '<div class="hdr"><div class="logo">Chanalytical Laboratories, Inc.</div><div style="font-size:10px;color:#555;">' + today + ' ' + labId + ' COA</div></div>' +
+            '<h1>Certificate of Analysis \u2014 FHA</h1>' +
+            '<div style="font-size:11px;margin-bottom:10px;"><strong>Sample Type:</strong> Potability (FHA)</div>' +
+            _paramTable(fhaRows) +
+            '</div>' : '') +
+
+          '<div class="notations" style="border-top:2px solid #1F3864;padding-top:10px;margin-top:16px;">' +
+            '<p><strong>The following Notations may be referenced above.</strong></p>' +
+            '<p><strong>Notation 1:</strong> The Maximum Exposure Guideline (MEG) is a health-based guideline set by the Maine Center for Disease Control and Prevention (MECDC). MEGs are recommendations for concentrations of chemical contaminants for all drinking water systems below which there is minimal risk of a harmful health effect from long-term ingestion of contaminated water.</p>' +
+            '<p><strong>Notation 2:</strong> The Maximum Contaminant Level (MCL) is set by the United States Environmental Protection Agency (USEPA) through the National Primary Drinking Water Regulations and are legally enforceable drinking water standards that apply to all public water systems.</p>' +
+            '<p><strong>Notation 3:</strong> The Secondary Maximum Contaminant Level (SMCL) is set by the United States Environmental Protection Agency (USEPA) through the National Secondary Drinking Water Regulations and these contaminants are not considered to present a risk to human health at the SMCL.</p>' +
+            '<p><strong>Notation 4:</strong> According to the EPA revised total coliform rule (effective April 1st, 2016) total coliform bacteria are no longer considered a primary contaminant. Total coliform bacteria are still used as indicator organisms for the presence of pathogens.</p>' +
+            '<p style="margin-top:8px;"><em>This report shall not be reproduced, except in full, without written permission from Chanalytical Laboratories Inc.</em></p>' +
+            '<p><strong>If you have any questions regarding your results please call 207-747-1815</strong></p>' +
+            '<p style="margin-top:8px;font-size:10px;">Reporting Limits as of 9/17/25: Chloride 2.00, Fluoride 0.20, Nitrite 0.20, Nitrate 1.00, Arsenic 1.00, Lead 1.00, Uranium 1.00, Copper 0.001, Iron 0.05, Manganese 0.001, Sodium 1.00, Calcium 0.20, Magnesium 0.1, Sulfate 40.00, Alkalinity 40.00, Antimony 0.0005, Chromium 0.002, Cadmium 0.002</p>' +
+            '<p style="font-size:10px;margin-top:6px;">Analytical results and reports are generated by Chanalytical Laboratories, Inc. at the request of and for the exclusive use of the person or entity (client) named on this report. Results, reports, or copies of the same will not be released by Chanalytical Laboratories, Inc. to any third party without the prior express written consent from the client named in this report.</p>' +
+          '</div>' +
+
+          '<div style="border-top:2px solid #1F3864;margin-top:20px;padding-top:10px;font-size:12px;display:flex;gap:40px;">' +
+            '<span><strong>Authorized By:</strong> ' + authorizedBy + '</span>' +
+            '<span><strong>Review Date:</strong> ' + reviewDate + '</span>' +
+          '</div>' +
+
+          '</div></body></html>';
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 500);
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ Print dialog opened for ${labId}`;
+      }
+
+      // ── Mark Lab ID as Reported (only when emailing, not when printing) ──
+      const reportedBaseId = (currentReportData.labId || currentReportData.meta?.labId || '').replace(/\s+\w+$/, '').trim();
+      if (reportedBaseId && sendEmail) {
+        try {
+          const markRes  = await fetch('/api/accession-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mark-reported', baseId: reportedBaseId }),
+          });
+          const markData = await markRes.json();
+          if (!markRes.ok) throw new Error(markData.error);
+          console.log(`[mark-reported] ${reportedBaseId} → Reported (${markData.rowsUpdated} rows updated)`);
+        } catch(e) {
+          console.warn('mark-reported failed:', e.message);
+        }
+        // Refresh dropdown after email sent
+        setTimeout(() => {
+          loadPendingLabIds();
+          const sel = document.getElementById('rpt-labid-select');
+          if (sel) sel.value = '';
+          const detail = document.getElementById('rpt-labid-detail');
+          if (detail) detail.innerHTML = '';
+        }, 1500);
+      }
+
+      // Log to activity log
+      const rLabId    = currentReportData.labId || currentReportData.meta?.labId || '';
+      const rCustomer = currentReportData.meta?.customer || '';
+      logActivity({
+        date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+        client: rCustomer || rLabId,
+        type: sendEmail ? 'report_sent' : 'report_saved',
+        qty: 1,
+        notes: `${sendEmail ? 'Report emailed' : 'Report saved'} — Lab ID: ${rLabId}${rCustomer ? ` (${rCustomer})` : ''}`,
+        by: authorizedBy,
+      });
+
+      // Log to report history
+      reportHistory.unshift({
+        labId: rLabId,
+        emailed: sendEmail,
+        by: authorizedBy,
+        time: new Date().toLocaleTimeString(),
+      });
+      renderReportHistory();
+
+    } catch (err) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ ' + err.message;
+      console.error('Send report failed:', err);
+    }
+  }
+
+  function renderReportHistory() {
+    const el = document.getElementById('rpt-history');
+    if (!reportHistory.length) { el.textContent = 'No reports generated yet this session.'; return; }
+    el.innerHTML = reportHistory.slice(0, 20).map(r =>
+      `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <div>
+          <strong style="font-family:monospace;color:var(--navy);">${r.labId}</strong>
+          ${r.emailed ? `<span style="background:var(--success-light);color:var(--success);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;">✓ Emailed</span>` : ''}
+          <span style="color:var(--slate);margin-left:8px;">by ${r.by}</span>
+        </div>
+        <div style="font-size:12px;color:var(--slate);">${r.time}</div>
+      </div>`
+    ).join('');
+  }
+
+  // ── CONTROL SHEET IMPORT ──────────────────────────────────────────────────
+  async function importControlSheet() {
+    const fileInput = document.getElementById('control-sheet-file');
+    const resultEl = document.getElementById('control-sheet-result');
+    if (!fileInput.files.length) { resultEl.textContent = '⚠️ Select a file first.'; return; }
+    const file = fileInput.files[0];
+    resultEl.textContent = '⏳ Reading Excel file...';
+    resultEl.style.color = 'var(--slate)';
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      resultEl.textContent = '⏳ Importing...';
+      const res = await fetch('/api/parse-control-sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64: base64, fileName: file.name, uploadedBy: getAdminName() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      resultEl.style.color = 'var(--success)';
+      resultEl.textContent = `✅ Imported ${data.parsed} results across ${data.sampleCount} samples.`;
+      showToast(`✅ Control Sheet imported — ${data.sampleCount} samples.`);
+      // Populate Lab ID dropdowns
+      if (data.samples && data.samples.length) populateLabIdDropdowns(data.samples.sort());
+    } catch (err) {
+      resultEl.style.color = 'var(--error)';
+      resultEl.textContent = '⚠️ Import failed: ' + err.message;
+    }
+  }
+
+  // ── RADON RESULTS IMPORT ──────────────────────────────────────────────────
+  async function importRadonResults() {
+    const resultEl = document.getElementById('rw-result');
+    resultEl.textContent = '⏳ Reading from Master RW Sheet...';
+    resultEl.style.color = 'var(--slate)';
+    try {
+      const res = await fetch('/api/import-rw-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ importedBy: getAdminName() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if (!data.parsed) {
+        resultEl.style.color = 'var(--slate)';
+        resultEl.textContent = data.message || 'No radon results found.';
+        return;
+      }
+      resultEl.style.color = 'var(--success)';
+      resultEl.textContent = `✅ Imported ${data.sampleCount} radon samples: ${(data.samples||[]).join(', ')}`;
+      showToast(`✅ Radon results imported — ${data.sampleCount} samples.`);
+    } catch (err) {
+      resultEl.style.color = 'var(--error)';
+      resultEl.textContent = '⚠️ Import failed: ' + err.message;
+    }
+  }
+
+  async function runImport(type, btn) {
+    const statusEl = document.getElementById('import-status');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    statusEl.style.color = 'var(--slate)';
+
+    const doImport = async (endpoint, label) => {
+      statusEl.textContent = `⏳ Running ${label} import...`;
+      const res  = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
+      return data;
+    };
+
+    try {
+      if (type === 'icpms') {
+        btn.textContent = '⏳ Importing ICP-MS...';
+        const icpData = await doImport('/api/import-icpms', 'ICP-MS');
+        btn.textContent = '⏳ Importing Acid dates...';
+        const acidData = await doImport('/api/import-acid', 'Acid').catch(e => ({ success:false, error: e.message }));
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ ICP-MS: ${icpData.created||0} created, ${icpData.updated||0} updated (${(icpData.filesUsed||[]).join(', ')||icpData.fileName||'—'}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}`;
+        showToast('✅ ICP-MS + Acid import complete');
+      } else {
+        btn.textContent = '⏳ Importing Control Sheet...';
+        const data = await doImport('/api/import-control', 'Control Sheet');
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✅ Control Sheet: ${data.created||0} created, ${data.updated||0} updated (${(data.filesUsed||[]).join(', ')||data.fileName||'—'})`;
+        showToast('✅ Control Sheet import complete');
+      }
+      loadPendingLabIds();
+    } catch(e) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = '⚠️ ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
+  function showToast(msg,dur=3000){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur);}
+
+  function base64ToBlob(b64, mimeType) {
+    const bytes = atob(b64);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new Blob([arr], { type: mimeType });
+  }
+
+</script>
+
+
+<!-- Test Type Modal (moved to top level so position:fixed works regardless of section visibility) -->
+  <!-- Test Type Modal -->
+  <div id="modal-test-type" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px 0;">
+    <div style="background:white;border-radius:12px;padding:28px;width:520px;max-width:95vw;margin:auto;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px;" id="tt-modal-title">New Test Package</div>
+      <input type="hidden" id="tt-row-num" value="" />
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-field" style="grid-column:1/-1"><label for="tt-name">Package Name <span style="color:var(--error);">*</span></label><input type="text" id="tt-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" /></div>
+        <div class="form-field"><label for="tt-category">Category</label>
+          <select id="tt-category" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
+            <option value="Package">Package</option>
+            <option value="AIO">AIO (All In One only)</option>
+            <option value="Special">Special (e.g. Radon)</option>
+          </select>
+        </div>
+        <div class="form-field"><label for="tt-price">Price ($)</label><input type="text" id="tt-price" placeholder="195.00" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" /></div>
+        <div class="form-field" style="grid-column:1/-1"><label for="tt-suffix">Lab ID Suffix <span style="font-size:11px;color:var(--slate);">(e.g. EXP, BS, COMP)</span></label><input type="text" id="tt-suffix" placeholder="EXP" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;" /></div>
+      </div>
+      <div class="form-field" style="margin-top:8px;">
+        <label>Included Elements <span style="font-size:11px;color:var(--slate);">(check all that apply)</span></label>
+        <div id="tt-elements-checkboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:240px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;padding:12px;margin-top:6px;font-size:13px;"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn-ok" onclick="saveTestType()" style="flex:1;">Save Package</button>
+        <button class="btn-cancel" onclick="document.getElementById('modal-test-type').style.display='none'" style="flex:1;">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <!-- Element Modal -->
+  <div id="modal-element" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:12px;padding:28px;width:380px;max-width:95vw;">
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px;" id="el-modal-title">New Element</div>
+      <input type="hidden" id="el-row-num" value="" />
+      <div class="form-field"><label for="el-name">Element Name <span style="color:var(--error);">*</span></label><input type="text" id="el-name" placeholder="e.g. Arsenic, Total" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" /></div>
+      <div class="form-field"><label for="el-abbrev">Abbreviation <span style="font-size:11px;color:var(--slate);">(for Lab ID suffix)</span></label><input type="text" id="el-abbrev" placeholder="AS" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;" /></div>
+      <div class="form-field"><label for="el-price">Price ($)</label><input type="text" id="el-price" placeholder="65.00" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" /></div>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button class="btn-ok" onclick="saveElement()" style="flex:1;">Save Element</button>
+        <button class="btn-cancel" onclick="document.getElementById('modal-element').style.display='none'" style="flex:1;">Cancel</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
