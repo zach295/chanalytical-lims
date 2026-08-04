@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn-ok" style="padding:8px 18px;font-size:13px;" onclick="triggerScanNow(this)">⚡ Check Drive Now</button>
         <button class="action-btn" onclick="refreshQueueSafe()">↻ Refresh Queue</button>
-        <button class="btn-secondary" id="create-cs-btn" style="padding:8px 18px;font-size:13px;background:var(--slate);color:#fff;border:none;border-radius:8px;cursor:pointer;" onclick="createTodaysControlSheet(this)">📋 Create Today's Control Sheet</button>
+
         <span id="create-cs-status" style="font-size:12px;color:var(--slate);"></span>
       </div>
     </div>
@@ -2198,6 +2198,16 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── OCR SCAN QUEUE ────────────────────────────────────────────────────────
   let scanQueueData = { pending: [], approved: [] };
   let recentlyApprovedCache = []; // in-memory list since approved rows are deleted from sheet
+
+  async function refreshQueueSafe() {
+    try {
+      await loadScanQueue();
+      await renderScanQueue();
+      showToast('✅ Queue refreshed');
+    } catch(e) {
+      showToast('⚠️ ' + e.message);
+    }
+  }
 
   async function loadScanQueue() {
     try {
