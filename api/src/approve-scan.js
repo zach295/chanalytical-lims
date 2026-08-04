@@ -266,7 +266,8 @@ async function getClientInfo(token, customerName) {
     if (!res.ok) return { formalName: customerName||'', clientCode:'', email:'', reportEmail:'', billingEmail:'', phone:'', dbaName:'', abbrev:'', billingAddress:'', pricingCategory:'', billingFrequency:'' };
     const data = await res.json();
     const clients = (data.value||[]).map(item => ({
-      name:            item.fields?.ClientName      || item.fields?.Title || '',
+      clientName:      item.fields?.ClientName      || item.fields?.Title || '',
+      name:            item.fields?.ClientName      || item.fields?.Title || '', // alias
       code:            item.fields?.ClientCode      || '',
       reportEmail:     item.fields?.Aliases         || '',  // Report Email Address
       billingEmail:    item.fields?.Notes           || '',  // Billing Email Address
@@ -280,7 +281,8 @@ async function getClientInfo(token, customerName) {
     }));
     const match = matchClient(customerName||'', clients);
     return {
-      formalName:       match ? match.name           : customerName || '',
+      formalName:       match ? (match.clientName || match.name) : customerName || '',
+      clientName:       match ? (match.clientName || match.name) : '',
       clientCode:       match ? match.code           : '',
       email:            match ? match.email          : '',
       reportEmail:      match ? match.reportEmail    : '',
