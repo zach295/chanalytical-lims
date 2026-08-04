@@ -512,28 +512,46 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","dateDrawn":"","timeDrawn"
 `Extract from this water testing COC form text. Known business clients: ${aliasCtx}
 
 TWO FORM TYPES EXIST:
-- BUSINESS form: Report To section has a company name or checkbox list of companies.
-- PUBLIC form: Report To section is blank or says "Chanalytical Laboratories". Has CUSTOMER & PROPERTY INFORMATION with person's name/address/email/phone.
+Extract ALL available information from this Chanalytical Laboratories Chain of Custody (COC) form.
 
-RULES:
-- customer: PUBLIC form: person's name from CUSTOMER & PROPERTY INFORMATION. BUSINESS form: checked company in Report To. Return "" if nothing clear.
-- email: From "E-mail:" or "Email:" field in REPORT TO BE SENT TO section (business) or CUSTOMER & PROPERTY INFORMATION (public). Concatenate split email lines. Return "" if blank.
-- phone: From "Phone:" or "Daytime Phone:" field in REPORT TO BE SENT TO section (business) or CUSTOMER & PROPERTY INFORMATION (public). Return "" if blank.
-- billingAddress: FULL mailing address from REPORT TO BE SENT TO section — street + city + state + zip on one line (e.g. "24 Freedom Dr, Standish, ME 04084"). PUBLIC form: leave "". BUSINESS form only.
-- location/city/state/zip: Sample address — BUSINESS=from WELL OWNER section. PUBLIC=from CUSTOMER & PROPERTY INFORMATION. These are WHERE THE WATER WAS COLLECTED, not the billing address.
-- dateDrawn: YYYY-MM-DD from "Date Sampled" field. Return "" if blank — NEVER guess.
-- timeDrawn: HH:MM 24hr from "Time Sampled". Return "" if blank.
-- receivedDate/receivedTime: from "Lab Use Only" box only. Return "" if blank.
-- barcodeId: alphanumeric code in Lab Use Only box. Return "" if absent.
-- tests: only package tests with [CHECKED] mark.
-- individualElements: only individual test rows with [CHECKED] mark.
+FORM LAYOUT:
+- TOP section: "Lab Use Only" box (has barcode), "Report To Be Sent To" section (company name, address, email, phone for business clients)
+- MIDDLE section: "Well Owner" or "Customer & Property Information" (sample collection address, owner name, date/time sampled)
+- BOTTOM section: Test type checkboxes
+
+EXTRACT EVERYTHING YOU CAN FIND:
+- barcodeId: alphanumeric code from Lab Use Only box. "" if absent.
+- formType: "business" if Report To section has a real company name/address (not Chanalytical). "public" if Report To is blank, says Chanalytical, or has only the lab's address.
+- customer: For business=company name from Report To. For public=person name from Customer/Property section. "" if unclear.
+- reportToName: Full name/company in Report To section exactly as written. "" if blank.
+- reportToAddress: Street address line from Report To section. "" if blank.
+- reportToCity: City from Report To section. "" if blank.
+- reportToState: State from Report To section. "" if blank.
+- reportToZip: Zip from Report To section. "" if blank.
+- reportToEmail: Email from Report To section. "" if blank.
+- reportToPhone: Phone from Report To section. "" if blank.
+- email: Best email found anywhere on the form. Prefer Report To email for business, Customer section for public.
+- phone: Best phone found anywhere — check ALL of: "Daytime Phone", "Phone", "Cell", "Mobile". Return digits only or formatted number. "" if truly blank.
+- billingAddress: For business=full address from Report To (street, city, state zip on one line). For public="".
+- dateDrawn: YYYY-MM-DD from "Date Sampled". "" if blank — NEVER guess.
+- timeDrawn: HH:MM 24hr from "Time Sampled". "" if blank.
+- receivedDate: YYYY-MM-DD from Lab Use Only box only. "" if blank.
+- receivedTime: HH:MM 24hr from Lab Use Only only. "" if blank.
+- location: Sample collection street address — from Well Owner section (business) or Customer & Property section (public).
+- city: Sample collection city.
+- state: Sample collection state. Default "ME".
+- zip: Sample collection zip (5 digits).
+- tests: Array of package test names with [CHECKED] mark only.
+- individualElements: Array of individual element names with [CHECKED] mark only.
 - hasRadon: true only if Radon Water is [CHECKED].
-- confidence: 0-100.
+- notes: Any unusual notes or flags. "" if none.
+- waterType: Water type if specified. "" if not.
+- confidence: 0-100 overall extraction confidence.
 
 COC TEXT:
 ${azureText}
 
-Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
+Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","reportToName":"","reportToAddress":"","reportToCity":"","reportToState":"","reportToZip":"","reportToEmail":"","reportToPhone":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
                 }],
               }),
             });
@@ -646,9 +664,12 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress
             State:            ocr.state        || 'ME',
             Zip:              ocr.zip ? String(ocr.zip).padStart(5, '0') : '',
             Email:            client ? (client.reportEmail || client.email) : (ocr.email || ''),
-            Phone:            ocr.phone           || '',
-            BillingAddress:   ocr.billingAddress  || '',
+            Phone:            ocr.phone || ocr.reportToPhone || '',
+            BillingAddress:   ocr.billingAddress || (ocr.formType === 'business'
+              ? [ocr.reportToAddress, ocr.reportToCity, ocr.reportToState, ocr.reportToZip].filter(Boolean).join(', ')
+              : ''),
             IsNewClient:      client ? 'No' : 'Yes',
+            FormType:         ocr.formType || 'public',
             SampleDate:       ocr.dateDrawn    || '',
             SampleTime:       ocr.timeDrawn    || '',
             ReceivedDate:     ocr.receivedDate || '',
