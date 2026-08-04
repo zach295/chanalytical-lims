@@ -198,14 +198,22 @@ app.http('accession-status', {
             const fid = (r.field_1 || '').split(' ')[0].trim();
             return fid === searchId;
           }).map(r => ({
-            _id: r._id,
-            field_1: r.field_1,
-            field_2: r.field_2,
-            Test: r.Test,
-            // Show exactly what coaTest resolves to
-            resolvedCoaTest: (r.field_2 || r.Test || r['Test0'] || '').trim(),
-            // Show all field keys on the item
-            allKeys: Object.keys(r),
+            _id:          r._id,
+            field_1:      r.field_1  || '',
+            field_2:      r.field_2  || '',
+            field_3:      r.field_3  || '',
+            field_4:      r.field_4  || '',
+            field_5:      r.field_5  || '',
+            field_6:      r.field_6  || '',
+            field_7:      r.field_7  || '',
+            field_8:      r.field_8  || '',
+            field_9:      r.field_9  || '',
+            field_10:     r.field_10 || '',
+            field_11:     r.field_11 || '',
+            field_12:     r.field_12 || '',
+            field_13:     r.field_13 || '',
+            field_14:     r.field_14 || '',
+            resolvedCoaTest: (r.field_2 || r.Test || '').trim(),
           }));
           return { status: 200, jsonBody: { matches, count: matches.length } };
         }
