@@ -148,6 +148,21 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { success: true, itemId, field, value } };
         }
 
+        // Mirror the GET handler exactly — proves what the deployed GET code does
+        if (action === 'debug-get') {
+          const { baseId: searchId } = body2;
+          const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+          const results = [];
+          for (const r of items) {
+            const fullId  = (r.field_1 || '').trim();
+            const coaTest = (r.field_2 || r.Test || r['Test0'] || '').trim();
+            const baseId2 = fullId.split(' ')[0].trim();
+            if (baseId2 !== searchId) continue;
+            results.push({ _id: r._id, fullId, field_2: r.field_2, Test: r.Test, coaTest });
+          }
+          return { status: 200, jsonBody: { results, itemsTotal: items.length } };
+        }
+
         // List ALL Archived Intake rows matching a baseId
         if (action === 'list-intake') {
           const { baseId: searchId } = body2;
