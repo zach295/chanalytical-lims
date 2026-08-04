@@ -591,9 +591,11 @@ app.http('approve-scan', {
 
       // ── Write Archived Intake ────────────────────────────────────────────────
       // Use direct Graph API to avoid LISTS constant dependency issues
+      const _siteId = process.env.SP_SITE_ID;
+      const _token  = await getToken();
       const archivedIntakeListId = await (async () => {
-        const r = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
-          { headers: { Authorization: `Bearer ${token}` } });
+        const r = await fetch(`${GRAPH}/sites/${_siteId}/lists?$select=id,displayName`,
+          { headers: { Authorization: `Bearer ${_token}` } });
         const d = await r.json();
         return (d.value||[]).find(l=>l.displayName==='Archived Intake')?.id || null;
       })();
@@ -621,8 +623,8 @@ app.http('approve-scan', {
         let intakeResult = null;
         if (archivedIntakeListId) {
           const ir = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/${archivedIntakeListId}/items`,
-            { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            `${GRAPH}/sites/${_siteId}/lists/${archivedIntakeListId}/items`,
+            { method: 'POST', headers: { Authorization: `Bearer ${_token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ fields: intakeFields }) }
           );
           intakeResult = ir.ok ? await ir.json() : null;
