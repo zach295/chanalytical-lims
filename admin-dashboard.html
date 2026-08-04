@@ -3478,21 +3478,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Timeout / expiry banner
     let timeoutBanner = '';
-    if (timeoutResult) {
+    if (timeoutResult && timeoutResult.flags.length > 0) {
       const hasRejected = timeoutResult.flags.some(f=>f.type==='rejected');
       const hasExpired  = timeoutResult.flags.some(f=>f.type==='expired');
       const hasClose    = timeoutResult.flags.some(f=>f.type==='close');
-      const inPackage   = hasExpired && !hasRejected; // expired inside a package — note only, not rejected
+      const inPackage   = hasExpired && !hasRejected;
       const bgColor     = hasRejected ? '#fff0f0' : inPackage ? '#fff8e6' : '#fffbe6';
-      const borderColor = hasRejected ? 'var(--error)' : inPackage ? '#f59e0b' : 'var(--warning)';
+      const borderColor = hasRejected ? 'var(--error)' : inPackage ? '#f59e0b' : '#d97706';
       const icon        = hasRejected ? '⛔' : inPackage ? '⚠️' : '⏰';
       const headline    = hasRejected ? 'Sample(s) REJECTED — Timeout'
                         : inPackage   ? 'Element(s) over time limit — package kept'
                         : 'Close to timeout';
+      const flagLines = timeoutResult.flags.map(f => {
+        if (f.type === 'close') {
+          return `<li><strong>${f.element}</strong>: ${f.hours} hrs elapsed of ${f.limit} hr limit — <strong>${f.remaining} hrs remaining</strong></li>`;
+        } else if (f.type === 'rejected' || f.type === 'expired') {
+          return `<li><strong>${f.element}</strong>: ${f.hours} hrs elapsed — <strong>${f.over} hrs over ${f.limit} hr limit</strong></li>`;
+        }
+        return `<li>${f.element}: ${f.hours} hrs elapsed (${f.limit} hr limit)</li>`;
+      }).join('');
       timeoutBanner = `<div style="background:${bgColor};border-left:4px solid ${borderColor};padding:10px 14px;margin:0 20px 12px;border-radius:0 6px 6px 0;font-size:13px;">
         ${icon} <strong>${headline}</strong>
-        <ul style="margin:6px 0 0;padding-left:18px;">
-          ${timeoutResult.flags.map(f=>`<li>${f.element}: ${f.hours} hrs old${f.type==='close'?` (${f.remaining} hrs remaining)`:f.over?` — ${f.over} hrs over ${f.limit} hr limit`:` — exceeds ${f.limit} hr limit`}</li>`).join('')}
+        <ul style="margin:6px 0 0;padding-left:18px;line-height:1.8;">
+          ${flagLines}
         </ul>
       </div>`;
     }
