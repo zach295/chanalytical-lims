@@ -2485,26 +2485,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const input = document.getElementById('rej-labid').value.trim();
     const resultEl = document.getElementById('rej-lookup-result');
     if (!input) { resultEl.style.display='none'; return; }
+    // Extract base ID (MMDDYY-NNN) — user only needs to type the base, no suffix needed
+    const baseId = input.split(' ')[0].trim();
     resultEl.style.display = 'block';
     resultEl.innerHTML = '⏳ Looking up...';
     try {
-      const res = await fetch(`/api/labid-search?labId=${encodeURIComponent(input)}`);
-      const data = await res.json();
-      // Filter client-side: only keep results where base ID exactly matches input
-      const baseInput = input.split(' ')[0].trim().toUpperCase();
-      const results = (data.results || []).filter(r => {
-        const rowBase = (r.labId || '').split(' ')[0].trim().toUpperCase();
-        return rowBase === baseInput;
+      // Use list-intake action which correctly matches by base ID
+      const res = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list-intake', baseId }),
       });
-      if (results.length) {
-        resultEl.innerHTML = results.map(r =>
-          `<div style="margin-bottom:4px;">✅ <strong>${r.labId}</strong> — ${r.customer||'Unknown'} | ${r.tests||''} <span style="font-size:11px;color:var(--slate);">(${r.source})</span></div>`
+      const data = await res.json();
+      const matches = data.matches || [];
+      if (matches.length) {
+        resultEl.innerHTML = matches.map(r =>
+          `<div style="margin-bottom:4px;">✅ <strong>${r.field_1}</strong> — ${r.field_2||''}</div>`
         ).join('');
-        if (results.length === 1) {
-          document.getElementById('rej-labid').value = results[0].labId;
+        // Auto-fill with the full lab ID if only one match
+        if (matches.length === 1) {
+          document.getElementById('rej-labid').value = matches[0].field_1;
         }
       } else {
-        resultEl.innerHTML = `<span style="color:var(--slate);">No match found. Enter the full Lab ID (e.g. 071526-001 EXP) and reject anyway.</span>`;
+        resultEl.innerHTML = `<span style="color:var(--slate);">No match found for <strong>${baseId}</strong>. You can still enter the Lab ID and reject.</span>`;
       }
     } catch(e) {
       resultEl.innerHTML = `<span style="color:var(--slate);">Lookup unavailable — enter Lab ID manually.</span>`;
