@@ -495,12 +495,17 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
     }
     if (context) context.log(`[RCS] colA rows=${colAVals.length} targetRow=${targetRow}`);
 
-    // Write Lab Barcode # (col A), Date Drawn (col D), Time Drawn (col E)
-    const writeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:E${targetRow}')`, {
+    // Build today's date in ET for Date Tested
+    const todayET = new Date().toLocaleDateString('en-US', {
+      timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: 'numeric'
+    }); // MM/DD/YYYY
+
+    // Col A: Lab Barcode #, E: Date Drawn, F: Time Drawn, G: Date Tested
+    const writeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:G${targetRow}')`, {
       method: 'PATCH',
       headers: wbHdr,
       body: JSON.stringify({
-        values: [[labId, '', '', dateDrawn || '', timeDrawn || '']],
+        values: [[labId, '', '', '', dateDrawn || '', timeDrawn || '', todayET]],
       }),
     });
     if (!writeRes.ok) {
