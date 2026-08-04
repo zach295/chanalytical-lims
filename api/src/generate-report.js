@@ -521,6 +521,8 @@ app.http('generate-report', {
           log,
           meta: {
             customer:     formatCustomerName(meta.customer || ''),
+            // clientName from Clients list takes priority over raw intake customer name
+            clientName:   clientInfo.clientName || formatCustomerName(meta.customer || ''),
             email:            clientInfo.email            || '',
             reportEmail:      clientInfo.reportEmail      || '',
             billingEmail:     clientInfo.billingEmail     || '',
