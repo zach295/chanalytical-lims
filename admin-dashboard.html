@@ -2852,6 +2852,15 @@ document.addEventListener('DOMContentLoaded', function() {
       tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No clients found.</div></td></tr>';
       return;
     }
+    // Normalize field names — handle both old API response (aliases/notes/active)
+    // and new API response (reportEmail/billingEmail/phone/status)
+    _clientsData = _clientsData.map(c => ({
+      ...c,
+      reportEmail:  c.reportEmail  || c.aliases   || '',
+      billingEmail: c.billingEmail || c.notes      || '',
+      phone:        c.phone        || (typeof c.active === 'string' ? c.active : '') || '',
+      status:       c.status       || (c.active === false || c.active === 'No' ? 'Inactive' : 'Active'),
+    }));
     const statusColor = s => s === 'Inactive' ? 'var(--error)' : 'var(--success)';
     const statusBg    = s => s === 'Inactive' ? 'var(--error-light)' : 'var(--success-light)';
     tbody.innerHTML = _clientsData.map(c => `
