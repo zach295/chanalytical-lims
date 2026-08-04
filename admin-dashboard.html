@@ -4091,6 +4091,23 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentOcrFile = null;
   let currentOcrExtraction = null;
 
+  async function triggerScanNow(btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Checking...';
+    try {
+      const res  = await fetch('/api/scan-drive', { method: 'POST' });
+      const data = await res.json();
+      showToast(data.found > 0 ? `✅ Found ${data.found} new scan(s)` : '✅ No new scans found');
+      await loadScans();
+    } catch(e) {
+      showToast('⚠️ Scan check failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
   async function loadScans() {
     const grid = document.getElementById('scans-grid');
     if (!grid) return;
