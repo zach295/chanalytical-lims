@@ -139,7 +139,7 @@ app.http('accession-status', {
           const siteId = process.env.SP_SITE_ID;
           const GRAPH  = 'https://graph.microsoft.com/v1.0';
           const cRes   = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields&$top=500&$orderby=fields/ClientName asc`,
+            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields&$top=500`,
             { headers: { Authorization: `Bearer ${tkn}` } }
           );
           if (!cRes.ok) return { status: 500, jsonBody: { error: `Clients fetch failed: ${cRes.status}` } };
