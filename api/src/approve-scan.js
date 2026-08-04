@@ -387,334 +387,156 @@ async function loadDynamicTestTypes(token) {
   return { dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing };
 }
 
-// ── Main handler ───────────────────────────────────────────────────────────────
+// ── Write to Reports to be Billed (SharePoint List) ──────────────────────────
+async function writeReportsToBilled(siteId, token, params, context) {
+  const GRAPH   = 'https://graph.microsoft.com/v1.0';
+  const authHdr = { Authorization: `Bearer ${token}` };
+  try {
+    const listId = await getListId('Reports to be Billed', token);
+    if (!listId) throw new Error('"Reports to be Billed" list not found');
+    const qty  = 1;
+    const rate = parseFloat((params.rate || '').toString().replace(/[$,]/g, '')) || 0;
+    const amt  = rate ? parseFloat((qty * rate).toFixed(2)) : null;
+    const fields = {
+      Title:                           (params.labId || '').split(' ')[0].trim(),
+      Date_x0020_Rec_x0027_d:         fmtExcel(params.receivedDate) || '',
+      Time_x0020_Rec_x0027_d:         params.receivedTime || '',
+      Date_x0020_Drawn:               fmtExcel(params.dateDrawn) || '',
+      Time_x0020_Drawn:               params.timeDrawn || '',
+      Customer:                        params.customer || '',
+      Client_x0020_Code:              params.clientCode || '',
+      Report_x0020_Date:              nextBusinessDay(params.receivedDate || params.dateDrawn),
+      Location:                        params.location || '',
+      City_x002f_Town:                params.city || '',
+      State:                           params.state || '',
+      Zip:                             params.zip ? String(params.zip).replace(/[^0-9]/g,'').padStart(5,'0') : '',
+      Item_x002f_Service:             params.testName || '',
+      Test_x0020_Type_x0020_SKU:      params.suffix || '',
+      RW_x0020_Results:               '',
+      Qty:                             qty,
+      Rate:                            rate || null,
+      Amt:                             amt,
+      QB:                              false,
+      Statement_x002f_Inv_x0020_Date: '',
+      Pd:                              false,
+    };
+    const res = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items`,
+      { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }) });
+    if (!res.ok) {
+      const err = await res.text().catch(()=>'');
+      throw new Error(`List write failed (${res.status}): ${err.slice(0,300)}`);
+    }
+    const written = await res.json();
+    if (context) context.log(`[RTB] Wrote ${fields.Title} rate=${rate} id=${written.id}`);
+    return { success: true, id: written.id, rate: String(rate) };
+  } catch(e) {
+    if (context) context.log('[RTB] Error:', e.message);
+    return { success: false, error: e.message };
+  }
+}
 
 // ── Write to Radon Control Sheet on approval ──────────────────────────────────
-async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {
+async function writeRadonControlSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {
+  const GRAPH = 'https://graph.microsoft.com/v1.0';
+  const siteId = siteIdArg || process.env.SP_SITE_ID;
+  const token  = tokenArg  || (await (require('../shared/graph').getToken)());
   const MONTHS = ['January','February','March','April','May','June',
                   'July','August','September','October','November','December'];
-  const baseId    = labId.split(' ')[0].trim();
-  const datePrefix = baseId.slice(0, 6); // MMDDYY
-  const mm  = datePrefix.slice(0, 2);
-  const yy  = datePrefix.slice(4, 6);
+  const mm   = datePrefix.slice(0, 2);
+  const yy   = datePrefix.slice(4, 6);
   const year = '20' + yy;
   const monthName = MONTHS[parseInt(mm, 10) - 1];
-
   const authHdr = { Authorization: `Bearer ${token}` };
-  if (context) context.log(`[RCS] Starting for ${labId} | siteId=${siteId} | month=${monthName} ${year}`);
-
-  // ── 1. Ensure monthly Radon folder exists ────────────────────────────────────
+  if (context) context.log(`[RCS] Starting for ${newLabId} | month=${monthName} ${year}`);
   const controlFolder = process.env.SP_CONTROL_FOLDER ||
     '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
   const marker  = 'Shared Documents/';
   const idx     = controlFolder.indexOf(marker);
   const relPath = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\/+/, '');
-  const monthFolder = `${monthName} Radon ${year}`;
-
+  const monthFolder     = `${monthName} Radon ${year}`;
   const monthFolderPath = `${relPath}/${monthFolder}`;
   const encMonthPath    = monthFolderPath.split('/').map(encodeURIComponent).join('/');
-
-  // Check if monthly folder exists, create if not
-  const folderCheckRes = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/root:/${encMonthPath}?$select=id`,
-    { headers: authHdr }
-  );
+  const folderCheckRes  = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMonthPath}?$select=id`, { headers: authHdr });
   if (!folderCheckRes.ok) {
-    // Create the folder
     const parentEncPath = relPath.split('/').map(encodeURIComponent).join('/');
     const parentRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${parentEncPath}?$select=id`, { headers: authHdr });
-    if (!parentRes.ok) throw new Error(`Could not find Test C folder`);
+    if (!parentRes.ok) throw new Error('Could not find Test C folder');
     const parentId = (await parentRes.json()).id;
     await fetch(`${GRAPH}/sites/${siteId}/drive/items/${parentId}/children`, {
-      method: 'POST',
-      headers: { ...authHdr, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: monthFolder, folder: {}, '@microsoft.graph.conflictBehavior': 'replace' }),
     });
-    context.log(`[RCS] Created folder: ${monthFolder}`);
+    if (context) context.log(`[RCS] Created folder: ${monthFolder}`);
   }
-
-  // ── 2. Check if daily RCS file exists, copy master if not ─────────────────────
   const rcsName    = `RCS_${datePrefix}.xlsx`;
   const rcsPath    = `${monthFolderPath}/${rcsName}`;
   const encRcsPath = rcsPath.split('/').map(encodeURIComponent).join('/');
-
   const rcsCheckRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encRcsPath}?$select=id`, { headers: authHdr });
   let rcsFileId;
-
   if (!rcsCheckRes.ok) {
-    // Copy master radon control sheet
-    // Strip full SP path prefix if present — only need relative path after Shared Documents/
-    const masterRaw  = process.env.SP_RADON_TEMPLATE ||
-      'Documents/Control Sheets/Master Radon Control Sheet.xlsx';
+    const masterRaw  = process.env.SP_RADON_TEMPLATE || 'Documents/Control Sheets/Master Radon Control Sheet.xlsx';
     const masterMarker = 'Shared Documents/';
     const masterIdx    = masterRaw.indexOf(masterMarker);
     const masterPath   = masterIdx >= 0 ? masterRaw.slice(masterIdx + masterMarker.length) : masterRaw.replace(/^\/+/,'');
     const encMasterPath = masterPath.split('/').map(encodeURIComponent).join('/');
     if (context) context.log(`[RCS] Looking for master at: ${masterPath}`);
-    const masterRes     = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMasterPath}?$select=id`, { headers: authHdr });
+    const masterRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMasterPath}?$select=id`, { headers: authHdr });
     if (!masterRes.ok) {
       const errText = await masterRes.text().catch(()=>'');
       throw new Error(`Master Radon Control Sheet not found (${masterRes.status}): ${errText.slice(0,100)}`);
     }
     const masterId = (await masterRes.json()).id;
-
-    // Get the monthly folder ID for the copy destination
     const monthRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMonthPath}?$select=id`, { headers: authHdr });
-    if (!monthRes.ok) throw new Error(`Monthly radon folder not found`);
+    if (!monthRes.ok) throw new Error('Monthly radon folder not found');
     const monthFolderId = (await monthRes.json()).id;
-
-    // Copy master → new RCS file
     const copyRes = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${masterId}/copy`, {
-      method: 'POST',
-      headers: { ...authHdr, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
       body: JSON.stringify({ parentReference: { id: monthFolderId }, name: rcsName }),
     });
-    if (!copyRes.ok) throw new Error(`Failed to copy master radon sheet`);
-
-    // Wait briefly for copy to complete
+    if (!copyRes.ok) throw new Error('Failed to copy master radon sheet');
     await new Promise(r => setTimeout(r, 3000));
     const newRcsRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encRcsPath}?$select=id`, { headers: authHdr });
-    if (!newRcsRes.ok) throw new Error(`Copied RCS file not found after copy`);
+    if (!newRcsRes.ok) throw new Error('Copied RCS file not found after copy');
     rcsFileId = (await newRcsRes.json()).id;
-    context.log(`[RCS] Created ${rcsName} from master`);
+    if (context) context.log(`[RCS] Created ${rcsName} from master`);
   } else {
     rcsFileId = (await rcsCheckRes.json()).id;
   }
-
-  // ── 3. Open workbook session and find first empty row ─────────────────────────
   const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${rcsFileId}/workbook`;
-
   const sesRes = await fetch(`${wbBase}/createSession`, {
-    method: 'POST',
-    headers: { ...authHdr, 'Content-Type': 'application/json' },
+    method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
     body: JSON.stringify({ persistChanges: true }),
   });
   const { id: sid } = await sesRes.json();
   const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
-
   try {
-    // Get first worksheet
     const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
-    const wsId      = ((await sheetsRes.json()).value || [])[0]?.id;
+    const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
     if (!wsId) throw new Error('No worksheets in RCS file');
-
-    // Read column A directly to find first empty row
     const colARes  = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A1:A200')?$select=values`, { headers: wbHdr });
     const colAVals = (await colARes.json()).values || [];
-    let targetRow  = 2; // default: row 2 (after header)
+    let targetRow  = 2;
     for (let i = 1; i < colAVals.length; i++) {
       if (!String(colAVals[i][0] || '').trim()) { targetRow = i + 1; break; }
       targetRow = i + 2;
     }
     if (context) context.log(`[RCS] colA rows=${colAVals.length} targetRow=${targetRow}`);
-
-    // Build today's date in ET for Date Tested
     const todayET = new Date().toLocaleDateString('en-US', {
       timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: 'numeric'
-    }); // MM/DD/YYYY
-
-    // Col A: Lab Barcode #, E: Date Drawn, F: Time Drawn, G: Date Tested
+    });
     const writeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:G${targetRow}')`, {
-      method: 'PATCH',
-      headers: wbHdr,
-      body: JSON.stringify({
-        values: [[labId, '', '', '', dateDrawn || '', timeDrawn || '', todayET]],
-      }),
+      method: 'PATCH', headers: wbHdr,
+      body: JSON.stringify({ values: [[newLabId, '', '', '', datePrefix || '', '', todayET]] }),
     });
     if (!writeRes.ok) {
       const errText = await writeRes.text().catch(()=>'');
       throw new Error(`RCS write failed (${writeRes.status}): ${errText.slice(0,200)}`);
     }
-
-    context.log(`[RCS] Wrote ${labId} to ${rcsName} row ${targetRow}`);
+    if (context) context.log(`[RCS] Wrote ${newLabId} to ${rcsName} row ${targetRow}`);
     return { success: true, file: rcsName, row: targetRow };
   } finally {
     await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
-  }
-}
-
-
-// ── Write to Reports to be Billed.xlsx ────────────────────────────────────────
-async function writeReportsToBilled(siteId, token, params, context) {
-  // params: { labId, suffix, customer, clientCode, pricingCategory,
-  //           dateDrawn, timeDrawn, receivedDate, receivedTime,
-  //           location, city, state, zip, testName, today }
-  const GRAPH   = 'https://graph.microsoft.com/v1.0';
-  const authHdr = { Authorization: `Bearer ${token}` };
-
-  try {
-    // 1. Find Reports to be Billed.xlsx in Lab Scans folder
-    const labScansPath = 'Documents/Lab Scans/Reports to be Billed.xlsx';
-    const encPath = labScansPath.split('/').map(encodeURIComponent).join('/');
-    const fileRes = await fetch(
-      `${GRAPH}/sites/${siteId}/drive/root:/${encPath}?$select=id`,
-      { headers: authHdr }
-    );
-    if (!fileRes.ok) throw new Error(`Reports to be Billed.xlsx not found (${fileRes.status})`);
-    const { id: fileId } = await fileRes.json();
-
-    // 2. Look up Rate:
-    //    Step A → find client in Clients list → get PricingCategory
-    //    Step B → find test row in Current Pricing V1 → use matching column
-    let rate = '';
-    try {
-      // Step A: Get client's PricingCategory from Clients list
-      let pricingCategory = params.pricingCategory || '';
-      if (!pricingCategory && params.customer) {
-        const clientRes = await fetch(
-          `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,PricingCategory)&$top=500`,
-          { headers: authHdr }
-        );
-        if (clientRes.ok) {
-          const clientData = await clientRes.json();
-          const customerLow = params.customer.toLowerCase().trim();
-          const clientMatch = (clientData.value || []).find(i => {
-            const name = (i.fields?.ClientName || i.fields?.Title || '').toLowerCase().trim();
-            return name === customerLow || customerLow.includes(name) || name.includes(customerLow);
-          });
-          pricingCategory = clientMatch?.fields?.PricingCategory || '';
-          if (context) context.log(`[RTB] Client "${params.customer}" → PricingCategory="${pricingCategory}"`);
-        }
-      }
-
-      // Map PricingCategory to SharePoint internal column name
-      // Columns named "WQ Pricing", "Inspector Pricing", "Public Pricing"
-      // SharePoint encodes spaces as _x0020_ in Graph API field names
-      const catLow = pricingCategory.toLowerCase();
-      let priceCol;
-      if (catLow.includes('inspector')) {
-        priceCol = 'InspectorPricing';
-      } else if (catLow.includes('wq') || catLow.includes('water quality')) {
-        priceCol = 'WQPricing';
-      } else {
-        priceCol = 'PublicPricing';
-      }
-      if (context) context.log(`[RTB] cat="${pricingCategory}" → column="${priceCol}`);
-
-      // Step B: Find the test row in Current Pricing V1
-      // Try both possible list names
-      let pricingRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
-        { headers: authHdr }
-      );
-      if (!pricingRes.ok) {
-        // Try alternate name
-        pricingRes = await fetch(
-          `${GRAPH}/sites/${siteId}/lists/Current%20Pricing%20V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice)&$top=200`,
-          { headers: authHdr }
-        );
-        if (context) context.log(`[RTB] Tried alternate list name, status: ${pricingRes.status}`);
-      }
-      if (pricingRes.ok) {
-        const pricingData = await pricingRes.json();
-        const testNameLow = (params.testName || '').toLowerCase().trim();
-        const suffixLow   = (params.suffix   || '').toLowerCase().trim();
-        const match = (pricingData.value || []).find(item => {
-          const f       = item.fields || {};
-          const service = (f.Service || f.Title || '').toLowerCase().trim();
-          const abbr    = (f.CoreAbbr_x002f_Symbol || '').toLowerCase().trim();
-          const suf     = (f.Suffix || abbr || '').toLowerCase().trim();
-          return service === testNameLow || suf === suffixLow ||
-                 service.includes(testNameLow) || testNameLow.includes(service);
-        });
-        // Dump ALL field keys from first item so we know exact names
-        const firstItem = pricingData.value?.[0];
-        if (firstItem && context) {
-          context.log('[RTB] First item ALL fields:', JSON.stringify(firstItem.fields));
-        }
-        if (context) context.log(`[RTB] Searching service="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}" totalItems=${pricingData.value?.length}`);
-        params._pricingCount   = pricingData.value?.length || 0;
-        params._firstItemFields = Object.keys(firstItem?.fields || {}).slice(0, 20).join(',');
-        params._firstItemService = firstItem?.fields?.Service || firstItem?.fields?.Title || JSON.stringify(Object.values(firstItem?.fields||{}).slice(0,5));
-        if (match) {
-          rate = String(match.fields?.[priceCol] || '').replace(/[$,]/g, '').trim();
-          params._matchFound = match.fields?.Service || match.fields?.Title;
-          params._priceColUsed = priceCol;
-        } else {
-          params._matchFound = `NONE (searched "${testNameLow}" in ${params._pricingCount} items)`;
-          params._priceColUsed = priceCol;
-        }
-      }
-    } catch(e) { if (context) context.log('[RTB] Rate lookup error:', e.message); }
-
-    const qty  = 1;
-    const amt  = rate ? (qty * parseFloat(rate)).toFixed(2) : '';
-
-    // 3. Open workbook session
-    const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
-    const sesRes = await fetch(`${wbBase}/createSession`, {
-      method: 'POST',
-      headers: { ...authHdr, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ persistChanges: true }),
-    });
-    if (!sesRes.ok) throw new Error(`Session open failed (${sesRes.status})`);
-    const { id: sid } = await sesRes.json();
-    const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
-
-    try {
-      // 4. Get first worksheet
-      const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
-      const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
-      if (!wsId) throw new Error('No worksheets found');
-
-      // 5. Find first empty row — read column A directly (more reliable than usedRange)
-      const colARes  = await fetch(
-        `${wbBase}/worksheets/${wsId}/range(address='A1:A500')?$select=values`,
-        { headers: wbHdr }
-      );
-      const colAData = await colARes.json();
-      const colAVals = colAData.values || [];
-      // Find first empty cell in column A after header (row 1 = index 0)
-      let nextRow = 2; // default: row 2
-      for (let i = 1; i < colAVals.length; i++) {
-        if (!String(colAVals[i][0] || '').trim()) {
-          nextRow = i + 1; // convert to 1-based row number
-          break;
-        }
-        nextRow = i + 2; // all rows filled — append after last
-      }
-
-      // 6. Write in TWO ranges to skip column R (Amt formula — do not overwrite)
-      // A:Q = Date Rec'd through Rate
-      const rowAQ = [
-        fmtExcel(params.receivedDate) || '',  // A Date Rec'd
-        params.receivedTime || '',              // B Time Rec'd
-        fmtExcel(params.dateDrawn) || '',       // C Date Drawn
-        params.timeDrawn    || '',              // D Time Drawn
-        params.customer     || '',              // E Customer
-        params.clientCode   || '',              // F Client Code
-        nextBusinessDay(params.receivedDate || params.dateDrawn), // G Report Date
-        (params.labId || '').split(' ')[0].trim() || '',  // H Lab #
-        params.location     || '',              // I Location
-        params.city         || '',              // J City/Town
-        params.state        || '',              // K State
-        params.zip ? String(params.zip).replace(/\D/g,'').padStart(5,'0') : '',  // L Zip
-        params.testName     || '',              // M Item/Service
-        params.suffix       || '',              // N Test Type SKU
-        '',                                     // O RW Results (blank)
-        qty,                                    // P Qty
-        rate,                                   // Q Rate
-      ];
-      // S:X = QB through Date Pd (skip R=Amt which has a formula)
-      const rowSX = ['', '', '', '', '', ''];   // S-X blank
-
-      await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${nextRow}:Q${nextRow}')`, {
-        method: 'PATCH', headers: wbHdr,
-        body: JSON.stringify({ values: [rowAQ] }),
-      });
-      await fetch(`${wbBase}/worksheets/${wsId}/range(address='S${nextRow}:X${nextRow}')`, {
-        method: 'PATCH', headers: wbHdr,
-        body: JSON.stringify({ values: [rowSX] }),
-      });
-
-      context.log(`[RTB] Wrote ${params.labId} to row ${nextRow} rate=${rate} cat=${params.pricingCategory}`);
-      return { success: true, row: nextRow, rate };
-    } finally {
-      await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
-    }
-  } catch(e) {
-    context.log('[RTB] Error:', e.message);
-    return { success: false, error: e.message };
   }
 }
 
