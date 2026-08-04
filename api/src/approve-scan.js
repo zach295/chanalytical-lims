@@ -577,22 +577,24 @@ async function writeReportsToBilled(siteId, token, params, context) {
         }
       }
 
-      // Map PricingCategory to the Current Pricing V1 column name
+      // Map PricingCategory to SharePoint internal column name
+      // Columns named "WQ Pricing", "Inspector Pricing", "Public Pricing"
+      // SharePoint encodes spaces as _x0020_ in Graph API field names
       const catLow = pricingCategory.toLowerCase();
       let priceCol;
       if (catLow.includes('inspector')) {
-        priceCol = 'InspectorPrice';
+        priceCol = 'Inspector_x0020_Pricing';
       } else if (catLow.includes('wq') || catLow.includes('water quality')) {
-        priceCol = 'WQPrice';
+        priceCol = 'WQ_x0020_Pricing';
       } else {
-        priceCol = 'PublicPrice'; // default for public/unknown
+        priceCol = 'Public_x0020_Pricing'; // default
       }
-      if (context) context.log(`[RTB] Using price column: ${priceCol}`);
+      if (context) context.log(`[RTB] cat="${pricingCategory}" → column="${priceCol}`);
 
       // Step B: Find the test row in Current Pricing V1
       // Try both possible list names
       let pricingRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQPrice,InspectorPrice,PublicPrice)&$top=200`,
+        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields($select=Title,Suffix,WQ_x0020_Pricing,Inspector_x0020_Pricing,Public_x0020_Pricing)&$top=200`,
         { headers: authHdr }
       );
       if (!pricingRes.ok) {
@@ -613,15 +615,19 @@ async function writeReportsToBilled(siteId, token, params, context) {
           const suf   = (f.Suffix || '').toLowerCase().trim();
           return title === testNameLow || suf === suffixLow;
         });
-        // Log what we searched and what's in the list
-        const listSample = (pricingData.value||[]).slice(0,6)
-          .map(i=>`"${i.fields?.Title}"/"${i.fields?.Suffix}"`).join(', ');
-        if (context) context.log(`[RTB] Searching title="${testNameLow}" suffix="${suffixLow}" | List: ${listSample}`);
+        const listSample = (pricingData.value||[]).slice(0,8)
+          .map(i => ({t:i.fields?.Title, s:i.fields?.Suffix, keys:Object.keys(i.fields||{})}));
+        if (context) context.log('[RTB] List sample:', JSON.stringify(listSample));
+        if (context) context.log(`[RTB] Searching title="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}"`);
         if (match) {
           rate = String(match.fields?.[priceCol] || '');
-          if (context) context.log(`[RTB] Match: "${match.fields?.Title}" ${priceCol}=${rate} | fields: ${JSON.stringify(match.fields)}`);
+          params._matchFound = match.fields?.Title;
+          params._priceColUsed = priceCol;
+          if (context) context.log(`[RTB] Match: "${match.fields?.Title}" ${priceCol}=${rate} allFields:${JSON.stringify(match.fields)}`);
         } else {
-          if (context) context.log(`[RTB] No match for testName="${params.testName}" suffix="${params.suffix}"`);
+          params._matchFound = 'NONE';
+          params._priceColUsed = priceCol;
+          if (context) context.log(`[RTB] No match for title="${testNameLow}" suffix="${suffixLow}"`);
         }
       }
     } catch(e) { if (context) context.log('[RTB] Rate lookup error:', e.message); }
@@ -697,7 +703,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
       });
 
       context.log(`[RTB] Wrote ${params.labId} to row ${nextRow} rate=${rate} cat=${params.pricingCategory}`);
-      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory };
+      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory, priceColUsed: params._priceColUsed, matchFound: params._matchFound };
     } finally {
       await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
     }
