@@ -1067,20 +1067,60 @@ app.http('approve-scan', {
         } catch(e) { context.log('[Archive rename]', e.message); }
       }
 
-      // ── Call control-sheet function to add Lab IDs ────────────────────────────
-      const allBaseIds = [...new Set(labItems.map(l => l.baseId))];
+      // ── Write Lab IDs to Control Sheet (direct Graph API) ─────────────────────
       const allFullIds = labItems.map(l => l.fullId);
       try {
-        const csRes = await fetch(
-          `${process.env.WEBSITE_HOSTNAME ? 'https://'+process.env.WEBSITE_HOSTNAME : ''}/api/control-sheet`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action:'addLabIds', labIds:allFullIds }),
+        // Get today's control sheet file: C_MMDDYY.xlsx in SP_CONTROL_FOLDER
+        const now        = new Date();
+        const etDate     = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const csPrefix   = etDate.replace(/\//g,'');  // MMDDYY
+        const csFileName = `C_${csPrefix}.xlsx`;
+        const csFolder   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+        const csMk       = 'Shared Documents/';
+        const csIdx      = csFolder.indexOf(csMk);
+        const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\/+/,'');
+        const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
+
+        const csFileRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`, { headers: { Authorization:`Bearer ${_token}` } });
+        if (csFileRes.ok) {
+          const csFileId = (await csFileRes.json()).id;
+          const wbBase2  = `${GRAPH}/sites/${_siteId}/drive/items/${csFileId}/workbook`;
+          const ses2Res  = await fetch(`${wbBase2}/createSession`, {
+            method:'POST', headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+            body: JSON.stringify({ persistChanges:true }),
+          });
+          const { id: sid2 } = await ses2Res.json();
+          const wbHdr2 = { Authorization:`Bearer ${_token}`, 'workbook-session-id':sid2, 'Content-Type':'application/json' };
+          try {
+            const sheetsRes2 = await fetch(`${wbBase2}/worksheets`, { headers:wbHdr2 });
+            const wsId2      = ((await sheetsRes2.json()).value||[])[0]?.id;
+            if (wsId2) {
+              // Scan column A for existing IDs and first empty row
+              const colARes2 = await fetch(`${wbBase2}/worksheets/${wsId2}/range(address='A1:A500')?$select=values`, { headers:wbHdr2 });
+              const colAVals2 = (await colARes2.json()).values || [];
+              const existing = new Set(colAVals2.map(r => String(r[0]||'').trim()).filter(Boolean));
+              let nextRow2 = 2;
+              for (let i = 1; i < colAVals2.length; i++) {
+                if (!String(colAVals2[i][0]||'').trim()) { nextRow2 = i+1; break; }
+                nextRow2 = i+2;
+              }
+              const newIds = allFullIds.filter(id => !existing.has(id.trim()));
+              if (newIds.length) {
+                const endRow2 = nextRow2 + newIds.length - 1;
+                await fetch(`${wbBase2}/worksheets/${wsId2}/range(address='A${nextRow2}:A${endRow2}')`, {
+                  method:'PATCH', headers:wbHdr2,
+                  body: JSON.stringify({ values: newIds.map(id=>[id]) }),
+                });
+                context.log(`[CS] Wrote ${newIds.length} IDs to ${csFileName} starting row ${nextRow2}`);
+              }
+            }
+          } finally {
+            await fetch(`${wbBase2}/closeSession`, { method:'POST', headers:wbHdr2 }).catch(()=>{});
           }
-        );
-        if (!csRes.ok) context.log('[CS] control-sheet returned', csRes.status);
-      } catch(e) { context.log('[CS] control-sheet call failed:', e.message); }
+        } else {
+          context.log(`[CS] ${csFileName} not found (${csFileRes.status}) — create it first`);
+        }
+      } catch(e) { context.log('[CS] Control sheet write failed:', e.message); }
 
       // ── Write to Radon Control Sheet if Radon Water approved ─────────────────
       const radonLabItem = labItems.find(l => l.isRadon && !l.isRejected);
