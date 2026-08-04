@@ -3709,7 +3709,7 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>`;
     };
 
-    return `<div class="card" id="scan-card-${r.fileId}" style="border-left:4px solid ${confColor};">
+    return `<div class="card" id="scan-card-${r.fileId}" data-filename="${r.fileName||''}" style="border-left:4px solid ${confColor};">
       <div class="card-header">
         <div>
           <div class="card-title">
@@ -4060,7 +4060,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch('/api/mark-scan-processed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId, rowIndex, outcome: 'discarded', processedBy: getAdminName() }),
+        body: JSON.stringify({ fileId, fileName: document.getElementById(`scan-card-${fileId}`)?.dataset?.filename || '', rowIndex, outcome: 'discarded', processedBy: getAdminName() }),
       });
       const data = await res.json().catch(() => ({}));
       if (data.driveDeleted) {
