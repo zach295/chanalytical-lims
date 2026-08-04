@@ -133,7 +133,11 @@ app.http('accession-status', {
 
         return {
           status: 200,
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+          },
           body: JSON.stringify({ pending, reported }),
         };
       }
