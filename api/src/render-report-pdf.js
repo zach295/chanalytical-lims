@@ -70,6 +70,12 @@ async function graphBatch(reqs, token, sid) {
   return d.responses || [];
 }
 
+async function hideSheet(siteId, itemId, wsId, token, sid) {
+  // Set worksheet visibility to hidden so it doesn't appear in the PDF
+  const base = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
+  await gReq('PATCH', base, token, { visibility: 'hidden' }, sid);
+}
+
 async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
   const rr = await gReq('GET',
     `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount`,
