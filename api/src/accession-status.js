@@ -19,13 +19,11 @@ function fmtName(name) {
 }
 
 app.http('accession-status', {
-  methods: ['GET', 'POST'],
+  methods: ['GET'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      // ── GET ─────────────────────────────────────────────────────────────────
-      if (request.method === 'GET') {
-        const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+      const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
         const byBase = {};
         for (const r of items) {
           const fullId   = (r.field_1  || '').trim();
@@ -63,11 +61,20 @@ app.http('accession-status', {
           },
           body: JSON.stringify({ pending, reported }),
         };
-      }
+        } catch(e) {
+      context.log('[accession-status] Error:', e.message);
+      return { status: 500, jsonBody: { error: e.message } };
+    }
+  }
+});
 
-      // ── POST ────────────────────────────────────────────────────────────────
-      if (request.method === 'POST') {
-        const body   = await request.json().catch(() => ({}));
+app.http('accession-status-post', {
+  methods: ['POST'],
+  route: 'accession-status',
+  authLevel: 'anonymous',
+  handler: async (request, context) => {
+    try {
+      const body   = await request.json().catch(() => ({}));
         const action = body.action || '';
 
         // ── read-clients ─────────────────────────────────────────────────────
@@ -180,11 +187,8 @@ app.http('accession-status', {
           updateItem(LISTS.ARCHIVED_INTAKE, r._id, { field_14: newStatus })
         ));
         return { status: 200, jsonBody: { success: true, baseId, status: newStatus, rowsUpdated: matches.length } };
-      }
-
-      return { status: 405, jsonBody: { error: 'Method not allowed' } };
-
-    } catch(e) {
+      return { status: 400, jsonBody: { error: 'Unknown action' } };
+        } catch(e) {
       context.log('[accession-status] Error:', e.message);
       return { status: 500, jsonBody: { error: e.message } };
     }
