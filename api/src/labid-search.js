@@ -9,13 +9,15 @@ app.http('labid-search', {
     if (!input) return { status: 400, body: JSON.stringify({ error: 'labId required' }) };
     try {
       const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+      // Match on full base ID (e.g. "072826-008") not just date prefix
       const baseInput = input.split(' ')[0].trim().toLowerCase();
       const seen = new Set();
       const results = [];
       for (const r of items) {
         const fullId  = String(r.field_1 || '').trim().toLowerCase();
-        const rowBase = fullId.split(' ')[0].trim();
-        if (rowBase !== baseInput && fullId !== input.toLowerCase()) continue;
+        const rowBase = fullId.split(' ')[0].trim().toLowerCase();
+        // Must match the FULL base ID (MMDDYY-NNN), not just the date prefix
+        if (rowBase !== baseInput && fullId !== baseInput && !fullId.startsWith(baseInput + ' ')) continue;
         if (!fullId || seen.has(fullId)) continue;
         seen.add(fullId);
         results.push({
