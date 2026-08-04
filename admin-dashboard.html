@@ -2199,11 +2199,42 @@ document.addEventListener('DOMContentLoaded', function() {
   let scanQueueData = { pending: [], approved: [] };
   let recentlyApprovedCache = []; // in-memory list since approved rows are deleted from sheet
 
+  async function refreshClientList() {
+    try {
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'read-clients' }),
+      });
+      const data = await res.json();
+      const clients = data.clients || [];
+      _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
+      _CLIENT_EMAILS = {};
+      for (const c of clients) {
+        if (c.clientName) {
+          // reportEmail = Aliases field (Report Email Address)
+          _CLIENT_EMAILS[c.clientName] = c.reportEmail || c.email || '';
+          // Also index by abbrev for matching
+          if (c.abbrev && c.abbrev !== 'PUBLIC') {
+            _CLIENT_EMAILS[c.abbrev] = c.reportEmail || c.email || '';
+          }
+        }
+      }
+      // Also store abbrev map for business clients
+      window._CLIENT_ABBREVS = {};
+      for (const c of clients) {
+        if (c.clientName && c.abbrev && c.abbrev !== 'PUBLIC') {
+          window._CLIENT_ABBREVS[c.clientName] = c.abbrev;
+        }
+      }
+    } catch(e) { console.error('refreshClientList failed:', e); }
+  }
+
   async function loadReviewQueue() {
     const container = document.getElementById('rq-scan-cards');
     if (!container) return;
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
+      await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
       const res  = await fetch('/api/get-scan-queue');
       const data = await res.json();
       const scans = data.pending || [];
