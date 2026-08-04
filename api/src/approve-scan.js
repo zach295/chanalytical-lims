@@ -960,8 +960,10 @@ app.http('approve-scan', {
       const rtbResults = await Promise.all(rtbPromises);
       rtbResults.forEach((r,i) => context.log('[RTB]', labItems[i]?.fullId, r.success ? `row ${r.row}` : r.error));
 
-      // ── Auto-add new client if not in Clients list ───────────────────────────
-      if (customer) {
+      // ── Auto-add new client ONLY if not already in Clients list ─────────────
+      // STRICT RULE: if clientInfo found a match, skip creation entirely
+      const clientAlreadyExists = !!(clientInfo && clientInfo.clientName && clientInfo.clientName.trim());
+      if (customer && !clientAlreadyExists) {
         try {
           const BUSINESS_WORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|real estate|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|analytic|analytics|engineering|consultants|consulting|solutions|management|partners|professionals|experts|company|businesses|industries|contractors|construction|renovations|hvac|electric|electrical|mechanical|roofing|flooring|painting|appliance|home|remodeling|restoration|development)\b/i;
           const looksLikeBusiness = customer.includes('/')||customer.includes('&')||BUSINESS_WORDS.test(customer);
