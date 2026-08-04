@@ -2229,7 +2229,10 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch(e) { console.error('refreshClientList failed:', e); }
   }
 
+  let _rqLoading = false;
   async function loadReviewQueue() {
+    if (_rqLoading) return; // prevent concurrent calls
+    _rqLoading = true;
     const container = document.getElementById('rq-scan-cards');
     if (!container) return;
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
@@ -2282,7 +2285,9 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
     } catch(e) {
-      container.innerHTML = `<div class="empty-state" style="padding:32px;">⚠️ ${e.message}</div>`;
+      if (container) container.innerHTML = `<div class="empty-state" style="padding:32px;">⚠️ ${e.message}</div>`;
+    } finally {
+      _rqLoading = false;
     }
   }
 
