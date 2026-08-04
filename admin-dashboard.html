@@ -2743,7 +2743,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('sc-save-status');
 
     const g = id => document.getElementById(id).value.trim();
-    const updates = {
+    const orig = _scCurrentData || {};
+
+    // Only include fields that actually changed from original values
+    const allFields = {
       coaTest:      scBuildCoaTest(),
       customer:     g('sc-edit-customer'),
       dateDrawn:    g('sc-edit-dateDrawn'),
@@ -2756,6 +2759,23 @@ document.addEventListener('DOMContentLoaded', function() {
       zip:          g('sc-edit-zip'),
       notes:        g('sc-edit-notes'),
     };
+    const origMap = {
+      coaTest: orig.field_2, customer: orig.field_3, dateDrawn: orig.field_4,
+      timeDrawn: orig.field_5, receivedDate: orig.field_6, receivedTime: orig.field_7,
+      location: orig.field_8, city: orig.field_9, state: orig.field_10,
+      zip: String(orig.field_11||'').padStart(5,'0'), notes: orig.field_13,
+    };
+    const updates = {};
+    for (const [k, v] of Object.entries(allFields)) {
+      const original = String(origMap[k] || '').trim();
+      if (v !== original) updates[k] = v;
+    }
+    if (!Object.keys(updates).length) {
+      statusEl.style.color = 'var(--slate)';
+      statusEl.textContent = 'No changes detected.';
+      saveBtn.disabled = false; saveBtn.textContent = '💾 Save Changes';
+      return;
+    }
 
     saveBtn.disabled = true;
     saveBtn.textContent = '⏳ Saving...';
