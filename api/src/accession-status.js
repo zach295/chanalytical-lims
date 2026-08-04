@@ -100,10 +100,25 @@ app.http('accession-status', {
 
         // today-approved
         if (action === 'today-approved') {
-          const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+          const now      = new Date();
+          const todayISO = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // YYYY-MM-DD
+          // Build MMDDYY prefix for lab ID matching (e.g. "080426" for 2026-08-04)
+          const etParts  = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: '2-digit'
+          }).formatToParts(now);
+          const mm   = etParts.find(p=>p.type==='month')?.value || '';
+          const dd   = etParts.find(p=>p.type==='day')?.value   || '';
+          const yy   = etParts.find(p=>p.type==='year')?.value  || '';
+          const labPrefix = `${mm}${dd}${yy}`; // e.g. "080426"
+
           const allI     = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
           const approved = allI
-            .filter(r => String(r.Title || '').startsWith(todayStr))
+            .filter(r => {
+              const fullId = (r.field_1 || '').trim();
+              const ts     = String(r.Title || '');
+              // Match by lab ID prefix (primary) OR timestamp (fallback)
+              return fullId.startsWith(labPrefix) || ts.startsWith(todayISO);
+            })
             .map(r => ({
               fullId:     r.field_1  || '',
               coaTest:    r.field_2  || '',
@@ -111,9 +126,13 @@ app.http('accession-status', {
               approvedBy: r.field_12 || '',
               timestamp:  r.Title    || '',
             }))
-            .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+            .sort((a, b) => b.fullId.localeCompare(a.fullId)) // descending by lab ID
             .slice(0, 5);
-          return { status: 200, jsonBody: { approved } };
+          return { status: 200, jsonBody: { approved, total: allI.filter(r => {
+            const fullId = (r.field_1||'').trim();
+            const ts = String(r.Title||'');
+            return fullId.startsWith(labPrefix) || ts.startsWith(todayISO);
+          }).length } };
         }
 
         // list-intake
