@@ -646,13 +646,34 @@ app.http('approve-scan', {
       for (const item of rejectionItems) {
         const rType   = item.rejType || (item.isRejected && !item.isRadon ? 'WQ - Reject' : item.isRejected ? 'RW - Reject' : 'Rejected');
         const rReason = notes || `${rType} — approved via Review Queue`;
-        await createItem(LISTS.REJECTED, {
-          Title:   ts,
-          field_1: item.fullId,
-          field_2: rType,
-          field_3: rReason,
-          field_4: reviewedBy || 'Lab Staff',
-        }).catch(e => context.log('[Rejected]', e.message));
+        // Direct Graph API write to bypass LISTS constant issues
+        try {
+          const rejListRes = await fetch(
+            `${GRAPH}/sites/${_siteId}/lists?$select=id,displayName`,
+            { headers: { Authorization: `Bearer ${_token}` } }
+          );
+          const rejListId = ((await rejListRes.json()).value || [])
+            .find(l => l.displayName === 'Rejected')?.id;
+          if (rejListId) {
+            const rr = await fetch(
+              `${GRAPH}/sites/${_siteId}/lists/${rejListId}/items`,
+              { method: 'POST',
+                headers: { Authorization: `Bearer ${_token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fields: {
+                  Title:   ts,
+                  field_1: item.fullId,
+                  field_2: rType,
+                  field_3: rReason,
+                  field_4: reviewedBy || 'Lab Staff',
+                }})
+              }
+            );
+            if (rr.ok) context.log('[Rejected] ✓ wrote', item.fullId);
+            else context.log('[Rejected] FAILED', rr.status, await rr.text().catch(()=>''));
+          } else {
+            context.log('[Rejected] list not found');
+          }
+        } catch(e) { context.log('[Rejected] error:', e.message); }
         // Also write to Activity Log
         const actNow2  = new Date();
         const logDate2 = actNow2.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
