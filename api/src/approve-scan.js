@@ -613,13 +613,15 @@ async function writeReportsToBilled(siteId, token, params, context) {
           const suf   = (f.Suffix || '').toLowerCase().trim();
           return title === testNameLow || suf === suffixLow;
         });
+        // Log what we searched and what's in the list
+        const listSample = (pricingData.value||[]).slice(0,6)
+          .map(i=>`"${i.fields?.Title}"/"${i.fields?.Suffix}"`).join(', ');
+        if (context) context.log(`[RTB] Searching title="${testNameLow}" suffix="${suffixLow}" | List: ${listSample}`);
         if (match) {
           rate = String(match.fields?.[priceCol] || '');
-          if (context) context.log(`[RTB] Found "${match.fields?.Title}" → ${priceCol}=${rate}`);
+          if (context) context.log(`[RTB] Match: "${match.fields?.Title}" ${priceCol}=${rate} | fields: ${JSON.stringify(match.fields)}`);
         } else {
-          if (context) context.log(`[RTB] No match in Current Pricing V1 for testName="${params.testName}" suffix="${params.suffix}"`);
-          const titles = (pricingData.value || []).slice(0,5).map(i=>i.fields?.Title).join(', ');
-          if (context) context.log(`[RTB] First 5 pricing items: ${titles}`);
+          if (context) context.log(`[RTB] No match for testName="${params.testName}" suffix="${params.suffix}"`);
         }
       }
     } catch(e) { if (context) context.log('[RTB] Rate lookup error:', e.message); }
@@ -661,40 +663,37 @@ async function writeReportsToBilled(siteId, token, params, context) {
         nextRow = i + 2; // all rows filled — append after last
       }
 
-      // 6. Write the row
-      // Columns: A=Date Rec'd, B=Time Rec'd, C=Date Drawn, D=Time Drawn,
-      // E=Customer, F=Client Code, G=Report Date, H=Lab #,
-      // I=Location, J=City/Town, K=State, L=Zip,
-      // M=Item/Service, N=Test Type SKU, O=RW Results,
-      // P=Qty, Q=Rate, R=Amt, S=QB, T=Disc, U=Stmt/Inv Date,
-      // V=Pd, W=Amt Pd, X=Date Pd
-      const row = [
+      // 6. Write in TWO ranges to skip column R (Amt formula — do not overwrite)
+      // A:Q = Date Rec'd through Rate
+      const rowAQ = [
         fmtExcel(params.receivedDate) || '',  // A Date Rec'd
         params.receivedTime || '',              // B Time Rec'd
         fmtExcel(params.dateDrawn) || '',       // C Date Drawn
         params.timeDrawn    || '',              // D Time Drawn
-        params.customer     || '',  // E Customer
-        params.clientCode   || '',  // F Client Code
-        nextBusinessDay(params.receivedDate || params.dateDrawn), // G Report Date (next business day)
-        (params.labId || '').split(' ')[0].trim() || '',  // H Lab # (base ID only, no suffix)
-        params.location     || '',  // I Location
-        params.city         || '',  // J City/Town
-        params.state        || '',  // K State
+        params.customer     || '',              // E Customer
+        params.clientCode   || '',              // F Client Code
+        nextBusinessDay(params.receivedDate || params.dateDrawn), // G Report Date
+        (params.labId || '').split(' ')[0].trim() || '',  // H Lab #
+        params.location     || '',              // I Location
+        params.city         || '',              // J City/Town
+        params.state        || '',              // K State
         params.zip ? String(params.zip).replace(/\D/g,'').padStart(5,'0') : '',  // L Zip
-        params.testName     || '',  // M Item/Service
-        params.suffix       || '',  // N Test Type SKU
-        '',                         // O RW Results (blank until radon import)
-        qty,                        // P Qty
-        rate,                       // Q Rate
-        '',                         // R Amt (left blank)
-        '', '', '', '', '', '',     // S-X (QB, Disc, Stmt, Pd, Amt Pd, Date Pd)
+        params.testName     || '',              // M Item/Service
+        params.suffix       || '',              // N Test Type SKU
+        '',                                     // O RW Results (blank)
+        qty,                                    // P Qty
+        rate,                                   // Q Rate
       ];
+      // S:X = QB through Date Pd (skip R=Amt which has a formula)
+      const rowSX = ['', '', '', '', '', ''];   // S-X blank
 
-      const addr = `A${nextRow}:X${nextRow}`;
-      await fetch(`${wbBase}/worksheets/${wsId}/range(address='${addr}')`, {
-        method: 'PATCH',
-        headers: wbHdr,
-        body: JSON.stringify({ values: [row] }),
+      await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${nextRow}:Q${nextRow}')`, {
+        method: 'PATCH', headers: wbHdr,
+        body: JSON.stringify({ values: [rowAQ] }),
+      });
+      await fetch(`${wbBase}/worksheets/${wsId}/range(address='S${nextRow}:X${nextRow}')`, {
+        method: 'PATCH', headers: wbHdr,
+        body: JSON.stringify({ values: [rowSX] }),
       });
 
       context.log(`[RTB] Wrote ${params.labId} to row ${nextRow}`);
