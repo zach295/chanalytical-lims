@@ -1591,7 +1591,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncFromFieldApp();
     render();
   });
-  loadScanQueue();
+  loadReviewQueue();
   loadScans();
   // Pre-load test types so review queue cards show dynamic test type options
   let _allTestTypes = null;
@@ -2199,10 +2199,57 @@ document.addEventListener('DOMContentLoaded', function() {
   let scanQueueData = { pending: [], approved: [] };
   let recentlyApprovedCache = []; // in-memory list since approved rows are deleted from sheet
 
+  async function loadReviewQueue() {
+    const container = document.getElementById('rq-scan-cards');
+    if (!container) return;
+    container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
+    try {
+      const res  = await fetch('/api/get-scan-queue');
+      const data = await res.json();
+      const scans = data.pending || [];
+
+      // Update today's count stat
+      const todayApproved = data.todayApproved || [];
+      const todayEl = document.getElementById('rq-today');
+      if (todayEl) todayEl.textContent = todayApproved.length;
+
+      // Update recently approved table
+      const approvedBody = document.getElementById('rq-approved-body');
+      if (approvedBody && todayApproved.length) {
+        approvedBody.innerHTML = todayApproved.slice(0, 5).map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.labIds?.[0]||'—'}</td>
+          <td class="client-name">${a.customer||'—'}</td>
+          <td style="font-size:12px;">${a.tests?.[0]||'—'}</td>
+          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
+        </tr>`).join('');
+      }
+
+      if (!scans.length) {
+        container.innerHTML = '<div class="empty-state" style="padding:32px;">✅ No pending scans — queue is clear</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      scans.forEach((r, i) => {
+        const card = document.createElement('div');
+        card.innerHTML = buildScanCard(r);
+        container.appendChild(card.firstElementChild);
+      });
+
+      // Initialize any post-render card logic
+      container.querySelectorAll('[data-rejected="true"]').forEach(div => {
+        const cb = div.querySelector('input[value="Rejected - Timeout"]');
+        if (cb && typeof setRejectedTimeoutExclusion === 'function') setRejectedTimeoutExclusion(div, true);
+      });
+
+    } catch(e) {
+      container.innerHTML = `<div class="empty-state" style="padding:32px;">⚠️ ${e.message}</div>`;
+    }
+  }
+
   async function refreshQueueSafe() {
     try {
-      await loadScanQueue();
-      await renderScanQueue();
+      await loadReviewQueue();
       showToast('✅ Queue refreshed');
     } catch(e) {
       showToast('⚠️ ' + e.message);
