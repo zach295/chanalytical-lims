@@ -671,6 +671,8 @@ Return ONLY: {"barcodeId":"","customer":"","email":"","phone":"","billingAddress
             client:       client?.clientName || ocr.customer,
             tests,
             confidence:   ocr.confidence,
+            ocrExtracted: { phone: ocr.phone, billingAddress: ocr.billingAddress, email: ocr.email, customer: ocr.customer },
+            ocrTextSnippet: azureText.slice(0, 800), // first 800 chars for debugging
           });
 
           context.log(`[scan] ✓ ${file.name} | ${client?.clientName || ocr.customer} | ${tests.join(',')} | ${ocr.confidence}%`);
