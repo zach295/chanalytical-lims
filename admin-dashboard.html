@@ -3783,7 +3783,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!zipVal)                          missing.push('Zip Code');
       else if (!/^\d{5}$/.test(zipVal))     missing.push('Zip Code must be 5 digits');
       // Require email for public/unmatched clients
-      const isPublicApprove = !_ALL_CLIENTS.some(c => c.toLowerCase() === g('customer').toLowerCase());
+      const customerVal = g('customer').toLowerCase().trim();
+      // Check if customer matches any known client (fuzzy — contains or is contained)
+      const isKnownClient = _ALL_CLIENTS.some(c => {
+        const cl = c.toLowerCase().trim();
+        return cl === customerVal || cl.includes(customerVal) || customerVal.includes(cl);
+      });
+      // Check if customer looks like a business (never treat businesses as public)
+      const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|home|real estate)\b/i;
+      const looksLikeBusiness = BWORDS.test(g('customer')) || g('customer').includes('/') || g('customer').includes('&');
+      const isPublicApprove = !isKnownClient && !looksLikeBusiness;
       if (isPublicApprove && !g('email')) missing.push('Email Address (required for clients not on the client list)');
       // Validate time format HH:MM
       const timeRe = /^\d{2}:\d{2}$/;
