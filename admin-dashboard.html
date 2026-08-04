@@ -1001,11 +1001,27 @@ document.addEventListener('DOMContentLoaded', function() {
         <div id="sc-lookup-status" style="font-size:13px;color:var(--slate);margin-bottom:12px;min-height:18px;"></div>
 
         <div id="sc-edit-form" style="display:none;">
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:8px;">
+              Test Type <span style="font-size:11px;font-weight:400;">(updates suffix &amp; full lab ID everywhere)</span>
+            </label>
+            <input type="text" id="sc-edit-coaTest" placeholder="e.g. Expanded Safety (Mortgage Test) | Arsenic, Total"
+              style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:8px;" />
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <span style="font-size:11px;color:var(--slate);margin-right:4px;">Quick select:</span>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Basic Safety (FHA)'">Basic Safety (FHA)</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Standard Safety'">Standard Safety</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Expanded Safety (Mortgage Test)'">Expanded Safety</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='WW - Expanded Safety'">WW Expanded</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Comprehensive'">Comprehensive</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Bacteria'">Bacteria</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Radon Water'">Radon Water</button>
+              <button class="action-btn" style="font-size:11px;padding:3px 8px;" onclick="document.getElementById('sc-edit-coaTest').value='Arsenic, Speciation'">Arsenic Spec</button>
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-            <div class="form-field" style="grid-column:1/-1;">
-              <label>Test Type <span style="font-size:11px;color:var(--slate);">(updates suffix &amp; full lab ID everywhere)</span></label>
-              <input type="text" id="sc-edit-coaTest" placeholder="e.g. WW - Expanded Safety, Arsenic, Total"
-                style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
+            <div class="form-field" style="display:none;">
+              <input type="text" id="sc-edit-coaTest-hidden" />
             </div>
             <div class="form-field" style="grid-column:1/-1;">
               <label>Customer / Company</label>
@@ -2623,18 +2639,18 @@ document.addEventListener('DOMContentLoaded', function() {
       };
       _scCurrentData = { ...found, baseId };
 
-      // Populate fields
-      document.getElementById('sc-edit-coaTest').value      = raw.field_2 || '';
-      document.getElementById('sc-edit-customer').value     = found.customer     || '';
-      document.getElementById('sc-edit-dateDrawn').value    = found.dateDrawn    || '';
-      document.getElementById('sc-edit-timeDrawn').value    = found.timeDrawn    || '';
-      document.getElementById('sc-edit-receivedDate').value = found.receivedDate || '';
-      document.getElementById('sc-edit-receivedTime').value = found.receivedTime || '';
-      document.getElementById('sc-edit-location').value     = found.location     || '';
-      document.getElementById('sc-edit-city').value         = found.city         || '';
-      document.getElementById('sc-edit-state').value        = found.state        || 'ME';
-      document.getElementById('sc-edit-zip').value          = found.zip          || '';
-      document.getElementById('sc-edit-notes').value        = found.notes        || '';
+      // Populate fields from raw Archived Intake fields
+      document.getElementById('sc-edit-coaTest').value      = raw.field_2  || '';
+      document.getElementById('sc-edit-customer').value     = raw.field_3  || '';
+      document.getElementById('sc-edit-dateDrawn').value    = raw.field_4  || '';
+      document.getElementById('sc-edit-timeDrawn').value    = raw.field_5  || '';
+      document.getElementById('sc-edit-receivedDate').value = raw.field_6  || '';
+      document.getElementById('sc-edit-receivedTime').value = raw.field_7  || '';
+      document.getElementById('sc-edit-location').value     = raw.field_8  || '';
+      document.getElementById('sc-edit-city').value         = raw.field_9  || '';
+      document.getElementById('sc-edit-state').value        = raw.field_10 || 'ME';
+      document.getElementById('sc-edit-zip').value          = raw.field_11 ? String(raw.field_11).padStart(5,'0') : '';
+      document.getElementById('sc-edit-notes').value        = raw.field_13 || '';
       document.getElementById('sc-save-status').textContent = '';
 
       statusEl.textContent = `✅ Found: ${found.labId} — ${found.customer||'Unknown'}`;
