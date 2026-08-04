@@ -408,7 +408,6 @@ async function writeReportsToBilled(siteId, token, params, context) {
       (colData.value || []).forEach(c => { colMap[c.displayName] = c.name; });
       if (context) context.log('[RTB] Column map:', JSON.stringify(colMap));
     }
-    params._colMap = colMap; // pass back for debugging
 
     const fields = {
       Title:           (params.labId || '').split(' ')[0].trim(), // Lab #
@@ -458,14 +457,14 @@ async function writeReportsToBilled(siteId, token, params, context) {
         body: JSON.stringify({ fields: mappedFields }) });
     if (!res.ok) {
       const err = await res.text().catch(()=>'');
-      return { success: false, error: `List write failed (${res.status}): ${err.slice(0,200)}`, colMap };
+      return { success: false, error: `List write failed (${res.status}): ${err.slice(0,200)}` };
     }
     const written = await res.json();
     if (context) context.log(`[RTB] Wrote ${mappedFields.Title || mappedFields.title} rate=${rate} id=${written.id}`);
-    return { success: true, id: written.id, rate: String(rate), colMap };
+    return { success: true, id: written.id, rate: String(rate) };
   } catch(e) {
     if (context) context.log('[RTB] Error:', e.message);
-    return { success: false, error: e.message, colMap: params._colMap };
+    return { success: false, error: e.message };
   }
 }
 
@@ -1031,7 +1030,6 @@ app.http('approve-scan', {
           labIds:     allFullIds,
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
-          rtbResults: rtbResults.map(r => ({ success: r.success, id: r.id, rate: r.rate, error: r.error })),
 
 
 
