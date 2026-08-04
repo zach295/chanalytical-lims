@@ -2372,14 +2372,13 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function renderScanQueue() {
-    // renderScanQueue handles pending lab ID badge only
-    // rq-approved-body is managed by loadReviewQueue → today-approved action
-    const pending  = scanQueueData.pending  || [];
-    const badge    = document.getElementById('rq-badge');
-    if (badge) {
-      badge.style.display = pending.length ? 'inline-block' : 'none';
-      badge.textContent   = pending.length;
-    }
+    // Badge reflects actual COC scan cards in the Review Queue
+    // Updated by loadReviewQueue after it fetches from get-scan-queue
+    const badge = document.getElementById('rq-badge');
+    if (!badge) return;
+    const cardCount = document.querySelectorAll('#rq-scan-cards > div.card').length;
+    badge.style.display = cardCount ? 'inline-block' : 'none';
+    badge.textContent   = cardCount;
   }
 
   function buildPendingCard(r) {
@@ -4024,14 +4023,14 @@ document.addEventListener('DOMContentLoaded', function() {
       showToast(`✅ ${labIdStr} written to sheets`);
 
       // Add to in-memory recently approved cache so it shows in Recently Approved table
-      recentlyApprovedCache.push({
-        labId:       data.labIds.join(', '),
+      recentlyApprovedCache.unshift({
+        fullId:      (data.labIds || [])[0] || '',
         customer:    data.formalName || g('customer'),
-        tests,
-        scannedBy:   '',
+        coaTest:     tests[0] || '',
         approvedBy:  getAdminName(),
-        processedDate: new Date().toLocaleString(),
+        timestamp:   new Date().toISOString(),
       });
+      if (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
 
       // ── ACTIVITY LOG: always record approval ──────────────────────────────
       const etDate = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
