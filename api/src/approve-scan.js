@@ -397,29 +397,32 @@ async function writeReportsToBilled(siteId, token, params, context) {
     const qty  = 1;
     const rate = parseFloat((params.rate || '').toString().replace(/[$,]/g, '')) || 0;
     const amt  = rate ? parseFloat((qty * rate).toFixed(2)) : null;
+    // Try writing - first attempt with all fields, fallback to Title only if it fails
+    // SharePoint internal field names for user-created columns vary
     const fields = {
-      Title:                           (params.labId || '').split(' ')[0].trim(),
-      Date_x0020_Rec_x0027_d:         fmtExcel(params.receivedDate) || '',
-      Time_x0020_Rec_x0027_d:         params.receivedTime || '',
-      Date_x0020_Drawn:               fmtExcel(params.dateDrawn) || '',
-      Time_x0020_Drawn:               params.timeDrawn || '',
-      Customer:                        params.customer || '',
-      Client_x0020_Code:              params.clientCode || '',
-      Report_x0020_Date:              nextBusinessDay(params.receivedDate || params.dateDrawn),
-      Location:                        params.location || '',
-      City_x002f_Town:                params.city || '',
-      State:                           params.state || '',
-      Zip:                             params.zip ? String(params.zip).replace(/[^0-9]/g,'').padStart(5,'0') : '',
-      Item_x002f_Service:             params.testName || '',
-      Test_x0020_Type_x0020_SKU:      params.suffix || '',
-      RW_x0020_Results:               '',
-      Qty:                             qty,
-      Rate:                            rate || null,
-      Amt:                             amt,
-      QB:                              false,
-      Statement_x002f_Inv_x0020_Date: '',
-      Pd:                              false,
+      Title:           (params.labId || '').split(' ')[0].trim(), // Lab #
+      Customer:         params.customer    || '',
+      State:            params.state       || '',
+      Zip:              params.zip ? String(params.zip).replace(/[^0-9]/g,'').padStart(5,'0') : '',
+      Qty:              qty,
+      Rate:             rate || null,
+      Amt:              amt,
+      QB:               false,
+      Pd:               false,
     };
+    // Add columns with special chars using bracket notation
+    fields["Date Rec'd"]         = fmtExcel(params.receivedDate) || '';
+    fields["Time Rec'd"]         = params.receivedTime || '';
+    fields["Date Drawn"]         = fmtExcel(params.dateDrawn) || '';
+    fields["Time Drawn"]         = params.timeDrawn || '';
+    fields["Client Code"]        = params.clientCode || '';
+    fields["Report Date"]        = nextBusinessDay(params.receivedDate || params.dateDrawn);
+    fields["Location"]           = params.location || '';
+    fields["City/Town"]          = params.city || '';
+    fields["Item/Service"]       = params.testName || '';
+    fields["Test Type SKU"]      = params.suffix || '';
+    fields["RW Results"]         = '';
+    fields["Statement/Inv Date"] = '';
     const res = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items`,
       { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }) });
@@ -526,9 +529,11 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
     const todayET = new Date().toLocaleDateString('en-US', {
       timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: 'numeric'
     });
+    // Format dateDrawn for Excel (MM/DD/YYYY)
+    const drawnFmt = fmtExcel(dateDrawn) || dateDrawn || '';
     const writeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}:G${targetRow}')`, {
       method: 'PATCH', headers: wbHdr,
-      body: JSON.stringify({ values: [[newLabId, '', '', '', datePrefix || '', '', todayET]] }),
+      body: JSON.stringify({ values: [[newLabId, '', '', '', drawnFmt, timeDrawn || '', todayET]] }),
     });
     if (!writeRes.ok) {
       const errText = await writeRes.text().catch(()=>'');
