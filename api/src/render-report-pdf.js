@@ -72,8 +72,11 @@ async function graphBatch(reqs, token, sid) {
 
 async function hideSheet(siteId, itemId, wsId, token, sid) {
   // Set worksheet visibility to hidden so it doesn't appear in the PDF
-  const base = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
-  await gReq('PATCH', base, token, { visibility: 'hidden' }, sid);
+  // Use relative path — gReq prepends ${GRAPH} automatically
+  await gReq('PATCH',
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`,
+    token, { visibility: 'hidden' }, sid
+  ).catch(() => {});
 }
 
 async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
