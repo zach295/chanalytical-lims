@@ -621,16 +621,16 @@ async function writeReportsToBilled(siteId, token, params, context) {
           context.log('[RTB] First item ALL fields:', JSON.stringify(firstItem.fields));
         }
         if (context) context.log(`[RTB] Searching service="${testNameLow}" suffix="${suffixLow}" priceCol="${priceCol}" totalItems=${pricingData.value?.length}`);
+        params._pricingCount   = pricingData.value?.length || 0;
+        params._firstItemFields = Object.keys(firstItem?.fields || {}).slice(0, 20).join(',');
+        params._firstItemService = firstItem?.fields?.Service || firstItem?.fields?.Title || JSON.stringify(Object.values(firstItem?.fields||{}).slice(0,5));
         if (match) {
           rate = String(match.fields?.[priceCol] || '');
           params._matchFound = match.fields?.Service || match.fields?.Title;
           params._priceColUsed = priceCol;
-          if (context) context.log(`[RTB] Match: "${match.fields?.Service||match.fields?.Title}" ${priceCol}=${rate}`);
         } else {
-          params._matchFound = 'NONE';
-          params._firstItemFields = Object.keys(firstItem?.fields || {}).join(',');
+          params._matchFound = `NONE (searched "${testNameLow}" in ${params._pricingCount} items)`;
           params._priceColUsed = priceCol;
-          if (context) context.log(`[RTB] No match for title="${testNameLow}" suffix="${suffixLow}"`);
         }
       }
     } catch(e) { if (context) context.log('[RTB] Rate lookup error:', e.message); }
@@ -706,7 +706,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
       });
 
       context.log(`[RTB] Wrote ${params.labId} to row ${nextRow} rate=${rate} cat=${params.pricingCategory}`);
-      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory, priceColUsed: params._priceColUsed, matchFound: params._matchFound };
+      return { success: true, row: nextRow, rate, pricingCategory: params.pricingCategory, priceColUsed: params._priceColUsed, matchFound: params._matchFound, pricingCount: params._pricingCount, firstItemFields: params._firstItemFields, firstItemService: params._firstItemService };
     } finally {
       await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
     }
