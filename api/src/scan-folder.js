@@ -309,8 +309,11 @@ app.http('scan-folder', {
       // Shared MS Graph token (cached in graph.js)
       const token = await getToken();
 
-      // Load clients for alias matching and OCR prompt context
-      const clients  = await loadClients(token);
+      // Parallelize independent startup reads
+      const [clients, queuedIds] = await Promise.all([
+        loadClients(token),
+        getQueuedFileIds(token),
+      ]);
       const aliasCtx = clients.map(c =>
         `- "${c.clientName}"${c.aliases ? ` (aliases: ${c.aliases})` : ''}`
       ).join('\n') +
@@ -330,8 +333,7 @@ app.http('scan-folder', {
         return { status: 200, jsonBody: { checked: 0, processed: 0, message: 'No files in the INCOMING folder' } };
       }
 
-      // Skip files already in Review Queue
-      const queuedIds = await getQueuedFileIds(token);
+      // Skip files already in Review Queue (loaded in parallel above)
       const toProcess = files.filter(f => !queuedIds.has(f.id));
 
       if (!toProcess.length) {
@@ -376,12 +378,12 @@ app.http('scan-folder', {
 
               // Poll until complete
               let azureResult;
-              await new Promise(r => setTimeout(r, 2000));
-              for (let i = 0; i < 12; i++) {
+              await new Promise(r => setTimeout(r, 1200)); // shorter initial wait
+              for (let i = 0; i < 15; i++) {
                 const pollRes = await fetch(operationUrl, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
                 azureResult   = await pollRes.json();
                 if (azureResult.status === 'succeeded' || azureResult.status === 'failed') break;
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, i < 3 ? 800 : 1200)); // faster early polls
               }
               if (!azureResult || azureResult.status !== 'succeeded') {
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
