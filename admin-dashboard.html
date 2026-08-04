@@ -657,6 +657,9 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
           📋 Import Control Sheet
         </button>
+        <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">
+          ☢️ Import Radon Results
+        </button>
         <span id="import-status" style="font-size:13px;color:var(--slate);flex:1;"></span>
       </div>
     </div>
@@ -2272,15 +2275,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Approved Today counter — use server total (reads all of Archived Intake for today)
         if (todayEl) todayEl.textContent = Math.max(serverTotal, allApproved.length);
 
-        // Approved Today breakdown — top clients by volume
-        const clientCounts = {};
-        allApproved.forEach(a => {
-          const c = a.customer || 'Unknown';
-          clientCounts[c] = (clientCounts[c] || 0) + 1;
-        });
-        if (todayBreakEl && allApproved.length) {
-          const top = Object.entries(clientCounts).sort((a,b)=>b[1]-a[1]).slice(0,4);
-          todayBreakEl.innerHTML = top.map(([c,n])=>`<div>${c}: <strong>${n}</strong></div>`).join('');
+        // Approved Today breakdown — use server-side breakdown (all items, not just top 5)
+        const clientBreakdown = todayData.clientBreakdown || [];
+        if (todayBreakEl && clientBreakdown.length) {
+          todayBreakEl.innerHTML = clientBreakdown.map(({name,count})=>`<div>${name}: <strong>${count}</strong></div>`).join('');
           todayBreakEl.style.display = 'block';
         }
 
@@ -5487,6 +5485,34 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── CONTROL SHEET IMPORT ──────────────────────────────────────────────────
+  async function importRadon(btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Importing Radon...';
+    const statusEl = document.getElementById('import-status');
+    if (statusEl) statusEl.textContent = '';
+    try {
+      const res  = await fetch('/api/import-radon', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      const msg = `✅ Radon import complete — ${data.updated} sample(s) updated`;
+      if (statusEl) {
+        statusEl.textContent = msg;
+        statusEl.style.color = 'var(--success)';
+      }
+      showToast(msg);
+      if (data.log?.length) console.log('[Radon Import]', data.log.join('
+'));
+    } catch(e) {
+      const msg = '⚠️ ' + e.message;
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--error)'; }
+      showToast(msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
   async function importControlSheet() {
     const fileInput = document.getElementById('control-sheet-file');
     const resultEl = document.getElementById('control-sheet-result');
