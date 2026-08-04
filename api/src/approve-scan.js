@@ -352,6 +352,7 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
   const monthName = MONTHS[parseInt(mm, 10) - 1];
 
   const authHdr = { Authorization: `Bearer ${token}` };
+  if (context) context.log(`[RCS] Starting for ${labId} | siteId=${siteId} | month=${monthName} ${year}`);
 
   // ── 1. Ensure monthly Radon folder exists ────────────────────────────────────
   const controlFolder = process.env.SP_CONTROL_FOLDER ||
@@ -395,8 +396,12 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
     // Copy master radon control sheet
     const masterPath    = 'Documents/Lab Scans/Control Sheets/Master Radon Control Sheet.xlsx';
     const encMasterPath = masterPath.split('/').map(encodeURIComponent).join('/');
+    if (context) context.log(`[RCS] Looking for master at: ${masterPath}`);
     const masterRes     = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${encMasterPath}?$select=id`, { headers: authHdr });
-    if (!masterRes.ok) throw new Error(`Master Radon Control Sheet not found`);
+    if (!masterRes.ok) {
+      const errText = await masterRes.text().catch(()=>'');
+      throw new Error(`Master Radon Control Sheet not found (${masterRes.status}): ${errText.slice(0,100)}`);
+    }
     const masterId = (await masterRes.json()).id;
 
     // Get the monthly folder ID for the copy destination
@@ -535,13 +540,20 @@ async function writeReportsToBilled(siteId, token, params, context) {
       const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
       if (!wsId) throw new Error('No worksheets found');
 
-      // 5. Find first empty row after header (scan column A for empty cell)
+      // 5. Find first empty row — scan column A, skip header row 1
       const rangeRes = await fetch(
         `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
         { headers: wbHdr }
       );
-      const usedValues = (await rangeRes.json()).values || [];
-      const nextRow = usedValues.length + 1; // 1-based, after last used row
+      const rangeData  = await rangeRes.json();
+      const usedValues = rangeData.values || [];
+      // Find first truly empty row in column A after header
+      let nextRow = 2; // default: row 2 (first data row)
+      if (usedValues.length > 1) {
+        // Find first row where column A is blank, starting from row 2
+        const emptyIdx = usedValues.slice(1).findIndex(row => !String(row[0] || '').trim());
+        nextRow = emptyIdx >= 0 ? emptyIdx + 2 : usedValues.length + 1;
+      }
 
       // 6. Write the row
       // Columns: A=Date Rec'd, B=Time Rec'd, C=Date Drawn, D=Time Drawn,
@@ -965,10 +977,12 @@ app.http('approve-scan', {
 
       // ── Write to Radon Control Sheet if Radon Water approved ─────────────────
       const radonLabItem = labItems.find(l => l.isRadon && !l.isRejected);
+      context.log('[RCS] radonLabItem:', radonLabItem ? radonLabItem.fullId : 'none');
+      context.log('[RCS] _siteId:', _siteId, 'token length:', _token?.length);
       if (radonLabItem) {
         try {
           const rcsResult = await writeRadonControlSheet(
-            siteId, token, radonLabItem.fullId,
+            _siteId, _token, radonLabItem.fullId,
             fmt(dateDrawn) || dateDrawn || '',
             to24h(timeDrawn) || timeDrawn || '',
             context
