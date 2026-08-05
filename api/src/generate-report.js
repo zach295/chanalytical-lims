@@ -337,6 +337,7 @@ app.http('generate-report', {
           context.log(`[gen] Radon field empty in Results Cache for ${baseId}`);
         }
       }
+      const isArsenicSpec = services.some(s => /arsenic.*spec/i.test(s) || /spec.*arsenic/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
 
       // ── Load which parameters each test type includes from SharePoint ─────
