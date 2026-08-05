@@ -320,43 +320,23 @@ app.http('generate-report', {
 
       const isRadon      = services.some(s => /radon/i.test(s));
 
-      // ── Fetch radon result from Results Cache if isRadon ─────────────────
+      // ── Get radon result from already-fetched Results Cache ──────────────
       let radonResult = { display:'', raw:0, color:'green', time:'', date:'' };
-      if (isRadon) {
-        try {
-          const rcAuthHdr = { Authorization: `Bearer ${token}` };
-          const rcListSearchRes = await fetch(
-            `${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
-            { headers: rcAuthHdr }
-          );
-          if (rcListSearchRes.ok) {
-            const rcListData = (await rcListSearchRes.json()).value || [];
-            const rcListId   = rcListData.find(l=>l.displayName==='Results Cache')?.id;
-            if (rcListId) {
-              const rcItemRes = await fetch(
-                `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields($select=LabID,Radon,RadonDate,RadonTime)&$top=2000`,
-                { headers: rcAuthHdr }
-              );
-              if (rcItemRes.ok) {
-                const rcItems = (await rcItemRes.json()).value || [];
-                const match   = rcItems.find(i => (i.fields?.LabID||'').trim() === baseId);
-                if (match?.fields?.Radon) {
-                  const val = parseFloat(match.fields.Radon) || 0;
-                  radonResult = {
-                    display: match.fields.Radon,
-                    raw:     val,
-                    color:   'green',
-                    time:    match.fields.RadonTime || '',
-                    date:    match.fields.RadonDate || '',
-                  };
-                  context.log(`[gen] Radon result for ${baseId}: ${match.fields.Radon} pCi/L`);
-                }
-              }
-            }
-          }
-        } catch(e) { context.log('[gen] Radon fetch error:', e.message); }
+      if (isRadon && cache) {
+        const radonVal = cache.Radon || cache.radon || '';
+        if (radonVal) {
+          radonResult = {
+            display: String(radonVal),
+            raw:     parseFloat(String(radonVal)) || 0,
+            color:   'green',
+            time:    cache.RadonTime || '',
+            date:    cache.RadonDate || '',
+          };
+          context.log(`[gen] Radon result: ${radonVal} pCi/L`);
+        } else {
+          context.log(`[gen] Radon field empty in Results Cache for ${baseId}`);
+        }
       }
-      const isArsenicSpec = services.some(s => /arsenic.*spec/i.test(s) || /spec.*arsenic/i.test(s));
       const needsFHA = services.some(s => NEEDS_FHA_TYPES.includes(s));
 
       // ── Load which parameters each test type includes from SharePoint ─────
