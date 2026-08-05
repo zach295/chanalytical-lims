@@ -274,7 +274,7 @@ app.http('generate-report', {
 
       // ── Fetch data in parallel ──────────────────────────────────────────────
       const [metaRaw, cache, clientRaw] = await Promise.all([
-        frontendMeta ? Promise.resolve(null) : getSampleMeta(baseId),
+        getSampleMeta(baseId), // always read from Archived Intake for dates/location
         getResultsCache(baseId),
         getToken().then(t => getClientInfo(
           formatCustomerName(frontendMeta?.customer || ''),
