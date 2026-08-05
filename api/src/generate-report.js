@@ -7,6 +7,31 @@ const { app }      = require('@azure/functions');
 const { getToken, listItems, LISTS } = require('../shared/graph');
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Convert Excel date serial number → MM/DD/YY string
+function excelDateToStr(serial) {
+  if (!serial || isNaN(parseFloat(serial))) return String(serial || '');
+  const n = parseFloat(serial);
+  if (n < 1000) return String(serial); // already a string/time value
+  // Excel epoch: Dec 30, 1899 (accounts for leap year bug)
+  const ms   = (n - 25569) * 86400 * 1000; // convert to Unix ms
+  const d    = new Date(ms);
+  const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getUTCDate()).padStart(2, '0');
+  const yy   = String(d.getUTCFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
+}
+
+// Convert Excel time serial (0-1 fraction of day) → HH:MM string
+function excelTimeToStr(serial) {
+  if (!serial || isNaN(parseFloat(serial))) return String(serial || '');
+  const n = parseFloat(serial);
+  if (n >= 1) return String(serial); // not a time fraction
+  const totalMins = Math.round(n * 24 * 60);
+  const hh = String(Math.floor(totalMins / 60)).padStart(2, '0');
+  const mm = String(totalMins % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 // ── Parameter config ──────────────────────────────────────────────────────────
 const PARAM_CONFIG = [
   { name:'Chloride, Total',              rl:2.00,    epa:250,       unit:'mg/L', method:'SM4500Cl',         source:'gallery', cacheField:'field_6',  cacheDT:'field_7' },
@@ -329,8 +354,8 @@ app.http('generate-report', {
             display: String(radonVal),
             raw:     parseFloat(String(radonVal)) || 0,
             color:   'green',
-            time:    cache.RadonTime || '',
-            date:    cache.RadonDate || '',
+            time:    excelTimeToStr(cache.RadonTime || ''),
+            date:    excelDateToStr(cache.RadonDate || ''),
           };
           context.log(`[gen] Radon result: ${radonVal} pCi/L`);
         } else {
