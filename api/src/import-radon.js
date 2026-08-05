@@ -107,12 +107,33 @@ app.http('import-radon', {
       const rcListId = await getListId(siteId, 'Results Cache', token);
       if (!rcListId) throw new Error('Results Cache list not found');
 
+      // Load Archived Intake to find Radon Water base IDs
+      const aiListId = await getListId(siteId, 'Archived Intake', token);
+      const radonBaseIds = new Set();
+      if (aiListId) {
+        const aiRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists/${aiListId}/items?$expand=fields($select=field_1,field_2)&$top=2000`,
+          { headers: authHdr }
+        );
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          (aiData.value || []).forEach(i => {
+            if ((i.fields?.field_2 || '').toLowerCase().includes('radon water')) {
+              const baseId = (i.fields?.field_1 || '').split(' ')[0].trim();
+              if (baseId) radonBaseIds.add(baseId);
+            }
+          });
+        }
+      }
+      context.log(`[Radon] Found ${radonBaseIds.size} Radon Water base IDs in Archived Intake`);
+
+      // Load Results Cache — only Radon Water entries without results
       const rcRes  = await fetch(
         `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$top=2000`,
         { headers: authHdr }
       );
       const rcItems = ((await rcRes.json()).value || [])
-        .filter(i => i.fields?.LabID && !i.fields?.Radon);
+        .filter(i => i.fields?.LabID && !i.fields?.Radon && radonBaseIds.has(i.fields.LabID.trim()));
 
       if (!rcItems.length) {
         return { status: 200, jsonBody: { success: true, message: 'No pending radon samples found', updated: 0 } };
