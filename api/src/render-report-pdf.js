@@ -413,6 +413,40 @@ app.http('render-report-pdf', {
 
     if (isRadon && radonSheet) {
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+
+      // Write radon result to the template
+      const radon = meta.radon || reportData.radon || {};
+      if (radon.display || radon.raw) {
+        const base2 = `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
+        // Read sheet to find result cell by scanning for label
+        const rrRes = await gReq('GET', `${base2}/usedRange?$select=values`, token, undefined, sid);
+        if (rrRes.ok) {
+          const { values: rRows } = await rrRes.json();
+          // Find "result" label row
+          let resultRow = -1, resultCol = -1;
+          for (let r = 0; r < (rRows||[]).length; r++) {
+            const row = rRows[r] || [];
+            for (let c = 0; c < row.length; c++) {
+              const cell = String(row[c]||'').toLowerCase().trim();
+              if (cell.includes('result') && (cell.includes('pci') || cell.includes('pCi'))) {
+                resultRow = r; resultCol = c + 1; // value goes in next column
+                break;
+              }
+            }
+            if (resultRow >= 0) break;
+          }
+          // Write result value
+          if (resultRow >= 0) {
+            const addr = `${colLetter(resultCol)}${resultRow + 1}`;
+            await gReq('PATCH', `${base2}/range(address='${addr}')`, token,
+              { values: [[String(radon.display || radon.raw || '')]] }, sid);
+            context.log(`[pdf] Wrote radon result ${radon.display} to ${addr}`);
+          } else {
+            context.log('[pdf] Could not find radon result cell in template');
+          }
+        }
+      }
+
       await fitOnePage(radonSheet.id);
       // Delete Spec sheet for radon reports
       if (specSheet) {
