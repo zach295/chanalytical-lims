@@ -39,29 +39,58 @@ async function getListId(siteId, displayName, token) {
   return (data.value || []).find(l => l.displayName === displayName)?.id || null;
 }
 
-async function readWorksheetValues(siteId, fileId, token) {
+async function readWorksheetValues(siteId, fileId, token, context) {
   const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
+
   // Open session
   const sesRes = await fetch(`${wbBase}/createSession`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ persistChanges: false }),
   });
-  const { id: sid } = await sesRes.json();
-  const wbHdr = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid };
+  if (!sesRes.ok) {
+    if (context) context.log('[RCS read] Session open failed:', sesRes.status, await sesRes.text().catch(()=>''));
+    return [];
+  }
+  const sesData = await sesRes.json();
+  const sid = sesData.id;
+  if (!sid) {
+    if (context) context.log('[RCS read] No session ID returned:', JSON.stringify(sesData));
+    return [];
+  }
+  const wbHdr = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+
   try {
     const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
-    const wsId = ((await sheetsRes.json()).value || [])[0]?.id;
-    if (!wsId) return [];
-    const rangeRes = await fetch(
-      `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
-      { headers: wbHdr }
-    );
-    return (await rangeRes.json()).values || [];
+    if (!sheetsRes.ok) {
+      if (context) context.log('[RCS read] Worksheets fetch failed:', sheetsRes.status);
+      return [];
+    }
+    const sheets = (await sheetsRes.json()).value || [];
+    if (!sheets.length) { if (context) context.log('[RCS read] No worksheets'); return []; }
+    const wsId = sheets[0].id;
+    if (context) context.log(`[RCS read] worksheet id=${wsId}`);
+
+    // Try usedRange first, fall back to explicit large range
+    let rows = [];
+    const usedRes = await fetch(`${wbBase}/worksheets/${wsId}/usedRange?$select=values`, { headers: wbHdr });
+    if (usedRes.ok) {
+      const usedData = await usedRes.json();
+      rows = usedData.values || [];
+      if (context) context.log(`[RCS read] usedRange returned ${rows.length} rows`);
+    }
+    // Fallback: read explicit range if usedRange returned nothing
+    if (!rows.length) {
+      const rangeRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A1:L100')?$select=values`, { headers: wbHdr });
+      if (rangeRes.ok) {
+        const all = (await rangeRes.json()).values || [];
+        rows = all.filter(r => String(r[0] || '').trim()); // only rows with data in col A
+        if (context) context.log(`[RCS read] fallback range: ${all.length} total, ${rows.length} with data`);
+      }
+    }
+    return rows;
   } finally {
-    await fetch(`${wbBase}/closeSession`, {
-      method: 'POST', headers: { ...wbHdr, 'Content-Type': 'application/json' }
-    }).catch(() => {});
+    await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
   }
 }
 
@@ -134,24 +163,26 @@ app.http('import-radon', {
         const { id: fileId } = await fileRes.json();
 
         // Read all rows from the RCS
-        const rows = await readWorksheetValues(siteId, fileId, token);
+        const rows = await readWorksheetValues(siteId, fileId, token, context);
         if (!rows.length) { log.push(`⚠️ ${rcsName} is empty`); continue; }
 
-        // Find column indices from header row
-        const headers = rows[0].map(h => String(h || '').toLowerCase().trim());
-        const colA    = 0; // Lab Barcode # always col A
-        const colResult = headers.findIndex(h => h.includes('result') && h.includes('pci'));
-        const colDateTested = headers.findIndex(h => h.includes('date') && h.includes('test'));
-        const colTimeTested = headers.findIndex(h => h.includes('time') && h.includes('test'));
-
-        if (colResult < 0) {
-          log.push(`⚠️ ${rcsName}: could not find Results pCi/L column. Headers: ${headers.join(', ')}`);
-          continue;
-        }
+        // RCS column layout (fixed positions, no header row):
+        // A=Lab Barcode, B=Bubble Y/N, C=Bubble Size, D=blank,
+        // E=Date Drawn, F=Time Drawn, G=Date Tested, H=Time Tested,
+        // I=Time Lap, J=Multiplier, K=Mean pCi/L, L=Results pCi/L
+        const colA          = 0;  // Lab Barcode #
+        const colDateTested = 6;  // G - Date Tested
+        const colTimeTested = 7;  // H - Time Tested
+        const colResult     = 11; // L - Results pCi/L
+        // Detect if first row is a header row
+        const firstRowIsHeader = rows.length > 0 &&
+          String(rows[0][0] || '').toLowerCase().includes('barcode') ||
+          String(rows[0][0] || '').toLowerCase().includes('lab');
+        const startRow = firstRowIsHeader ? 1 : 0;
 
         // Build lookup: base lab ID → { result, dateTested, timeTested }
         const rcsData = {};
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = startRow; i < rows.length; i++) {
           const row     = rows[i];
           const barcode = String(row[colA] || '').trim();
           if (!barcode) continue;
