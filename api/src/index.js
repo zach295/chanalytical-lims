@@ -28,5 +28,6 @@ require('./labid-search');
 require('./list-columns');
 require('./import-icpms');
 require('./import-control');
+require('./import-radon');
 require('./import-acid');
 require('./sync-results-cache');
