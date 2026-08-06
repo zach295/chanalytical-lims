@@ -414,13 +414,13 @@ app.http('render-report-pdf', {
     // Find Arsenic Spec sheet if present
     const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
 
+    let templateScan = [];
     if (isRadon && radonSheet) {
       // DEBUG: scan template to find label positions
       const scanRes = await fetch(
         `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}/usedRange?$select=values`,
         { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
       );
-      let templateScan = [];
       if (scanRes.ok) {
         const { values: scanRows } = await scanRes.json();
         for (let r = 0; r < Math.min((scanRows||[]).length, 30); r++) {
