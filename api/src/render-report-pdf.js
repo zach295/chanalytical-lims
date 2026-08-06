@@ -414,68 +414,9 @@ app.http('render-report-pdf', {
     // Find Arsenic Spec sheet if present
     const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
 
-    let templateScan = [];
     if (isRadon && radonSheet) {
-      // DEBUG: scan template to find label positions
-      const scanRes = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}/usedRange?$select=values`,
-        { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
-      );
-      if (scanRes.ok) {
-        const { values: scanRows } = await scanRes.json();
-        for (let r = 0; r < Math.min((scanRows||[]).length, 30); r++) {
-          const row = (scanRows[r]||[]);
-          for (let c = 0; c < row.length; c++) {
-            const v = String(row[c]||'').trim();
-            if (v) templateScan.push(`R${r+1}C${c+1}:${v.slice(0,30)}`);
-          }
-        }
-      }
-
-      // Write radon report cells directly using known template positions
-      // Radon result: check multiple sources
-      const radon    = meta.radon || reportData.radon || {};
-      const radonVal = String(
-        radon.display || radon.raw ||
-        reportData.resultsMap?.['Radon Water']?.value ||
-        ''
-      );
-      const radonTime = radon.time || reportData.resultsMap?.['Radon Water']?.time || '';
-      const base2    = `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
-
-      // Split dtCollected and dtReceived into date and time parts
-      const [colDate, colTime] = (meta.dtCollected || '').includes(' ')
-        ? meta.dtCollected.split(' ') : [meta.dtCollected || '', ''];
-      const [recDate, recTime] = (meta.dtReceived || '').includes(' ')
-        ? meta.dtReceived.split(' ') : [meta.dtReceived || '', ''];
-      const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
-
-      const directCells = [
-        // Attention block
-        ['B7',  meta.clientName || meta.customer || ''],
-        // Lab ID / dates
-        ['I7',  labId],
-        ['I8',  colDate],    ['J8',  colTime],
-        ['I9',  recDate],    ['J9',  recTime],
-        ['I10', today],
-        // Location
-        ['B11', meta.location || ''],
-        ['B12', cityLine],
-        // Radon result
-        ['F18', radonVal],
-        ['I18', radonTime],
-        // Authorized by / Review date
-        ['E25', authorizedBy || ''],
-        ['J25', reviewDate  || ''],
-      ];
-
-      for (const [addr, val] of directCells) {
-        if (val === '' || val == null) continue;
-        await gReq('PATCH', `${base2}/range(address='${addr}')`, token,
-          { values: [[String(val)]] }, sid);
-      }
-      context.log(`[pdf] Radon direct cells written. Result: ${radonVal}`);
-
+      // Radon template has same layout as standard — use fillSheet normally
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
       await fitOnePage(radonSheet.id);
       // Delete Spec sheet for radon reports
       if (specSheet) {
@@ -530,6 +471,6 @@ app.http('render-report-pdf', {
     context.log('[pdf] Temp file deleted');
 
     const reportFileName = `${labId} Report.pdf`;
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName, templateScan } };
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
 });
