@@ -343,6 +343,8 @@ app.http('generate-report', {
               String(t).split(/[|;]/).map(s=>s.trim()).filter(Boolean)
             );
 
+      context.log(`[gen] services: ${JSON.stringify(services)}`);
+      log.push(`services: ${services.join(', ')}`);
       const isRadon      = services.some(s => /radon/i.test(s));
 
       // ── Get radon result from already-fetched Results Cache ──────────────
