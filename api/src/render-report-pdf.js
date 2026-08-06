@@ -413,6 +413,11 @@ app.http('render-report-pdf', {
     // Find Arsenic Spec sheet if present
     const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
 
+    // Collect fillSheet log for debugging
+    const fillLog = [];
+    const origLog = context.log.bind(context);
+    context.log = (...args) => { origLog(...args); const msg = args.join(' '); if (msg.includes('[pdf]') || msg.includes('[fillSheet]')) fillLog.push(msg); };
+
     if (isRadon && radonSheet) {
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
 
