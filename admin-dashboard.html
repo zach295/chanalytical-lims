@@ -4938,8 +4938,9 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         statusEl.style.display = 'block';
       }
-      // Add radon to resultsMap
+      // Add radon to resultsMap AND to currentReportData.radon
       if (data.isRadon && data.radon) {
+        currentReportData.radon = data.radon; // pass through to render-report-pdf
         currentReportData.resultsMap['Radon Water'] = {
           value: data.radon.display,
           unit: 'pCi/L',
