@@ -523,8 +523,6 @@ app.http('render-report-pdf', {
     context.log('[pdf] Temp file deleted');
 
     const reportFileName = `${labId} Report.pdf`;
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName, templateScan } };
   }
-});  // Return debug before flush
-  const _dbgReturn = [..._dbg];
-
+});
