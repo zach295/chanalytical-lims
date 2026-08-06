@@ -5043,38 +5043,33 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function buildParamTable(params, resultsMap, reportData) {
-    const hStyle = 'background:#1F3864;color:white;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #333;';
-    const cStyle = 'padding:5px 8px;border:1px solid #ccc;font-size:12px;';
+    // 5-column layout matching the actual COA template
+    const hStyle = 'background:#1F3864;color:white;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #1F3864;text-align:center;';
+    const cStyle = 'padding:5px 8px;border:1px solid #bbb;font-size:12px;vertical-align:middle;';
 
     let rows = `<tr>
-      <th style="${hStyle}">Parameter</th>
-      <th style="${hStyle}text-align:center;width:28px;"></th>
-      <th style="${hStyle}text-align:center;">Your Result</th>
-      <th style="${hStyle}text-align:center;">EPA Limit</th>
-      <th style="${hStyle}text-align:center;">Unit</th>
-      <th style="${hStyle}text-align:center;">Method</th>
-      <th style="${hStyle}text-align:center;">Prep Date/Time</th>
-      <th style="${hStyle}text-align:center;">Analysis Date/Time</th>
+      <th style="${hStyle};text-align:left;width:35%;">Parameter</th>
+      <th style="${hStyle}">Your Result</th>
+      <th style="${hStyle}">EPA Limit</th>
+      <th style="${hStyle}">Unit</th>
+      <th style="${hStyle}">Analysis Date/Time</th>
     </tr>`;
 
     params.forEach(p => {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
       const color  = getResultColor(p.name, val, reportData);
-      // Color box: colored when value+limit, grey placeholder when no value, transparent when value but no limit
-      const boxBg  = color ? `#${color}` : (val ? 'transparent' : '#e8e8e8');
-      const prepDT = res.prepDT || '';
+      const cellBg = color === 'FF0000' ? '#FF4444'
+                   : color === '0000FF' ? '#0055CC'
+                   : color === '00CC00' || color === '00FF00' ? '#00CC44'
+                   : val ? '#00CC44' : 'white';
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
-      const prepDTd = fmtDisplayDT(prepDT);
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
-        <td style="${cStyle}text-align:center;padding:0;"><div style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;"></div></td>
-        <td style="${cStyle}text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;')}</td>
-        <td style="${cStyle}text-align:center;">${p.limit || p.epa || ''}</td>
-        <td style="${cStyle}text-align:center;">${p.unit}</td>
-        <td style="${cStyle}text-align:center;">${p.method}</td>
-        <td style="${cStyle}text-align:center;">${editable(prepDTd, 'prepDT:' + p.name, 'font-size:11px;')}</td>
-        <td style="${cStyle}text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;')}</td>
+        <td style="${cStyle};text-align:center;background:${cellBg};color:${val?'black':'inherit'};">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
+        <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
+        <td style="${cStyle};text-align:center;">${p.unit}</td>
+        <td style="${cStyle};text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
       </tr>`;
     });
 
@@ -5091,59 +5086,93 @@ document.addEventListener('DOMContentLoaded', function() {
     const { meta, isRadon, needsFHA, activeParams, fhaParams, resultsMap } = data;
     const container = document.getElementById('rpt-live-preview');
     const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+
+    // ── Styles matching the actual COA template ───────────────────────────────
+    const S = {
+      hdrFont:  'font-family:Arial,sans-serif;',
+      cell:     'padding:4px 8px;border:1px solid #bbb;font-size:12px;vertical-align:middle;',
+      thCell:   'padding:5px 8px;background:#1F3864;color:white;font-size:12px;font-weight:700;border:1px solid #1F3864;text-align:center;',
+      labelTd:  'padding:4px 8px;font-size:12px;font-weight:700;white-space:nowrap;width:160px;',
+      valueTd:  'padding:4px 8px;font-size:12px;',
+      section:  'margin-bottom:12px;',
+    };
+
+    const locationLine = [meta.location, [meta.city, meta.state, meta.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+    const sampleType   = isRadon ? 'Radon Water' : 'Potability';
+
     const hdrHtml = `
-      <div style="margin-bottom:16px;">
-        <div style="font-weight:700;font-size:16px;">Chanalytical Laboratories, Inc.</div>
-        <div style="font-size:13px;">347 Main St., Unit 1B &nbsp; Gorham, ME 04038</div>
-        <div style="font-size:13px;">Phone: 207-747-1815 &nbsp; Email: Labs@chanalytical.com</div>
+      <!-- Lab header: logo area -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
+        <tr>
+          <td style="font-weight:700;font-size:15px;vertical-align:top;">Chanalytical Laboratories, Inc.</td>
+          <td style="text-align:right;font-size:12px;vertical-align:top;">Phone: 207-747-1815 &nbsp;&nbsp; Email: Labs@chanalytical.com</td>
+        </tr>
+        <tr>
+          <td style="font-size:12px;color:#333;">347 Main St., Unit 1B &nbsp;&nbsp; Gorham, ME 04038</td>
+          <td></td>
+        </tr>
+      </table>
+      <div style="text-align:center;font-size:18px;font-weight:700;color:#1F3864;padding:8px 0;border-top:2px solid #1F3864;border-bottom:2px solid #1F3864;margin-bottom:10px;">
+        Certificate of Analysis
       </div>
-      <h2 style="text-align:center;font-size:22px;margin-bottom:16px;color:#003A5C;">Certificate of Analysis</h2>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:13px;">
-        <div><strong>Attention:</strong> ${editable(meta.customer,'meta:customer')}</div>
-        <div><strong>Lab ID Number:</strong> ${editable(meta.labId,'meta:labId','font-family:monospace;font-weight:700;')}</div>
-        <div><strong>Date/Time Collected:</strong> ${editable(meta.dtCollected||meta.dateDrawn||'','meta:dtCollected','font-family:monospace;')}</div>
-        <div><strong>Date/Time Received:</strong> ${editable(meta.dtReceived||meta.dateReceived||'','meta:dtReceived','font-family:monospace;')}</div>
-        <div><strong>Date Reported:</strong> ${editable(meta.dateReported||today,'meta:dateReported')}</div>
-        <div></div>
-        <div><strong>Location:</strong> ${editable(meta.location,'meta:location')}, ${editable(meta.city,'meta:city')}, ${editable(meta.state,'meta:state')} ${editable(meta.zip,'meta:zip')}</div>
-        <div><strong>Sample Type:</strong> ${isRadon ? 'Radon Water' : 'Potability'}</div>
-      </div>`;
+
+      <!-- Info block: left = Attention/Location, right = Lab ID/dates -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12px;">
+        <tr>
+          <td style="width:50%;vertical-align:top;padding-right:16px;">
+            <table style="border-collapse:collapse;width:100%;">
+              <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.clientName||meta.customer,'meta:customer')}</td></tr>
+              <tr><td style="${S.labelTd}">Location:</td><td style="${S.valueTd}">${editable(meta.location,'meta:location')}</td></tr>
+              <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable([meta.city,meta.state,meta.zip].filter(Boolean).join(', '),'meta:cityStateZip')}</td></tr>
+              <tr><td style="${S.labelTd}">Sample Type:</td><td style="${S.valueTd}">${sampleType}</td></tr>
+            </table>
+          </td>
+          <td style="width:50%;vertical-align:top;padding-left:16px;border-left:1px solid #ddd;">
+            <table style="border-collapse:collapse;width:100%;">
+              <tr><td style="${S.labelTd}">Lab ID Number:</td><td style="${S.valueTd};font-family:monospace;font-weight:700;">${editable(meta.labId,'meta:labId')}</td></tr>
+              <tr><td style="${S.labelTd}">Date/Time Collected:</td><td style="${S.valueTd}">${editable(meta.dtCollected||meta.dateDrawn||'','meta:dtCollected')}</td></tr>
+              <tr><td style="${S.labelTd}">Date/Time Received:</td><td style="${S.valueTd}">${editable(meta.dtReceived||meta.dateReceived||'','meta:dtReceived')}</td></tr>
+              <tr><td style="${S.labelTd}">Date Reported:</td><td style="${S.valueTd}">${editable(meta.dateReported||today,'meta:dateReported')}</td></tr>
+            </table>
+          </td>
+        </tr>
+      </table>`;
 
     const legendHtml = isRadon ? `
-      <div style="border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:14px;font-size:12px;display:inline-block;">
-        <strong>Legend:</strong><br>
-        <span style="background:#00FF00;padding:2px 12px;margin-right:6px;">&nbsp;</span> At or below Maine's MEG (4,000 pCi/L)<br>
-        <span style="background:#0000FF;padding:2px 12px;margin-right:6px;">&nbsp;</span> Above Maine's MEG (4,000 pCi/L)
+      <div style="border:1px solid #ccc;padding:8px 12px;margin-bottom:10px;font-size:12px;display:inline-block;">
+        <strong>Legend:</strong>&nbsp;
+        <span style="display:inline-block;width:16px;height:12px;background:#00CC44;border:1px solid #999;margin-right:4px;vertical-align:middle;"></span> At or below Maine's MEG (4,000 pCi/L) &nbsp;
+        <span style="display:inline-block;width:16px;height:12px;background:#FF4444;border:1px solid #999;margin-right:4px;vertical-align:middle;"></span> Above Maine's MEG (4,000 pCi/L)
       </div>` : `
-      <div style="border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:14px;font-size:12px;display:inline-block;">
-        <strong>Legend:</strong><br>
-        <span style="background:#00FF00;padding:2px 12px;margin-right:6px;">&nbsp;</span> Meets Acceptable EPA Limits<br>
-        <span style="background:#0000FF;padding:2px 12px;margin-right:6px;">&nbsp;</span> See Notation<br>
-        <span style="background:#FF0000;padding:2px 12px;margin-right:6px;">&nbsp;</span> Does Not Meet EPA Limits
+      <div style="border:1px solid #ccc;padding:8px 12px;margin-bottom:10px;font-size:12px;display:inline-block;">
+        <strong>Legend:</strong>&nbsp;
+        <span style="display:inline-block;width:16px;height:12px;background:#00CC44;border:1px solid #999;margin-right:4px;vertical-align:middle;"></span> Meets Acceptable EPA Limits &nbsp;
+        <span style="display:inline-block;width:16px;height:12px;background:#0055CC;border:1px solid #999;margin-right:4px;vertical-align:middle;"></span> See Notation &nbsp;
+        <span style="display:inline-block;width:16px;height:12px;background:#FF4444;border:1px solid #999;margin-right:4px;vertical-align:middle;"></span> Does Not Meet EPA Limits
       </div>`;
 
     let bodyHtml = hdrHtml + legendHtml;
 
     if (isRadon) {
-      const radonRes = resultsMap['Radon Water'] || {};
-      const rawVal = parseFloat(radonRes.value) || 0;
-      const displayVal = !radonRes.value ? '' : rawVal < 100 ? '<100' : String(Math.round(rawVal / 100) * 100);
-      const bg = rawVal > 4000 ? '#0000FF' : '#00FF00';
+      const radonRes  = resultsMap['Radon Water'] || {};
+      const rawVal    = parseFloat(radonRes.value) || 0;
+      const bg        = rawVal > 4000 ? '#FF4444' : (rawVal > 0 ? '#00CC44' : 'white');
+      const dispVal   = radonRes.value || '';
       bodyHtml += `
-        <table style="width:60%;border-collapse:collapse;margin-bottom:12px;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;">
           <tr>
-            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;">Parameter</th>
-            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Your Result</th>
-            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">EPA Limit</th>
-            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Unit</th>
-            <th style="background:#1F3864;color:white;padding:6px 8px;font-size:12px;border:1px solid #333;text-align:center;">Analysis Date/Time</th>
+            <th style="${S.thCell};text-align:left;width:30%;">Parameter</th>
+            <th style="${S.thCell};">Your Result</th>
+            <th style="${S.thCell};">EPA Limit</th>
+            <th style="${S.thCell};">Unit</th>
+            <th style="${S.thCell};">Analysis Date/Time</th>
           </tr>
           <tr>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;">Radon Water</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;background:${bg};">${editable(displayVal,'result:Radon Water','text-align:center;')}</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">4,000</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">pCi/l</td>
-            <td style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center;">${radonRes.time || ''}</td>
+            <td style="${S.cell};">Radon Water</td>
+            <td style="${S.cell};text-align:center;background:${bg};color:${rawVal>0?'black':'inherit'};">${editable(dispVal,'result:Radon Water','text-align:center;width:100%;')}</td>
+            <td style="${S.cell};text-align:center;">4,000</td>
+            <td style="${S.cell};text-align:center;">pCi/l</td>
+            <td style="${S.cell};text-align:center;">${editable(radonRes.time||radonRes.analDT||'','analDT:Radon Water','text-align:center;width:100%;')}</td>
           </tr>
         </table>`;
     } else {
