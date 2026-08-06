@@ -432,43 +432,43 @@ app.http('render-report-pdf', {
         }
       }
 
-      const fillDbg = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) || [];
-      context.log('[fillSheet debug]', JSON.stringify(fillDbg));
-
-      // Write radon result into the parameter table (same approach as fillSheet)
-      const radon = meta.radon || reportData.radon || {};
+      // Write radon report cells directly using known template positions
+      const radon    = meta.radon || reportData.radon || {};
       const radonVal = String(radon.display || radon.raw || '');
-      if (radonVal) {
-        const base2 = `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
-        const rrRes = await gReq('GET', `${base2}/usedRange?$select=values`, token, undefined, sid);
-        if (rrRes.ok) {
-          const { values: rRows } = await rrRes.json();
-          // Find header row with "your result" to get result column
-          let hdrRow = -1, resultCol = -1;
-          for (let r = 0; r < (rRows||[]).length; r++) {
-            const rl = (rRows[r]||[]).map(c => String(c||'').toLowerCase().trim());
-            const ri = rl.findIndex(c => c.includes('your result') || c === 'result');
-            if (ri >= 0) { hdrRow = r; resultCol = ri; break; }
-          }
-          // Find "radon water" parameter row — check ALL columns
-          if (hdrRow >= 0 && resultCol >= 0) {
-            let targetRow = -1;
-            for (let r = hdrRow + 1; r < (rRows||[]).length; r++) {
-              const row = rRows[r] || [];
-              const hasRadon = row.some(c => String(c||'').toLowerCase().includes('radon water'));
-              if (hasRadon) { targetRow = r; break; }
-            }
-            if (targetRow >= 0) {
-              const addr = `${colLetter(resultCol)}${targetRow + 1}`;
-              await gReq('PATCH', `${base2}/range(address='${addr}')`, token,
-                { values: [[radonVal]] }, sid);
-              context.log(`[pdf] Wrote radon result ${radonVal} to ${addr}`);
-            } else {
-              context.log('[pdf] Radon Water row not found in parameter table');
-            }
-          }
-        }
+      const base2    = `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
+
+      // Split dtCollected and dtReceived into date and time parts
+      const [colDate, colTime] = (meta.dtCollected || '').includes(' ')
+        ? meta.dtCollected.split(' ') : [meta.dtCollected || '', ''];
+      const [recDate, recTime] = (meta.dtReceived || '').includes(' ')
+        ? meta.dtReceived.split(' ') : [meta.dtReceived || '', ''];
+      const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+
+      const directCells = [
+        // Attention block
+        ['B7',  meta.clientName || meta.customer || ''],
+        // Lab ID / dates
+        ['I7',  labId],
+        ['I8',  colDate],    ['J8',  colTime],
+        ['I9',  recDate],    ['J9',  recTime],
+        ['I10', today],
+        // Location
+        ['B11', meta.location || ''],
+        ['B12', cityLine],
+        // Radon result
+        ['F18', radonVal],
+        ['I18', radon.time || ''],
+        // Authorized by / Review date
+        ['E25', authorizedBy || ''],
+        ['J25', reviewDate  || ''],
+      ];
+
+      for (const [addr, val] of directCells) {
+        if (val === '' || val == null) continue;
+        await gReq('PATCH', `${base2}/range(address='${addr}')`, token,
+          { values: [[String(val)]] }, sid);
       }
+      context.log(`[pdf] Radon direct cells written. Result: ${radonVal}`);
 
       await fitOnePage(radonSheet.id);
       // Delete Spec sheet for radon reports
