@@ -545,6 +545,21 @@ app.http('generate-report', {
       const paramRows = activeParams.map(buildRow);
       const fhaRows   = needsFHA ? fhaParams.map(buildRow) : [];
 
+      // For radon: add result as a parameter row so fillSheet handles it like any other
+      if (isRadon && radonResult.display) {
+        paramRows.push({
+          name:   'Radon Water',
+          value:  radonResult.display,
+          unit:   'pCi/L',
+          epa:    '4,000',
+          rl:     '',
+          color:  radonResult.color || 'green',
+          analDT: radonResult.time  || '',
+          prepDT: '',
+          method: '',
+        });
+      }
+
       // ── Dates ───────────────────────────────────────────────────────────────
       const now        = new Date();
       const todayStr   = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${String(now.getFullYear()).slice(-2)}`;
