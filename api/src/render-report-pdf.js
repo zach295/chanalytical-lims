@@ -80,8 +80,8 @@ async function hideSheet(siteId, itemId, wsId, token, sid) {
 }
 
 async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
-  context.log('[fillSheet] meta keys:', Object.keys(meta||{}).join(','));
-  context.log('[fillSheet] dtCollected:', meta?.dtCollected, 'dtReceived:', meta?.dtReceived, 'location:', meta?.location, 'city:', meta?.city, 'state:', meta?.state);
+  const _dbg = []; // debug collector
+  _dbg.push('dtCollected=' + (meta?.dtCollected||'EMPTY') + ' location=' + (meta?.location||'EMPTY') + ' city=' + (meta?.city||'EMPTY'));
   const rr = await gReq('GET',
     `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount`,
     token, undefined, sid);
@@ -122,7 +122,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   };
   for (const [lbl, cfg] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
-    if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); continue; }
+    if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); _dbg.push('NOT FOUND:' + lbl); continue; }
     // col+1 is merge interior — start from col+2 for the actual input cell
     let targetCol = f.c + 2;
     for (let dc = 2; dc <= 6; dc++) {
@@ -136,6 +136,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       const timePart = cfg.val.slice(spaceIdx + 1);
       addCell(f.r, targetCol,     datePart);
       addCell(f.r, targetCol + 1, timePart);
+      _dbg.push(lbl + '→' + colLetter(targetCol) + (f.r+1) + '=' + datePart);
       context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1}="${datePart}" ${colLetter(targetCol+1)}${f.r+1}="${timePart}"`);
     } else {
       addCell(f.r, targetCol, cfg.val);
@@ -413,13 +414,26 @@ app.http('render-report-pdf', {
     // Find Arsenic Spec sheet if present
     const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
 
-    // Collect fillSheet log for debugging
-    const fillLog = [];
-    const origLog = context.log.bind(context);
-    context.log = (...args) => { origLog(...args); const msg = args.join(' '); if (msg.includes('[pdf]') || msg.includes('[fillSheet]')) fillLog.push(msg); };
-
     if (isRadon && radonSheet) {
-      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      // DEBUG: scan template to find label positions
+      const scanRes = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}/usedRange?$select=values`,
+        { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
+      );
+      let templateScan = [];
+      if (scanRes.ok) {
+        const { values: scanRows } = await scanRes.json();
+        for (let r = 0; r < Math.min((scanRows||[]).length, 30); r++) {
+          const row = (scanRows[r]||[]);
+          for (let c = 0; c < row.length; c++) {
+            const v = String(row[c]||'').trim();
+            if (v) templateScan.push(`R${r+1}C${c+1}:${v.slice(0,30)}`);
+          }
+        }
+      }
+
+      const fillDbg = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) || [];
+      context.log('[fillSheet debug]', JSON.stringify(fillDbg));
 
       // Write radon result into the parameter table (same approach as fillSheet)
       const radon = meta.radon || reportData.radon || {};
@@ -511,4 +525,6 @@ app.http('render-report-pdf', {
     const reportFileName = `${labId} Report.pdf`;
     return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
-});
+});  // Return debug before flush
+  const _dbgReturn = [..._dbg];
+
