@@ -123,9 +123,9 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, cfg] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); _dbg.push('NOT FOUND:' + lbl); continue; }
-    // col+1 is merge interior — start from col+2 for the actual input cell
-    let targetCol = f.c + 2;
-    for (let dc = 2; dc <= 6; dc++) {
+    // Scan from col+1 onwards for first empty cell
+    let targetCol = f.c + 1;
+    for (let dc = 1; dc <= 6; dc++) {
       const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
       if (!cv) { targetCol = f.c + dc; break; }
     }
@@ -450,12 +450,13 @@ app.http('render-report-pdf', {
             const ri = rl.findIndex(c => c.includes('your result') || c === 'result');
             if (ri >= 0) { hdrRow = r; resultCol = ri; break; }
           }
-          // Find "radon water" parameter row
+          // Find "radon water" parameter row — check ALL columns
           if (hdrRow >= 0 && resultCol >= 0) {
             let targetRow = -1;
             for (let r = hdrRow + 1; r < (rRows||[]).length; r++) {
-              const cell = String((rRows[r]||[])[0]||'').toLowerCase().trim();
-              if (cell.includes('radon')) { targetRow = r; break; }
+              const row = rRows[r] || [];
+              const hasRadon = row.some(c => String(c||'').toLowerCase().includes('radon water'));
+              if (hasRadon) { targetRow = r; break; }
             }
             if (targetRow >= 0) {
               const addr = `${colLetter(resultCol)}${targetRow + 1}`;
