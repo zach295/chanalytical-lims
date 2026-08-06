@@ -80,6 +80,8 @@ async function hideSheet(siteId, itemId, wsId, token, sid) {
 }
 
 async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
+  context.log('[fillSheet] meta keys:', Object.keys(meta||{}).join(','));
+  context.log('[fillSheet] dtCollected:', meta?.dtCollected, 'dtReceived:', meta?.dtReceived, 'location:', meta?.location, 'city:', meta?.city, 'state:', meta?.state);
   const rr = await gReq('GET',
     `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount`,
     token, undefined, sid);
