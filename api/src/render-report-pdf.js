@@ -433,8 +433,14 @@ app.http('render-report-pdf', {
       }
 
       // Write radon report cells directly using known template positions
+      // Radon result: check multiple sources
       const radon    = meta.radon || reportData.radon || {};
-      const radonVal = String(radon.display || radon.raw || '');
+      const radonVal = String(
+        radon.display || radon.raw ||
+        reportData.resultsMap?.['Radon Water']?.value ||
+        ''
+      );
+      const radonTime = radon.time || reportData.resultsMap?.['Radon Water']?.time || '';
       const base2    = `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
 
       // Split dtCollected and dtReceived into date and time parts
@@ -457,7 +463,7 @@ app.http('render-report-pdf', {
         ['B12', cityLine],
         // Radon result
         ['F18', radonVal],
-        ['I18', radon.time || ''],
+        ['I18', radonTime],
         // Authorized by / Review date
         ['E25', authorizedBy || ''],
         ['J25', reviewDate  || ''],
