@@ -195,10 +195,17 @@ async function getSampleMeta(baseId) {
       `${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!listsRes.ok) return null;
-    const listId = ((await listsRes.json()).value || [])
-      .find(l => l.displayName === 'Archived Intake')?.id;
-    if (!listId) return null;
+    if (!listsRes.ok) {
+      console.error('[getSampleMeta] lists fetch failed:', listsRes.status);
+      return null;
+    }
+    const allLists = (await listsRes.json()).value || [];
+    console.log('[getSampleMeta] all lists:', allLists.map(l => l.displayName).join(', '));
+    const listId = allLists.find(l => l.displayName === 'Archived Intake')?.id;
+    if (!listId) {
+      console.error('[getSampleMeta] Archived Intake list not found! Lists:', allLists.map(l=>l.displayName).join(', '));
+      return null;
+    }
 
     // Fetch all items with all fields expanded
     const itemsRes = await fetch(
@@ -210,7 +217,12 @@ async function getSampleMeta(baseId) {
       .map(i => i.fields || {});
 
     // Find rows where field_1 starts with baseId
+    console.log(`[getSampleMeta] total items: ${items.length}, looking for baseId=${baseId}`);
+    if (items.length > 0) {
+      console.log('[getSampleMeta] first item field_1:', items[0].field_1, 'keys:', Object.keys(items[0]).slice(0,10).join(','));
+    }
     const matches = items.filter(r => (r.field_1 || '').startsWith(baseId));
+    console.log(`[getSampleMeta] matches: ${matches.length}`);
     if (!matches.length) return null;
 
     // Merge data from all rows
