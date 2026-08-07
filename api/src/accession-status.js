@@ -112,27 +112,37 @@ app.http('accession-status', {
           const labPrefix = `${mm}${dd}${yy}`; // e.g. "080426"
 
           const allI     = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
-          const approved = allI
+          const allToday = allI
             .filter(r => {
               const fullId = (r.field_1 || '').trim();
               const ts     = String(r.Title || '');
-              // Match by lab ID prefix (primary) OR timestamp (fallback)
               return fullId.startsWith(labPrefix) || ts.startsWith(todayISO);
             })
             .map(r => ({
               fullId:     r.field_1  || '',
               coaTest:    r.field_2  || '',
-              customer:   r.field_3  || '',
+              customer:   fmtName(r.field_3 || ''),
               approvedBy: r.field_12 || '',
               timestamp:  r.Title    || '',
             }))
-            .sort((a, b) => b.fullId.localeCompare(a.fullId)) // descending by lab ID
-            .slice(0, 5);
-          return { status: 200, jsonBody: { approved, total: allI.filter(r => {
-            const fullId = (r.field_1||'').trim();
-            const ts = String(r.Title||'');
-            return fullId.startsWith(labPrefix) || ts.startsWith(todayISO);
-          }).length } };
+            .sort((a, b) => b.fullId.localeCompare(a.fullId));
+
+          // Build client breakdown from ALL today's items
+          const clientCounts = {};
+          allToday.forEach(a => {
+            const c = a.customer || 'Unknown';
+            clientCounts[c] = (clientCounts[c] || 0) + 1;
+          });
+          const clientBreakdown = Object.entries(clientCounts)
+            .sort((a,b) => b[1]-a[1])
+            .slice(0, 4)
+            .map(([name, count]) => ({ name, count }));
+
+          return { status: 200, jsonBody: {
+            approved:         allToday.slice(0, 5), // top 5 for the table
+            total:            allToday.length,
+            clientBreakdown,                         // full breakdown for counter
+          }};
         }
 
         // list-intake
