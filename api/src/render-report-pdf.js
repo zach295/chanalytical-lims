@@ -114,13 +114,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
   // Template has: label | (merge gap) | value | (time cell for date fields)
-  // Scan merged cells to find correct write positions
-  const mergeRes = await gReq('GET', `${base}/mergedAreas?$select=address`, token, undefined, sid).catch(()=>null);
-  if (mergeRes?.ok) {
-    const merges = ((await mergeRes.json()).value || []).map(m => m.address);
-    context.log('[pdf] merged areas:', merges.join(', '));
-  }
-
   // Write header fields directly to known cell positions
   const splitDT = (dt) => {
     if (!dt) return ['', ''];
@@ -148,12 +141,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   await writeHeaderCell('J9', timeReceived);
   await writeHeaderCell('I10', meta.dateReported || today);
 
-  // ── Left-side fields ──────────────────────────────────────────────────────
-  const leftHdrs = {
-    'date reported':  today,
-    'authorized by':  authorizedBy,
-    'review date':    reviewDate,
-  };
+  // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
   if (attLbl) {
@@ -165,22 +153,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (emailLine)                           addCell(attLbl.r + 2, attCol, emailLine);
   }
 
-  for (const [lbl, val] of Object.entries(leftHdrs)) {
-    const f = findLabel(rows, lbl);
-    if (!f) { context.log(`[pdf] Left label not found: "${lbl}"`); continue; }
-    let targetCol;
-    if (lbl.includes('authorized')) {
-      // col+1 lands before the underline — write to col+2 and col+3 only
-      context.log(`[pdf] "authorized by" value="${val}" — writing to cols ${f.c+2}-${f.c+3} on row ${f.r+1}`);
-      addCell(f.r, f.c + 2, val);
-      addCell(f.r, f.c + 3, val);
-      continue; // skip the single-cell write below
-    } else {
-      targetCol = f.c + 1;
-    }
-    context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${val}"`);
-    addCell(f.r, targetCol, val);
-  }
+
 
   // ── Location — address to the RIGHT of "Location:" label, city/state/zip below ──
   const lf = findLabel(rows, 'location:');
