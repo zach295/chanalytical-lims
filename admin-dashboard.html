@@ -4885,10 +4885,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/generate-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          labId,
-          meta: _pendingLabIds.find(r => r.baseId === labId) || null,
-        }),
+        body: JSON.stringify({ labId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to load report data' }));
