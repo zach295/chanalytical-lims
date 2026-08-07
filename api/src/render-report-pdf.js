@@ -114,34 +114,23 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
   // Template has: label | (merge gap) | value | (time cell for date fields)
-  const rightHdrs = {
-    'lab id number:':       { val: labId,                split: false },
-    'date/time collected:': { val: meta.dtCollected||'', split: true  },
-    'date/time received:':  { val: meta.dtReceived ||'', split: true  },
-    'date reported:':       { val: today,                split: false },
+  // Write header fields directly to known cell positions (verified from template scan)
+  // Lab ID→I7, Date Collected→I8/J8, Date Received→I9/J9, Date Reported→I10
+  const splitDT = (dt) => {
+    if (!dt) return ['', ''];
+    const idx = dt.indexOf(' ');
+    return idx > 0 ? [dt.slice(0, idx), dt.slice(idx + 1)] : [dt, ''];
   };
-  for (const [lbl, cfg] of Object.entries(rightHdrs)) {
-    const f = findLabel(rows, lbl);
-    if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); _dbg.push('NOT FOUND:' + lbl); continue; }
-    // Scan from col+2 onwards for first empty cell (label at c, merge at c+1, value at c+2+)
-    let targetCol = f.c + 2;
-    for (let dc = 2; dc <= 8; dc++) {
-      const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
-      if (!cv) { targetCol = f.c + dc; break; }
-    }
-    if (cfg.split && cfg.val.includes(' ')) {
-      // Date/Time fields: split "7/27/2026 8:30" → date cell | time cell
-      const spaceIdx = cfg.val.indexOf(' ');
-      const datePart = cfg.val.slice(0, spaceIdx);
-      const timePart = cfg.val.slice(spaceIdx + 1);
-      addCell(f.r, targetCol,     datePart);
-      addCell(f.r, targetCol + 1, timePart);
-      _dbg.push(lbl + '→' + colLetter(targetCol) + (f.r+1) + '=' + datePart);
-      context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1}="${datePart}" ${colLetter(targetCol+1)}${f.r+1}="${timePart}"`);
-    } else {
-      addCell(f.r, targetCol, cfg.val);
-      context.log(`[pdf] "${lbl}" → ${colLetter(targetCol)}${f.r+1} = "${cfg.val}"`);
-    }
+  const [dateCollected, timeCollected] = splitDT(meta.dtCollected || meta.dateDrawn || '');
+  const [dateReceived,  timeReceived]  = splitDT(meta.dtReceived  || meta.dateReceived || '');
+  const headerCells = [
+    [6, 8, labId],                                      // I7  Lab ID Number
+    [7, 8, dateCollected], [7, 9, timeCollected],       // I8/J8 Date/Time Collected
+    [8, 8, dateReceived],  [8, 9, timeReceived],        // I9/J9 Date/Time Received
+    [9, 8, meta.dateReported || today],                 // I10 Date Reported
+  ];
+  for (const [r, c, val] of headerCells) {
+    if (val) { addCell(r, c, val); context.log(`[pdf] header ${colLetter(c)}${r+1}="${val}"`); }
   }
 
   // ── Left-side fields ──────────────────────────────────────────────────────
