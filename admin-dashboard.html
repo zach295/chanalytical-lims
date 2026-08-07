@@ -180,26 +180,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div class="sb-label">Dashboard</div>
     <button class="sb-btn active" onclick="showSection('overview',this)">📊 Overview</button>
-    <button class="sb-btn" onclick="showSection('review',this)">🔬 Review Queue <span id="review-badge" style="background:var(--warning);color:white;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px;display:none;"></span></button>
-    <button class="sb-btn" onclick="showSection('rejected',this)">🚫 Rejected Samples</button>
-    <button class="sb-btn" onclick="showSection('sample-correction',this)">✏️ Sample Correction</button>
+    <button class="sb-btn" id="sb-review-btn" onclick="showSection('review',this)">🔬 Review Queue <span id="review-badge" style="background:var(--warning);color:white;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px;display:none;"></span></button>
+    <button class="sb-btn" id="sb-rejected-btn" onclick="showSection('rejected',this)">🚫 Rejected Samples</button>
+    <button class="sb-btn" id="sb-correction-btn" onclick="showSection('sample-correction',this)">✏️ Sample Correction</button>
 
     <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
-    <button class="sb-btn" onclick="showSection('billing',this)">💰 Billing</button>
-    <button class="sb-btn" onclick="showSection('revenue',this)">📊 Revenue</button>
-    <button class="sb-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
+    <button class="sb-btn" id="sb-billing-btn" onclick="showSection('billing',this)">💰 Billing</button>
+    <button class="sb-btn" id="sb-revenue-btn" onclick="showSection('revenue',this)">📊 Revenue</button>
+    <button class="sb-btn" id="sb-coc-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
 
-    <div class="sb-label">Inventory</div>
-    <button class="sb-btn" onclick="showSection('kits',this)">📦 Kit Inventory</button>
-    <button class="sb-btn" onclick="showSection('bottles',this)">🧪 Bottle Inventory</button>
-    <button class="sb-btn" onclick="showSection('kitstk',this)">🗃️ Lab Kit Stock</button>
-    <button class="sb-btn" onclick="showSection('log',this)">📋 Activity Log</button>
+    <div class="sb-label" id="sb-inventory-label">Inventory</div>
+    <button class="sb-btn" id="sb-kits-btn" onclick="showSection('kits',this)">📦 Kit Inventory</button>
+    <button class="sb-btn" id="sb-bottles-btn" onclick="showSection('bottles',this)">🧪 Bottle Inventory</button>
+    <button class="sb-btn" id="sb-kitstk-btn" onclick="showSection('kitstk',this)">🗃️ Lab Kit Stock</button>
+    <button class="sb-btn" id="sb-log-btn" onclick="showSection('log',this)">📋 Activity Log</button>
 
-    <div class="sb-label">Actions</div>
-    <button class="sb-btn" onclick="openModal('send')">📤 Send Kits</button>
-    <button class="sb-btn" onclick="openModal('initial')">➕ Set Stock</button>
-    <button class="sb-btn" onclick="window.open('/index.html','_blank')">🧪 Field App</button>
+    <div class="sb-label" id="sb-actions-label">Actions</div>
+    <button class="sb-btn" id="sb-sendkits-btn" onclick="openModal('send')">📤 Send Kits</button>
+    <button class="sb-btn" id="sb-setstock-btn" onclick="openModal('initial')">➕ Set Stock</button>
+    <button class="sb-btn" id="sb-fieldapp-btn" onclick="window.open('/index.html','_blank')">🧪 Field App</button>
 
     <div class="sb-label" id="sb-admin-label" style="display:none;">Clients</div>
     <button class="sb-btn" id="sb-clients-btn" onclick="showSection('clients',this)" style="display:none;">👥 Clients &amp; Codes</button>
@@ -967,6 +967,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <select id="sr-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
             <option value="lab">Lab Staff</option>
             <option value="office">Office Staff</option>
+            <option value="lab">Lab Staff</option>
             <option value="admin">Admin</option>
             <option value="wq">WQ/Inspector</option>
             <option value="public">Public</option>
@@ -1618,26 +1619,37 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── INIT ──────────────────────────────────────────────────────────────────
   populateSelects();
   setDates();
-  // Show Admin section for admin role only
-  if (_session && _session.role === 'admin') {
-    const adminLabel = document.getElementById('sb-admin-label');
-    if (adminLabel) adminLabel.style.display = 'block';
-    const clientsBtn = document.getElementById('sb-clients-btn');
-    if (clientsBtn) clientsBtn.style.display = 'block';
-    const usersBtn = document.getElementById('sb-users-btn');
-    if (usersBtn) usersBtn.style.display = 'block';
-    const ttBtn = document.getElementById('sb-testtypes-btn');
-    if (ttBtn) ttBtn.style.display = 'block';
-    loadClients(); // pre-load so it's ready when the tab is opened
+  // ── Role-based sidebar visibility ──────────────────────────────────────────
+  const ROLE_SECTIONS = {
+    office: ['sb-billing-btn','sb-revenue-btn','sb-sendkits-btn','sb-clients-btn','sb-admin-label'],
+    lab:    ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
+             'sb-labtool-label','sb-coc-btn','sb-clients-btn','sb-admin-label',
+             'sb-testtypes-btn'],
+    admin:  ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
+             'sb-labtool-label','sb-billing-btn','sb-revenue-btn','sb-coc-btn',
+             'sb-inventory-label','sb-kits-btn','sb-bottles-btn','sb-kitstk-btn',
+             'sb-log-btn','sb-actions-label','sb-sendkits-btn','sb-setstock-btn',
+             'sb-fieldapp-btn','sb-admin-label','sb-clients-btn','sb-users-btn',
+             'sb-testtypes-btn'],
+  };
+
+  function applyRolePermissions(role) {
+    // First hide everything that requires a role
+    const allRoleBtns = new Set(Object.values(ROLE_SECTIONS).flat());
+    allRoleBtns.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    // Then show what this role can access
+    const allowed = ROLE_SECTIONS[role] || [];
+    allowed.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = '';
+    });
+    if (allowed.includes('sb-clients-btn')) loadClients();
   }
 
-  // Hide Reports tab for Office Staff role
-  if (_session && _session.role === 'office') {
-    const reportsBtn = document.getElementById('sb-reports');
-    if (reportsBtn) reportsBtn.style.display = 'none';
-    const labLabel = document.getElementById('sb-labtool-label');
-    if (labLabel) labLabel.style.display = 'none';
-  }
+  applyRolePermissions(_session?.role || 'office');
   // ── Client list state — must be declared before loadScanQueue() is called ──
   let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
   let _clientsLastLoaded = 0;
@@ -2223,8 +2235,26 @@ document.addEventListener('DOMContentLoaded', function() {
     if (id === 'reports') loadPendingLabIds();
     if (id === 'billing') loadBilling();
     if (id === 'revenue') { if (!_billingData.length) loadBilling(); else renderRevenue(); }
-    // Office staff cannot access Reports, Clients, Users
-    if (_session?.role === 'office' && ['reports','clients','users'].includes(id)) {
+    // Role-based access guard
+    const SECTION_ROLES = {
+      review:            ['lab','admin'],
+      rejected:          ['lab','admin'],
+      'sample-correction': ['lab','admin'],
+      reports:           ['lab','admin'],
+      coc:               ['lab','admin'],
+      billing:           ['office','admin'],
+      revenue:           ['office','admin'],
+      kits:              ['admin'],
+      bottles:           ['admin'],
+      kitstk:            ['admin'],
+      log:               ['admin'],
+      clients:           ['office','lab','admin'],
+      users:             ['admin'],
+      testtypes:         ['lab','admin'],
+    };
+    const role = _session?.role || 'office';
+    const allowed = SECTION_ROLES[id];
+    if (allowed && !allowed.includes(role)) {
       showToast('⚠️ You do not have access to that section.');
       return;
     }
