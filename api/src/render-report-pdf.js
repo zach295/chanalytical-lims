@@ -114,8 +114,14 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
   // Template has: label | (merge gap) | value | (time cell for date fields)
-  // Write header fields directly to known cell positions (verified from template scan)
-  // Lab ID→I7, Date Collected→I8/J8, Date Received→I9/J9, Date Reported→I10
+  // Scan merged cells to find correct write positions
+  const mergeRes = await gReq('GET', `${base}/mergedAreas?$select=address`, token, undefined, sid).catch(()=>null);
+  if (mergeRes?.ok) {
+    const merges = ((await mergeRes.json()).value || []).map(m => m.address);
+    context.log('[pdf] merged areas:', merges.join(', '));
+  }
+
+  // Write header fields directly to known cell positions
   const splitDT = (dt) => {
     if (!dt) return ['', ''];
     const idx = dt.indexOf(' ');
@@ -123,15 +129,24 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   };
   const [dateCollected, timeCollected] = splitDT(meta.dtCollected || meta.dateDrawn || '');
   const [dateReceived,  timeReceived]  = splitDT(meta.dtReceived  || meta.dateReceived || '');
-  const headerCells = [
-    [6, 8, labId],                                      // I7  Lab ID Number
-    [7, 8, dateCollected], [7, 9, timeCollected],       // I8/J8 Date/Time Collected
-    [8, 8, dateReceived],  [8, 9, timeReceived],        // I9/J9 Date/Time Received
-    [9, 8, meta.dateReported || today],                 // I10 Date Reported
-  ];
-  for (const [r, c, val] of headerCells) {
-    if (val) { addCell(r, c, val); context.log(`[pdf] header ${colLetter(c)}${r+1}="${val}"`); }
-  }
+  
+  // Try writing and log the response to find merge issues
+  const writeHeaderCell = async (addr, val) => {
+    if (!val) return;
+    const res = await gReq('PATCH', `${base}/range(address='${addr}')`, token, { values: [[val]] }, sid);
+    const status = res?.status || '?';
+    context.log(`[pdf] write ${addr}="${val}" → ${status}`);
+    if (!res?.ok) {
+      const errText = await res?.text().catch(()=>'');
+      context.log(`[pdf] write ${addr} error: ${errText.slice(0,100)}`);
+    }
+  };
+  await writeHeaderCell('I7', labId);
+  await writeHeaderCell('I8', dateCollected);
+  await writeHeaderCell('J8', timeCollected);
+  await writeHeaderCell('I9', dateReceived);
+  await writeHeaderCell('J9', timeReceived);
+  await writeHeaderCell('I10', meta.dateReported || today);
 
   // ── Left-side fields ──────────────────────────────────────────────────────
   const leftHdrs = {
