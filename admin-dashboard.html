@@ -186,6 +186,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
+    <button class="sb-btn" onclick="showSection('billing',this)">💰 Billing</button>
+    <button class="sb-btn" onclick="showSection('revenue',this)">📊 Revenue</button>
     <button class="sb-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
 
     <div class="sb-label">Inventory</div>
@@ -475,6 +477,59 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 
   <!-- ══ COC BATCH GENERATOR ══════════════════════════════════════════════════ -->
+
+  <!-- ── Billing Tab ──────────────────────────────────────────── -->
+  <div class="section" id="section-billing">
+    <div class="section-hdr">
+      <div class="section-hdr-title">💰 Billing</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <select id="bill-filter-status" onchange="renderBillingTable()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
+          <option value="all">All Items</option>
+          <option value="unqb">Not QB'd</option>
+          <option value="qb">QB'd</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="paid">Paid</option>
+        </select>
+        <select id="bill-filter-client" onchange="renderBillingTable()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
+          <option value="">All Clients</option>
+        </select>
+        <input type="date" id="bill-filter-from" onchange="renderBillingTable()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;" />
+        <input type="date" id="bill-filter-to" onchange="renderBillingTable()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;" />
+        <button class="action-btn" onclick="loadBilling()">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="billing-summary" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;"></div>
+    <div id="billing-table-wrap" style="overflow-x:auto;">
+      <div style="color:var(--slate);padding:40px;text-align:center;">Loading billing data…</div>
+    </div>
+  </div>
+
+  <!-- ── Revenue Tab ──────────────────────────────────────────── -->
+  <div class="section" id="section-revenue">
+    <div class="section-hdr">
+      <div class="section-hdr-title">📊 Revenue</div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <select id="rev-year" onchange="renderRevenue()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;"></select>
+        <button class="action-btn" onclick="loadBilling().then(renderRevenue)">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="rev-kpi-row" style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;">
+        <div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:14px;">Revenue by Month</div>
+        <canvas id="rev-month-chart" height="200"></canvas>
+      </div>
+      <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;">
+        <div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:14px;">Revenue by Test Type</div>
+        <canvas id="rev-type-chart" height="200"></canvas>
+      </div>
+    </div>
+    <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;">
+      <div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:14px;">Top Clients by Revenue</div>
+      <div id="rev-client-table"></div>
+    </div>
+  </div>
+
   <div class="section" id="section-coc">
     <div class="section-hdr">
       <div class="section-hdr-title">📋 COC Batch Generator</div>
@@ -2166,6 +2221,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (id === 'results') initResultsTab();
     if (id === 'reports') loadPendingLabIds();
+    if (id === 'billing') loadBilling();
+    if (id === 'revenue') { if (!_billingData.length) loadBilling(); else renderRevenue(); }
     // Office staff cannot access Reports, Clients, Users
     if (_session?.role === 'office' && ['reports','clients','users'].includes(id)) {
       showToast('⚠️ You do not have access to that section.');
@@ -5698,6 +5755,263 @@ document.addEventListener('DOMContentLoaded', function() {
     const arr = new Uint8Array(bytes.length);
     for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
     return new Blob([arr], { type: mimeType });
+  }
+
+
+  // ── Billing & Revenue ─────────────────────────────────────────────────────
+  let _billingData = [];
+
+  async function loadBilling() {
+    try {
+      const res  = await fetch('/api/billing-read');
+      const data = await res.json().catch(() => ({}));
+      if (!data.success) throw new Error(data.error || 'Failed');
+      _billingData = data.rows || [];
+      renderBillingTable();
+      renderRevenue();
+      // Populate client filter
+      const clients = [...new Set(_billingData.map(r => r.customer).filter(Boolean))].sort();
+      const sel = document.getElementById('bill-filter-client');
+      if (sel) {
+        sel.innerHTML = '<option value="">All Clients</option>' +
+          clients.map(c => `<option value="${c}">${c}</option>`).join('');
+      }
+      // Populate year filter
+      const years = [...new Set(_billingData.map(r => (r.dateRec||'').slice(-2)).filter(Boolean))].sort().reverse();
+      const yrSel = document.getElementById('rev-year');
+      if (yrSel) {
+        const thisYY = new Date().toLocaleDateString('en-US',{year:'2-digit'});
+        yrSel.innerHTML = years.map(y => `<option value="${y}" ${y===thisYY?'selected':''}>${'20'+y}</option>`).join('');
+      }
+    } catch(e) {
+      document.getElementById('billing-table-wrap').innerHTML =
+        `<div style="color:var(--error);padding:20px;">${e.message}</div>`;
+    }
+  }
+
+  function renderBillingTable() {
+    const status  = document.getElementById('bill-filter-status')?.value || 'all';
+    const client  = document.getElementById('bill-filter-client')?.value || '';
+    const fromD   = document.getElementById('bill-filter-from')?.value || '';
+    const toD     = document.getElementById('bill-filter-to')?.value || '';
+
+    let rows = _billingData.filter(r => {
+      if (client && r.customer !== client) return false;
+      if (status === 'unqb'   && r.qb)   return false;
+      if (status === 'qb'     && !r.qb)  return false;
+      if (status === 'unpaid' && r.paid)  return false;
+      if (status === 'paid'   && !r.paid) return false;
+      if (fromD && r.dateRec < fromD) return false;
+      if (toD   && r.dateRec > toD)   return false;
+      return true;
+    });
+
+    // Summary cards
+    const total   = rows.reduce((s,r) => s + (r.amt||0), 0);
+    const qbAmt   = rows.filter(r=>r.qb).reduce((s,r) => s + (r.amt||0), 0);
+    const paidAmt = rows.filter(r=>r.paid).reduce((s,r) => s + (r.amtPaid||0), 0);
+    const unpaidAmt = rows.filter(r=>!r.paid).reduce((s,r) => s + (r.amt||0), 0);
+    const sumEl = document.getElementById('billing-summary');
+    if (sumEl) sumEl.innerHTML = [
+      ['Total',    `$${total.toFixed(2)}`,    'var(--navy)'],
+      ["QB'd",    `$${qbAmt.toFixed(2)}`,    'var(--teal)'],
+      ['Paid',     `$${paidAmt.toFixed(2)}`,  'var(--success)'],
+      ['Outstanding', `$${unpaidAmt.toFixed(2)}`, 'var(--warning)'],
+    ].map(([label,val,color]) => `
+      <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 20px;min-width:140px;">
+        <div style="font-size:11px;color:var(--slate);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">${label}</div>
+        <div style="font-size:22px;font-weight:700;color:${color};margin-top:4px;">${val}</div>
+      </div>`).join('');
+
+    // Table
+    const wrap = document.getElementById('billing-table-wrap');
+    if (!wrap) return;
+    if (!rows.length) { wrap.innerHTML = '<div style="color:var(--slate);padding:40px;text-align:center;">No items match the current filters.</div>'; return; }
+
+    wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:var(--navy);color:white;">
+        <th style="padding:8px 10px;text-align:left;">Lab ID</th>
+        <th style="padding:8px 10px;text-align:left;">Date Rec'd</th>
+        <th style="padding:8px 10px;text-align:left;">Customer</th>
+        <th style="padding:8px 10px;text-align:left;">Service</th>
+        <th style="padding:8px 10px;text-align:right;">Rate</th>
+        <th style="padding:8px 10px;text-align:right;">Amt</th>
+        <th style="padding:8px 10px;text-align:center;">QB</th>
+        <th style="padding:8px 10px;text-align:center;">Paid</th>
+        <th style="padding:8px 10px;text-align:right;">Amt Paid</th>
+        <th style="padding:8px 10px;text-align:left;">Date Paid</th>
+      </tr></thead>
+      <tbody>${rows.map((r,i) => `
+        <tr style="background:${i%2===0?'var(--off-white)':'white'};border-bottom:1px solid var(--border);">
+          <td style="padding:7px 10px;font-family:monospace;font-weight:700;">${r.labId}</td>
+          <td style="padding:7px 10px;">${r.dateRec}</td>
+          <td style="padding:7px 10px;">${r.customer}</td>
+          <td style="padding:7px 10px;">${r.service}</td>
+          <td style="padding:7px 10px;text-align:right;">$${(r.rate||0).toFixed(2)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700;">$${(r.amt||0).toFixed(2)}</td>
+          <td style="padding:7px 10px;text-align:center;">
+            <input type="checkbox" ${r.qb?'checked':''} onchange="billToggleQB('${r.id}',this.checked)"
+              style="width:16px;height:16px;cursor:pointer;" />
+          </td>
+          <td style="padding:7px 10px;text-align:center;">
+            <input type="checkbox" ${r.paid?'checked':''} onchange="billTogglePaid('${r.id}',this,${JSON.stringify(r)})"
+              style="width:16px;height:16px;cursor:pointer;" />
+          </td>
+          <td style="padding:7px 10px;text-align:right;">${r.paid ? '$'+(r.amtPaid||0).toFixed(2) : ''}</td>
+          <td style="padding:7px 10px;">${r.datePaid||''}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  async function billToggleQB(itemId, checked) {
+    await fetch('/api/billing-update', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ itemId, fields: { qb: checked } })
+    });
+    const row = _billingData.find(r => r.id === itemId);
+    if (row) row.qb = checked;
+    renderBillingTable();
+  }
+
+  async function billTogglePaid(itemId, checkbox, row) {
+    if (checkbox.checked) {
+      const amtPaid = prompt('Amount paid:', (row.amt||0).toFixed(2));
+      if (amtPaid === null) { checkbox.checked = false; return; }
+      const datePaid = prompt('Date paid (MM/DD/YY):', new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'}));
+      if (datePaid === null) { checkbox.checked = false; return; }
+      await fetch('/api/billing-update', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ itemId, fields: { paid: true, amtPaid: parseFloat(amtPaid)||0, datePaid } })
+      });
+      const r = _billingData.find(r => r.id === itemId);
+      if (r) { r.paid = true; r.amtPaid = parseFloat(amtPaid)||0; r.datePaid = datePaid; }
+    } else {
+      await fetch('/api/billing-update', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ itemId, fields: { paid: false, amtPaid: 0, datePaid: '' } })
+      });
+      const r = _billingData.find(r => r.id === itemId);
+      if (r) { r.paid = false; r.amtPaid = 0; r.datePaid = ''; }
+    }
+    renderBillingTable();
+  }
+
+  // ── Revenue charts ────────────────────────────────────────────────────────
+  let _revCharts = {};
+
+  function renderRevenue() {
+    const yrSel = document.getElementById('rev-year');
+    const yy    = yrSel?.value || new Date().toLocaleDateString('en-US',{year:'2-digit'});
+    const rows  = _billingData.filter(r => (r.dateRec||'').endsWith('/'+yy) || (r.dateRec||'').slice(-2)===yy);
+
+    // KPI row
+    const total     = rows.reduce((s,r) => s+(r.amt||0), 0);
+    const prevRows  = _billingData.filter(r => (r.dateRec||'').slice(-2) === String(parseInt(yy)-1).padStart(2,'0'));
+    const prevTotal = prevRows.reduce((s,r) => s+(r.amt||0), 0);
+    const pct       = prevTotal ? ((total-prevTotal)/prevTotal*100).toFixed(1) : null;
+    const kpiEl = document.getElementById('rev-kpi-row');
+    if (kpiEl) kpiEl.innerHTML = [
+      ['Total Revenue 20'+yy, '$'+total.toFixed(2), 'var(--navy)'],
+      ['vs 20'+(parseInt(yy)-1), pct!==null?(pct>=0?'+':'')+pct+'%':'N/A', pct>=0?'var(--success)':'var(--error)'],
+      ['Items', rows.length, 'var(--teal)'],
+      ['Avg/Item', rows.length?'$'+(total/rows.length).toFixed(2):'—', 'var(--slate)'],
+    ].map(([label,val,color]) => `
+      <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 20px;min-width:150px;">
+        <div style="font-size:11px;color:var(--slate);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">${label}</div>
+        <div style="font-size:22px;font-weight:700;color:${color};margin-top:4px;">${val}</div>
+      </div>`).join('');
+
+    // Month chart
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const byMonth = Array(12).fill(0);
+    rows.forEach(r => {
+      const d = r.dateRec||''; // MM/DD/YY
+      const mm = parseInt(d.slice(0,2)) - 1;
+      if (mm >= 0 && mm < 12) byMonth[mm] += (r.amt||0);
+    });
+    drawBarChart('rev-month-chart', MONTHS, byMonth, '#1F3864');
+
+    // Type chart
+    const byType = {};
+    rows.forEach(r => {
+      const t = r.service || 'Other';
+      byType[t] = (byType[t]||0) + (r.amt||0);
+    });
+    const typeLabels = Object.keys(byType).sort((a,b)=>byType[b]-byType[a]).slice(0,8);
+    drawBarChart('rev-type-chart', typeLabels, typeLabels.map(t=>byType[t]), '#0A6E8A');
+
+    // Client table
+    const byClient = {};
+    rows.forEach(r => { byClient[r.customer] = (byClient[r.customer]||0)+(r.amt||0); });
+    const clientRows = Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const ctEl = document.getElementById('rev-client-table');
+    if (ctEl) ctEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="border-bottom:2px solid var(--border);">
+        <th style="padding:8px;text-align:left;">Client</th>
+        <th style="padding:8px;text-align:right;">Revenue</th>
+        <th style="padding:8px;text-align:right;">vs Prior Year</th>
+        <th style="padding:8px;text-align:left;min-width:120px;">Share</th>
+      </tr></thead>
+      <tbody>${clientRows.map(([client,amt],i) => {
+        const prior = prevRows.filter(r=>r.customer===client).reduce((s,r)=>s+(r.amt||0),0);
+        const pctC  = prior ? ((amt-prior)/prior*100).toFixed(1) : null;
+        const share = total ? (amt/total*100).toFixed(1) : 0;
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">${client}</td>
+          <td style="padding:8px;text-align:right;font-weight:700;">$${amt.toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;color:${pctC>=0?'var(--success)':'var(--error)'};">
+            ${pctC!==null?(pctC>=0?'+':'')+pctC+'%':'—'}</td>
+          <td style="padding:8px;">
+            <div style="background:var(--border);border-radius:4px;height:8px;width:100%;">
+              <div style="background:var(--navy);border-radius:4px;height:8px;width:${share}%;"></div>
+            </div>
+            <span style="font-size:11px;color:var(--slate);">${share}%</span>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody></table>`;
+  }
+
+  function drawBarChart(canvasId, labels, values, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    if (_revCharts[canvasId]) { _revCharts[canvasId].destroy(); }
+    const max = Math.max(...values, 1);
+    const ctx = canvas.getContext('2d');
+    _revCharts[canvasId] = {
+      destroy: () => { ctx.clearRect(0,0,canvas.width,canvas.height); }
+    };
+    // Simple canvas bar chart
+    canvas.width = canvas.offsetWidth || 400;
+    canvas.height = 200;
+    const W = canvas.width, H = canvas.height;
+    const pad = { top:10, right:10, bottom:40, left:60 };
+    const chartW = W - pad.left - pad.right;
+    const chartH = H - pad.top - pad.bottom;
+    const barW   = Math.max(4, chartW/labels.length - 4);
+    ctx.clearRect(0,0,W,H);
+    ctx.font = '11px Arial';
+    ctx.fillStyle = '#666';
+    // Y axis labels
+    [0,0.25,0.5,0.75,1].forEach(pct => {
+      const y = pad.top + chartH*(1-pct);
+      ctx.fillText('$'+(max*pct).toFixed(0), 2, y+4);
+      ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W-pad.right, y); ctx.stroke();
+    });
+    // Bars
+    labels.forEach((lbl,i) => {
+      const x  = pad.left + i*(chartW/labels.length) + (chartW/labels.length-barW)/2;
+      const bH = (values[i]/max)*chartH;
+      const y  = pad.top + chartH - bH;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, barW, bH);
+      // Label
+      ctx.fillStyle = '#444';
+      ctx.save(); ctx.translate(x+barW/2, H-pad.bottom+8); ctx.rotate(-0.4);
+      ctx.fillText(lbl.slice(0,10), 0, 0); ctx.restore();
+    });
   }
 
 </script>
