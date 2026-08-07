@@ -185,27 +185,49 @@ function combineDT(dateStr, timeStr) {
 // ── Get sample metadata from Archived Intake (field_X mapping) ────────────────
 async function getSampleMeta(baseId) {
   try {
-    const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
-    // Find rows where field_1 (fullId) starts with baseId
+    // Direct Graph API call — bypass listItems() to ensure all field_N are returned
+    const token  = await getToken();
+    const siteId = process.env.SP_SITE_ID;
+    const GRAPH  = 'https://graph.microsoft.com/v1.0';
+
+    // Get the Archived Intake list ID first
+    const listsRes = await fetch(
+      `${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!listsRes.ok) return null;
+    const listId = ((await listsRes.json()).value || [])
+      .find(l => l.displayName === 'Archived Intake')?.id;
+    if (!listId) return null;
+
+    // Fetch all items with all fields expanded
+    const itemsRes = await fetch(
+      `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!itemsRes.ok) return null;
+    const items = ((await itemsRes.json()).value || [])
+      .map(i => i.fields || {});
+
+    // Find rows where field_1 starts with baseId
     const matches = items.filter(r => (r.field_1 || '').startsWith(baseId));
     if (!matches.length) return null;
 
-    // Merge data from all rows for this baseId
+    // Merge data from all rows
     const merged = {};
     for (const r of matches) {
-      if (!merged.customer    && r.field_3)  merged.customer    = r.field_3;
-      if (!merged.dateDrawn   && r.field_4)  merged.dateDrawn   = r.field_4;
-      if (!merged.timeDrawn   && r.field_5)  merged.timeDrawn   = r.field_5;
-      if (!merged.dateReceived && r.field_6) merged.dateReceived = r.field_6;
-      if (!merged.timeReceived && r.field_7) merged.timeReceived = r.field_7;
-      if (!merged.location    && r.field_8)  merged.location    = r.field_8;
-      if (!merged.city        && r.field_9)  merged.city        = r.field_9;
-      if (!merged.state       && r.field_10) merged.state       = r.field_10;
-      if (!merged.zip         && r.field_11) merged.zip         = r.field_11;
-      if (!merged.approvedBy  && r.field_12) merged.approvedBy  = r.field_12;
+      if (!merged.customer     && r.field_3)  merged.customer     = r.field_3;
+      if (!merged.dateDrawn    && r.field_4)  merged.dateDrawn    = r.field_4;
+      if (!merged.timeDrawn    && r.field_5)  merged.timeDrawn    = r.field_5;
+      if (!merged.dateReceived && r.field_6)  merged.dateReceived = r.field_6;
+      if (!merged.timeReceived && r.field_7)  merged.timeReceived = r.field_7;
+      if (!merged.location     && r.field_8)  merged.location     = r.field_8;
+      if (!merged.city         && r.field_9)  merged.city         = r.field_9;
+      if (!merged.state        && r.field_10) merged.state        = r.field_10;
+      if (!merged.zip          && r.field_11) merged.zip          = r.field_11;
+      if (!merged.approvedBy   && r.field_12) merged.approvedBy   = r.field_12;
     }
 
-    // Collect all test types
     const tests = [...new Set(matches.map(r => r.field_2).filter(Boolean))];
 
     return {
@@ -221,7 +243,7 @@ async function getSampleMeta(baseId) {
       approvedBy:   merged.approvedBy   || '',
       services:     tests.join(' | '),
     };
-  } catch(e) { console.error('getSampleMeta:', e.message); return null; }
+  } catch(e) { console.error('[getSampleMeta] error:', e.message); return null; }
 }
 
 // ── Get Results Cache row for this base ID ────────────────────────────────────
