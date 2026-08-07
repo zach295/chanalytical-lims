@@ -91,7 +91,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates = [];
-  const colorUpdates = [];
+  const colorUpdates = []; // kept for logging only — no colors written
 
   const addCell = (r, c, val) => cellUpdates.push({
     url:  `${base}/range(address='${colLetter(c)}${r + 1}')`,
@@ -123,9 +123,9 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   for (const [lbl, cfg] of Object.entries(rightHdrs)) {
     const f = findLabel(rows, lbl);
     if (!f) { context.log(`[pdf] Right label not found: "${lbl}"`); _dbg.push('NOT FOUND:' + lbl); continue; }
-    // Scan from col+1 onwards for first empty cell
-    let targetCol = f.c + 1;
-    for (let dc = 1; dc <= 6; dc++) {
+    // Scan from col+2 onwards for first empty cell (label at c, merge at c+1, value at c+2+)
+    let targetCol = f.c + 2;
+    for (let dc = 2; dc <= 8; dc++) {
       const cv = normalizeCell((rows[f.r] || [])[f.c + dc]);
       if (!cv) { targetCol = f.c + dc; break; }
     }
@@ -230,7 +230,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     context.log(`[pdf] Row ${r}: col0="${(rows[r]||[])[0]}" col1="${(rows[r]||[])[1]}" col2="${(rows[r]||[])[2]}"`);
   }
 
-  const colorHex = { green: '#00B050', red: '#FF0000', blue: '#0070C0', none: '#FFFFFF' };
   const toDelete = [];
 
   for (const [nameLow, ri] of Object.entries(pMap)) {
@@ -238,13 +237,9 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (!p) {
       toDelete.push(ri + 1); // 1-based row number
     } else {
-      // Color cell (col B = index 1)
-      colorUpdates.push({
-        url:  `${base}/range(address='B${ri + 1}')/format/fill`,
-        body: { color: colorHex[p.color || 'none'] || '#FFFFFF' },
-      });
-      if (colResult >= 0 && p.value)             addCell(ri, colResult, p.value);
-      if (colPrepDT >= 0 && p.prepDT)            addCell(ri, colPrepDT, p.prepDT);
+      // Write result value and dates — template handles color fills itself
+      if (colResult >= 0 && p.value)              addCell(ri, colResult, p.value);
+      if (colPrepDT >= 0 && p.prepDT)             addCell(ri, colPrepDT, p.prepDT);
       if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT, p.analDT || p.time);
     }
   }
@@ -281,9 +276,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   }
 
   // Set colors — rows haven't shifted so original addresses are still correct
-  for (let i = 0; i < colorUpdates.length; i += 20) {
-    await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
-  }
+  // No color writes — template handles conditional formatting
 }
 
 app.http('render-report-pdf', {
