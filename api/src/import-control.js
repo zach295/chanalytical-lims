@@ -162,18 +162,29 @@ app.http('import-control', {
 
       context.log(`[import-control] Dates: ${Object.keys(byDate).join(', ')}`);
 
-      // Step 2: List all control files
-      const allFiles   = await listFolder(folder);
-      const xlsxFiles  = allFiles.filter(f => /\.xlsx?$/i.test(f.name));
-
-      // Step 3: Parse matching files
-      const allRows  = [];
+      // Step 2: Parse matching files — look in month subfolder for each date
+      const MONTHS_LIST = ['January','February','March','April','May','June',
+                           'July','August','September','October','November','December'];
+      const allRows   = [];
       const filesUsed = [];
 
       for (const [datePart, ids] of Object.entries(byDate)) {
-        const matchingFiles = xlsxFiles.filter(f => f.name.includes(datePart));
+        // Build month subfolder path from MMDDYY prefix
+        const mm         = datePart.slice(0, 2);
+        const yy         = datePart.slice(4, 6);
+        const monthName  = MONTHS_LIST[parseInt(mm, 10) - 1] || '';
+        const year       = '20' + yy;
+        const monthFolder = `${folder}/${monthName} ${year}`;
+
+        // List files in the month subfolder
+        let monthFiles = [];
+        try { monthFiles = await listFolder(monthFolder); } catch(e) {
+          context.log(`[import-control] Month folder not found: ${monthFolder}`);
+          continue;
+        }
+        const matchingFiles = monthFiles.filter(f => /\.xlsx?$/i.test(f.name) && f.name.includes(datePart));
         if (!matchingFiles.length) {
-          context.log(`[import-control] No file for date ${datePart}`);
+          context.log(`[import-control] No control file for date ${datePart} in ${monthFolder}`);
           continue;
         }
         for (const file of matchingFiles) {
