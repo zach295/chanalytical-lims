@@ -114,32 +114,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
   // Template has: label | (merge gap) | value | (time cell for date fields)
-  // Write header fields directly to known cell positions
-  const splitDT = (dt) => {
-    if (!dt) return ['', ''];
-    const idx = dt.indexOf(' ');
-    return idx > 0 ? [dt.slice(0, idx), dt.slice(idx + 1)] : [dt, ''];
-  };
-  const [dateCollected, timeCollected] = splitDT(meta.dtCollected || meta.dateDrawn || '');
-  const [dateReceived,  timeReceived]  = splitDT(meta.dtReceived  || meta.dateReceived || '');
-  
-  // Try writing and log the response to find merge issues
-  const writeHeaderCell = async (addr, val) => {
-    if (!val) return;
-    const res = await gReq('PATCH', `${base}/range(address='${addr}')`, token, { values: [[val]] }, sid);
-    const status = res?.status || '?';
-    context.log(`[pdf] write ${addr}="${val}" → ${status}`);
-    if (!res?.ok) {
-      const errText = await res?.text().catch(()=>'');
-      context.log(`[pdf] write ${addr} error: ${errText.slice(0,100)}`);
-    }
-  };
-  await writeHeaderCell('I7', labId);
-  await writeHeaderCell('I8', dateCollected);
-  await writeHeaderCell('J8', timeCollected);
-  await writeHeaderCell('I9', dateReceived);
-  await writeHeaderCell('J9', timeReceived);
-  await writeHeaderCell('I10', meta.dateReported || today);
+  // Header cells written per-sheet outside fillSheet
 
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
@@ -395,8 +370,32 @@ app.http('render-report-pdf', {
     // Find Arsenic Spec sheet if present
     const specSheet = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
 
+
+  // Helper: write header cells for a specific worksheet
+  const writeHeaders = async (wsId2, cells) => {
+    const wsBase = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${wsId2}`;
+    const wsHdr  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+    const splitDT = (dt) => {
+      if (!dt) return ['', ''];
+      const i = dt.indexOf(' ');
+      return i > 0 ? [dt.slice(0, i), dt.slice(i + 1)] : [dt, ''];
+    };
+    const [dc, tc] = splitDT(meta.dtCollected || meta.dateDrawn || '');
+    const [dr, tr] = splitDT(meta.dtReceived  || meta.dateReceived || '');
+    const vals = { labId, dc, tc, dr, tr, today: meta.dateReported || today };
+    for (const [addr, key] of cells) {
+      const val = vals[key] || '';
+      if (val) await fetch(`${wsBase}/range(address='${addr}')`, {
+        method: 'PATCH', headers: wsHdr, body: JSON.stringify({ values: [[val]] })
+      }).catch(() => {});
+    }
+  };
+
     if (isRadon && radonSheet) {
-      // Radon template has same layout as standard — use fillSheet normally
+      // Radon template: Lab ID=I7, Date=I8, Time=J8, DateRec=I9, TimeRec=J9, DateRep=I10
+      await writeHeaders(radonSheet.id, [
+        ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
+      ]);
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
 
       // Write known cells directly: authorized by, review date, analysis date/time
@@ -429,6 +428,10 @@ app.http('render-report-pdf', {
       if (specSheet) {
         await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       }
+      // Standard template: Lab ID=H7, Date=H8, Time=I8, DateRec=H9, TimeRec=I9, DateRep=H10
+      await writeHeaders(labSheet.id, [
+        ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
+      ]);
       await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
 
       // Write authorized by and review date directly to known cell positions
