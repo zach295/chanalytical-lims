@@ -429,12 +429,9 @@ app.http('render-report-pdf', {
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
       const wbHdr3  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
-      const radonParam  = params.find(p => /radon/i.test(p.name));
-      const radonAnalDT = radonParam?.analDT || radonParam?.time || '';
       const directWrites = [
         ['E24', authorizedBy || ''],
         ['J24', reviewDate   || ''],
-        ['I18', radonAnalDT],   // Analysis Date/Time for Radon Water
       ];
       for (const [addr, val] of directWrites) {
         if (val) await fetch(`${wsBase3}/range(address='${addr}')`, {
