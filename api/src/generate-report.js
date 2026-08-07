@@ -241,6 +241,8 @@ async function getSampleMeta(baseId) {
     }
 
     const tests = [...new Set(matches.map(r => r.field_2).filter(Boolean))];
+    // Debug: log what was found
+    console.log('[getSampleMeta] merged:', JSON.stringify(merged));
 
     return {
       customer:     merged.customer     || '',
@@ -379,6 +381,7 @@ app.http('generate-report', {
 
       context.log(`[gen] services: ${JSON.stringify(services)}`);
       log.push(`services: ${services.join(', ')}`);
+      log.push(`meta-debug: location="${meta.location||''}" city="${meta.city||''}" dateDrawn="${meta.dateDrawn||''}"`);
       const isRadon      = services.some(s => /radon/i.test(s));
 
       // ── Get radon result from already-fetched Results Cache ──────────────
