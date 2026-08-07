@@ -415,6 +415,22 @@ app.http('render-report-pdf', {
     if (isRadon && radonSheet) {
       // Radon template has same layout as standard — use fillSheet normally
       await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+
+      // Write known cells directly: authorized by, review date, analysis date/time
+      const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
+      const wbHdr3  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      const radonParam  = params.find(p => /radon/i.test(p.name));
+      const radonAnalDT = [radonParam?.analDT, radonParam?.time].filter(Boolean)[0] || '';
+      const directWrites = [
+        ['E25', authorizedBy || ''],
+        ['J25', reviewDate   || ''],
+        ['I18', radonAnalDT],   // Analysis Date/Time for Radon Water
+      ];
+      for (const [addr, val] of directWrites) {
+        if (val) await fetch(`${wsBase3}/range(address='${addr}')`, {
+          method: 'PATCH', headers: wbHdr3, body: JSON.stringify({ values: [[val]] })
+        }).catch(()=>{});
+      }
       await fitOnePage(radonSheet.id);
       // Delete Spec sheet for radon reports
       if (specSheet) {
@@ -434,6 +450,15 @@ app.http('render-report-pdf', {
         await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       }
       await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+
+      // Write authorized by and review date directly to known cell positions
+      const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
+      const wbHdrLab  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      for (const [addr, val] of [['E25', authorizedBy||''],['J25', reviewDate||'']]) {
+        if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, {
+          method: 'PATCH', headers: wbHdrLab, body: JSON.stringify({ values: [[val]] })
+        }).catch(()=>{});
+      }
       await fitOnePage(labSheet.id);
     }
 
