@@ -5131,6 +5131,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <td style="width:50%;vertical-align:top;padding-right:16px;">
             <table style="border-collapse:collapse;width:100%;">
               <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.clientName||meta.customer,'meta:customer')}</td></tr>
+              <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.billingAddress||meta.location||'','meta:billingAddress')}</td></tr>
               <tr><td style="${S.labelTd}">Location:</td><td style="${S.valueTd}">${editable(meta.location,'meta:location')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable([meta.city,meta.state,meta.zip].filter(Boolean).join(', '),'meta:cityStateZip')}</td></tr>
               <tr><td style="${S.labelTd}">Sample Type:</td><td style="${S.valueTd}">${sampleType}</td></tr>
@@ -5163,10 +5164,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let bodyHtml = hdrHtml + legendHtml;
 
     if (isRadon) {
-      const radonRes  = resultsMap['Radon Water'] || {};
-      const rawVal    = parseFloat(radonRes.value) || 0;
-      const bg        = rawVal > 4000 ? '#FF4444' : (rawVal > 0 ? '#00CC44' : 'white');
-      const dispVal   = radonRes.value || '';
+      const radonRes    = resultsMap['Radon Water'] || {};
+      const rawVal      = parseFloat(radonRes.value) || 0;
+      const bg          = rawVal > 4000 ? '#FF4444' : (rawVal > 0 ? '#00CC44' : 'white');
+      const dispVal     = radonRes.value || '';
+      const radonDate   = data?.radon?.date || currentReportData?.radon?.date || '';
+      const radonTimeV  = radonRes.time || radonRes.analDT || data?.radon?.time || '';
+      const radonAnalDT = [radonDate, radonTimeV].filter(Boolean).join(' ');
       bodyHtml += `
         <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;">
           <tr>
@@ -5185,7 +5189,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <td style="${S.cell};text-align:center;">${editable(dispVal,'result:Radon Water','text-align:center;width:100%;')}</td>
             <td style="${S.cell};text-align:center;">4,000</td>
             <td style="${S.cell};text-align:center;">pCi/l</td>
-            <td style="${S.cell};text-align:center;">${editable(radonRes.time||radonRes.analDT||'','analDT:Radon Water','text-align:center;width:100%;')}</td>
+            <td style="${S.cell};text-align:center;">${editable(radonAnalDT,'analDT:Radon Water','text-align:center;width:100%;')}</td>
           </tr>
         </table>`;
     } else {
