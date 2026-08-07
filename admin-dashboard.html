@@ -5174,6 +5174,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;">
           <tr>
             <th style="${S.thCell};text-align:left;width:30%;">Parameter</th>
+            <th style="${S.thCell};width:28px;"></th>
             <th style="${S.thCell};">Your Result</th>
             <th style="${S.thCell};">EPA Limit</th>
             <th style="${S.thCell};">Unit</th>
@@ -5181,7 +5182,10 @@ document.addEventListener('DOMContentLoaded', function() {
           </tr>
           <tr>
             <td style="${S.cell};">Radon Water</td>
-            <td style="${S.cell};text-align:center;background:${bg};color:${rawVal>0?'black':'inherit'};">${editable(dispVal,'result:Radon Water','text-align:center;width:100%;')}</td>
+            <td style="${S.cell};padding:2px;text-align:center;">
+              <div style="width:18px;height:18px;background:${bg};margin:auto;border-radius:2px;"></div>
+            </td>
+            <td style="${S.cell};text-align:center;">${editable(dispVal,'result:Radon Water','text-align:center;width:100%;')}</td>
             <td style="${S.cell};text-align:center;">4,000</td>
             <td style="${S.cell};text-align:center;">pCi/l</td>
             <td style="${S.cell};text-align:center;">${editable(radonRes.time||radonRes.analDT||'','analDT:Radon Water','text-align:center;width:100%;')}</td>
