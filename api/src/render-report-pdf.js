@@ -209,10 +209,15 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT}`);
 
   // Map parameter names in sheet → row index
+  // Parameter names may be in col A (index 0) OR col B (index 1) depending on template
   const pMap = {};
   if (hdrRow >= 0) {
     for (let r = hdrRow + 1; r < rows.length; r++) {
-      const name = normalizeCell((rows[r] || [])[0]);
+      const row  = rows[r] || [];
+      // Try col A first, then col B (templates vary)
+      const nameA = normalizeCell(row[0]);
+      const nameB = normalizeCell(row[1]);
+      const name  = nameA || nameB;
       if (name) pMap[name] = r;
     }
   }
