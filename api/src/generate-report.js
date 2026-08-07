@@ -185,49 +185,11 @@ function combineDT(dateStr, timeStr) {
 // ── Get sample metadata from Archived Intake (field_X mapping) ────────────────
 async function getSampleMeta(baseId, token) {
   try {
-    const siteId = process.env.SP_SITE_ID;
-    const GRAPH  = 'https://graph.microsoft.com/v1.0';
-
-    // Get the Archived Intake list ID first
-    const listsRes = await fetch(
-      `${GRAPH}/sites/${siteId}/lists?$select=id,displayName`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!listsRes.ok) {
-      console.error('[getSampleMeta] lists fetch failed:', listsRes.status);
-      return null;
-    }
-    const allLists = (await listsRes.json()).value || [];
-    console.log('[getSampleMeta] all lists:', allLists.map(l => l.displayName).join(', '));
-    const listId = allLists.find(l => l.displayName === 'Archived Intake')?.id;
-    if (!listId) {
-      console.error('[getSampleMeta] Archived Intake list not found! Lists:', allLists.map(l=>l.displayName).join(', '));
-      return null;
-    }
-
-    // Fetch all items with all fields expanded
-    const itemsRes = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!itemsRes.ok) return null;
-    const items = ((await itemsRes.json()).value || [])
-      .map(i => i.fields || {});
+    // Use listItems() — same as accession-status.js which is proven to work
+    const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 999 });
 
     // Find rows where field_1 starts with baseId
-    console.log(`[getSampleMeta] total items: ${items.length}, looking for baseId=${baseId}`);
-    if (items.length > 0) {
-      console.log('[getSampleMeta] first item field_1:', items[0].field_1, 'keys:', Object.keys(items[0]).slice(0,10).join(','));
-    }
     const matches = items.filter(r => (r.field_1 || '').startsWith(baseId));
-    console.log(`[getSampleMeta] matches: ${matches.length}`);
-    if (matches.length > 0) {
-      console.log('[getSampleMeta] match fields:', JSON.stringify({
-        f1: matches[0].field_1, f2: matches[0].field_2, f3: matches[0].field_3,
-        f4: matches[0].field_4, f6: matches[0].field_6, f8: matches[0].field_8,
-        f9: matches[0].field_9
-      }));
-    }
     if (!matches.length) return null;
 
     // Merge data from all rows
