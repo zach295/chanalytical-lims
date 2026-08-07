@@ -5132,6 +5132,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <table style="border-collapse:collapse;width:100%;">
               <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.clientName||meta.customer,'meta:customer')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.billingAddress||meta.location||'','meta:billingAddress')}</td></tr>
+              <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.reportEmail||meta.email||'','meta:reportEmail')}</td></tr>
               <tr><td style="${S.labelTd}">Location:</td><td style="${S.valueTd}">${editable(meta.location,'meta:location')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable([meta.city,meta.state,meta.zip].filter(Boolean).join(', '),'meta:cityStateZip')}</td></tr>
               <tr><td style="${S.labelTd}">Sample Type:</td><td style="${S.valueTd}">${sampleType}</td></tr>
