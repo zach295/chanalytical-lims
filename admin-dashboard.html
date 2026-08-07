@@ -5005,7 +5005,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
       currentReportData.resultsMap[param].value = val;
       const color = getResultColor(param, val, currentReportData);
-      el.parentElement.style.background = color ? `#${color}` : '';
+      // Update the separate color box div (previous sibling td)
+      const resultTd   = el.closest('td');
+      const colorTd    = resultTd?.previousElementSibling;
+      const colorDiv   = colorTd?.querySelector('div');
+      const colorHex   = color === 'FF0000' ? '#FF4444'
+                       : color === '0000FF' ? '#0055CC'
+                       : color === '00CC00' || color === '00FF00' ? '#00CC44'
+                       : val ? '#00CC44' : '#e8e8e8';
+      if (colorDiv) colorDiv.style.background = colorHex;
     } else if (key.startsWith('prepDT:')) {
       const param = key.replace('prepDT:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
@@ -5048,7 +5056,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const cStyle = 'padding:5px 8px;border:1px solid #bbb;font-size:12px;vertical-align:middle;';
 
     let rows = `<tr>
-      <th style="${hStyle};text-align:left;width:35%;">Parameter</th>
+      <th style="${hStyle};text-align:left;width:32%;">Parameter</th>
+      <th style="${hStyle};width:28px;"></th>
       <th style="${hStyle}">Your Result</th>
       <th style="${hStyle}">EPA Limit</th>
       <th style="${hStyle}">Unit</th>
@@ -5059,14 +5068,17 @@ document.addEventListener('DOMContentLoaded', function() {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
       const color  = getResultColor(p.name, val, reportData);
-      const cellBg = color === 'FF0000' ? '#FF4444'
+      const boxBg  = color === 'FF0000' ? '#FF4444'
                    : color === '0000FF' ? '#0055CC'
                    : color === '00CC00' || color === '00FF00' ? '#00CC44'
-                   : val ? '#00CC44' : 'white';
+                   : val ? '#00CC44' : '#e8e8e8';
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
-        <td style="${cStyle};text-align:center;background:${cellBg};color:${val?'black':'inherit'};">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
+        <td style="${cStyle};padding:2px;text-align:center;">
+          <div style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;"></div>
+        </td>
+        <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
         <td style="${cStyle};text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
@@ -5227,6 +5239,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const authorizedBy = document.getElementById('rpt-authorized-by').value.trim();
     const reviewDate   = document.getElementById('rpt-review-date').value;
+
+    // ── Sync resultsMap edits back into activeParams before generating PDF ───
+    (currentReportData.activeParams || []).forEach(p => {
+      const res = currentReportData.resultsMap[p.name];
+      if (res) {
+        if (res.value  !== undefined) p.value  = res.value;
+        if (res.analDT !== undefined) { p.analDT = res.analDT; p.time = res.analDT; }
+        if (res.prepDT !== undefined) p.prepDT = res.prepDT;
+      }
+    });
+    (currentReportData.fhaParams || []).forEach(p => {
+      const res = currentReportData.resultsMap[p.name];
+      if (res) {
+        if (res.value  !== undefined) p.value  = res.value;
+        if (res.analDT !== undefined) { p.analDT = res.analDT; p.time = res.analDT; }
+        if (res.prepDT !== undefined) p.prepDT = res.prepDT;
+      }
+    });
+    // Sync radon result
+    if (currentReportData.isRadon) {
+      const radonRes = currentReportData.resultsMap['Radon Water'];
+      if (radonRes) {
+        if (!currentReportData.radon) currentReportData.radon = {};
+        if (radonRes.value !== undefined) currentReportData.radon.display = radonRes.value;
+        if (radonRes.time  !== undefined) currentReportData.radon.time    = radonRes.time;
+      }
+    }
     const statusEl     = document.getElementById('rpt-send-status');
     const emailInput   = document.getElementById('rpt-send-email-input');
     const overrideEmail = emailInput?.value.trim() || '';
