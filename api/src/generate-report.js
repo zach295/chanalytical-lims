@@ -553,6 +553,8 @@ app.http('generate-report', {
 
       // For radon: add result as a parameter row so fillSheet handles it like any other
       if (isRadon && radonResult.display) {
+        // Combine date + time for analysis date/time column
+        const radonAnalDT = [radonResult.date, radonResult.time].filter(Boolean).join(' ');
         paramRows.push({
           name:   'Radon Water',
           value:  radonResult.display,
@@ -560,7 +562,8 @@ app.http('generate-report', {
           epa:    '4,000',
           rl:     '',
           color:  radonResult.color || 'green',
-          analDT: radonResult.time  || '',
+          analDT: radonAnalDT,
+          time:   radonResult.time  || '',
           prepDT: '',
           method: '',
         });
