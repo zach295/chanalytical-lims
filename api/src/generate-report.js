@@ -183,10 +183,8 @@ function combineDT(dateStr, timeStr) {
 }
 
 // ── Get sample metadata from Archived Intake (field_X mapping) ────────────────
-async function getSampleMeta(baseId) {
+async function getSampleMeta(baseId, token) {
   try {
-    // Direct Graph API call — bypass listItems() to ensure all field_N are returned
-    const token  = await getToken();
     const siteId = process.env.SP_SITE_ID;
     const GRAPH  = 'https://graph.microsoft.com/v1.0';
 
@@ -342,7 +340,7 @@ app.http('generate-report', {
 
       // ── Fetch data in parallel ──────────────────────────────────────────────
       const [metaRaw, cache, clientRaw] = await Promise.all([
-        getSampleMeta(baseId), // always read from Archived Intake for dates/location
+        getSampleMeta(baseId, token), // always read from Archived Intake for dates/location
         getResultsCache(baseId),
         getToken().then(t => getClientInfo(
           formatCustomerName(frontendMeta?.customer || ''),
