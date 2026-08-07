@@ -223,6 +223,13 @@ async function getSampleMeta(baseId) {
     }
     const matches = items.filter(r => (r.field_1 || '').startsWith(baseId));
     console.log(`[getSampleMeta] matches: ${matches.length}`);
+    if (matches.length > 0) {
+      console.log('[getSampleMeta] match fields:', JSON.stringify({
+        f1: matches[0].field_1, f2: matches[0].field_2, f3: matches[0].field_3,
+        f4: matches[0].field_4, f6: matches[0].field_6, f8: matches[0].field_8,
+        f9: matches[0].field_9
+      }));
+    }
     if (!matches.length) return null;
 
     // Merge data from all rows
@@ -381,7 +388,7 @@ app.http('generate-report', {
 
       context.log(`[gen] services: ${JSON.stringify(services)}`);
       log.push(`services: ${services.join(', ')}`);
-      log.push(`meta-debug: location="${meta.location||''}" city="${meta.city||''}" dateDrawn="${meta.dateDrawn||''}"`);
+      log.push(`meta-debug: location="${meta.location||''}" city="${meta.city||''}" dateDrawn="${meta.dateDrawn||''}" meta_keys="${Object.keys(meta).join(',')}"`);
       const isRadon      = services.some(s => /radon/i.test(s));
 
       // ── Get radon result from already-fetched Results Cache ──────────────
