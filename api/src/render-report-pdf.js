@@ -213,16 +213,22 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT}`);
 
   // Map parameter names in sheet → row index
-  // Parameter names may be in col A (index 0) OR col B (index 1) depending on template
+  // Only scan rows immediately after the header — stop at blank row or notation row
   const pMap = {};
   if (hdrRow >= 0) {
+    let emptyStreak = 0;
     for (let r = hdrRow + 1; r < rows.length; r++) {
-      const row  = rows[r] || [];
-      // Try col A first, then col B (templates vary)
+      const row   = rows[r] || [];
       const nameA = normalizeCell(row[0]);
       const nameB = normalizeCell(row[1]);
       const name  = nameA || nameB;
-      if (name) pMap[name] = r;
+      // Stop if we hit a notation/comments/footer row
+      if (name && (name.startsWith('notation') || name.startsWith('comment') || 
+                   name.startsWith('this report') || name.startsWith('analytical') ||
+                   name.startsWith('authorized') || name.startsWith('reporting limit'))) break;
+      if (!name) { emptyStreak++; if (emptyStreak >= 2) break; continue; }
+      emptyStreak = 0;
+      pMap[name] = r;
     }
   }
   const paramNames = params.map(p => normalizeCell(p.name));
@@ -424,10 +430,10 @@ app.http('render-report-pdf', {
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
       const wbHdr3  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
       const radonParam  = params.find(p => /radon/i.test(p.name));
-      const radonAnalDT = [radonParam?.analDT, radonParam?.time].filter(Boolean)[0] || '';
+      const radonAnalDT = radonParam?.analDT || radonParam?.time || '';
       const directWrites = [
-        ['E25', authorizedBy || ''],
-        ['J25', reviewDate   || ''],
+        ['E24', authorizedBy || ''],
+        ['J24', reviewDate   || ''],
         ['I18', radonAnalDT],   // Analysis Date/Time for Radon Water
       ];
       for (const [addr, val] of directWrites) {
@@ -458,7 +464,7 @@ app.http('render-report-pdf', {
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
       const wbHdrLab  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
-      for (const [addr, val] of [['E25', authorizedBy||''],['J25', reviewDate||'']]) {
+      for (const [addr, val] of [['E24', authorizedBy||''],['J24', reviewDate||'']]) {
         if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, {
           method: 'PATCH', headers: wbHdrLab, body: JSON.stringify({ values: [[val]] })
         }).catch(()=>{});
