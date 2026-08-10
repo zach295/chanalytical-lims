@@ -5139,13 +5139,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const hStyle = 'background:#1F3864;color:white;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #1F3864;text-align:center;';
     const cStyle = 'padding:5px 8px;border:1px solid #bbb;font-size:12px;vertical-align:middle;';
 
+    const isBac = name => /coliform|e\.?\s*coli/i.test(name);
+
     let rows = `<tr>
-      <th style="${hStyle};text-align:left;width:32%;">Parameter</th>
+      <th style="${hStyle};text-align:left;width:28%;">Parameter</th>
       <th style="${hStyle};width:28px;"></th>
       <th style="${hStyle}">Your Result</th>
       <th style="${hStyle}">EPA Limit</th>
       <th style="${hStyle}">Unit</th>
-      <th style="${hStyle}">Analysis Date/Time</th>
+      <th style="${hStyle}">Start Date/Time</th>
+      <th style="${hStyle}">End Date/Time</th>
     </tr>`;
 
     params.forEach(p => {
@@ -5156,7 +5159,9 @@ document.addEventListener('DOMContentLoaded', function() {
                    : color === '0000FF' ? '#0055CC'
                    : color === '00CC00' || color === '00FF00' ? '#00CC44'
                    : val ? '#00CC44' : '#e8e8e8';
+      const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
+      const bac    = isBac(p.name);
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
@@ -5165,6 +5170,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
+        <td style="${cStyle};text-align:center;">${bac ? editable(prepDT, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepDT || '')}</td>
         <td style="${cStyle};text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
       </tr>`;
     });
