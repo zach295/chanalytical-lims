@@ -483,7 +483,7 @@ app.http('render-report-pdf', {
     await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
     context.log('[pdf] Temp file deleted');
 
-    const reportFileName = `${labId} Report.pdf`;
+    const reportFileName = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
     return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
 });
