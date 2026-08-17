@@ -128,7 +128,7 @@ app.http('send-report', {
   handler: async (request, context) => {
     try {
       const body       = await request.json().catch(() => ({}));
-      const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName } = body;
+      const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName, location, isRadon } = body;
       const resolvedEmail = overrideEmail || overrideEmail2 || '';
       if (!labId)     return { status: 400, jsonBody: { error: 'labId required' } };
       if (!pdfBase64) return { status: 400, jsonBody: { error: 'pdfBase64 required' } };
