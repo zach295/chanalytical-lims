@@ -321,7 +321,10 @@ app.http('generate-report', {
 
       // Look up client — try raw stored name first (e.g. "Public-Chandler, Zach")
       // then formatted name (e.g. "Zach Chandler")
-      const rawName       = meta.customer || '';
+      const rawName0      = (meta.customer || '').replace(/^Public-/i, '').trim();
+      const rawName       = rawName0.includes(', ')
+        ? rawName0.split(', ').reverse().join(' ')
+        : rawName0;
       const formattedName = formatCustomerName(rawName);
       const clientInfo = await getClientInfo(rawName, token)
         .then(async c => {
