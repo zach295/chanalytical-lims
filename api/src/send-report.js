@@ -50,7 +50,7 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments) {
     `From: ${FROM_NAME} <${FROM_EMAIL}>`,
     `To: ${clientName ? `${clientName} <${toEmail}>` : toEmail}`,
     `CC: ${FROM_EMAIL}`,
-    `Subject: Certificate of Analysis — ${labId}`,
+    `Subject: ${location ? `${location} ${isRadon ? 'RW ' : ''}Lab Report` : `Certificate of Analysis - ${labId}`}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
