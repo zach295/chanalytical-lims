@@ -128,7 +128,8 @@ app.http('send-report', {
   handler: async (request, context) => {
     try {
       const body       = await request.json().catch(() => ({}));
-      const { labId, pdfBase64, toEmail: overrideEmail, clientName: overrideName } = body;
+      const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName } = body;
+      const resolvedEmail = overrideEmail || overrideEmail2 || '';
       if (!labId)     return { status: 400, jsonBody: { error: 'labId required' } };
       if (!pdfBase64) return { status: 400, jsonBody: { error: 'pdfBase64 required' } };
 
@@ -136,7 +137,7 @@ app.http('send-report', {
       const token  = await getToken();
 
       // Get client email from Clients list if not overridden
-      let toEmail    = overrideEmail || '';
+      let toEmail    = resolvedEmail || '';
       let clientName = overrideName  || '';
       if (!toEmail) {
         const clientsRes = await fetch(
