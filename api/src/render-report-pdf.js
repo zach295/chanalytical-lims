@@ -120,12 +120,19 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
   if (attLbl) {
-    const m      = meta || {};
-    const attCol = attLbl.c + 1;
-    addCell(attLbl.r,     attCol, m.clientName || m.customer || '');
-    if (m.billingAddress)                    addCell(attLbl.r + 1, attCol, m.billingAddress);
+    const m             = meta || {};
+    const attCol        = attLbl.c + 1;
+    const cityStateZip  = [m.city, m.state, m.zip].filter(Boolean).join(', ');
+    const fullSampleAddr = [m.location, cityStateZip].filter(Boolean).join(', ');
+    const attAddress    = m.billingAddress || fullSampleAddr || '';
+    const rawNameStr    = (m.clientName || m.customer || '').replace(/^Public-/i, '').trim();
+    const cleanName     = rawNameStr.includes(', ')
+      ? rawNameStr.split(', ').reverse().join(' ')
+      : rawNameStr;
+    addCell(attLbl.r,     attCol, cleanName);
+    if (attAddress)  addCell(attLbl.r + 1, attCol, attAddress);
     const emailLine = m.reportEmail || m.email || '';
-    if (emailLine)                           addCell(attLbl.r + 2, attCol, emailLine);
+    if (emailLine)   addCell(attLbl.r + 2, attCol, emailLine);
   }
 
 
