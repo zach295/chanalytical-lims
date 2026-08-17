@@ -321,15 +321,19 @@ app.http('generate-report', {
 
       // Look up client — try raw stored name first (e.g. "Public-Chandler, Zach")
       // then formatted name (e.g. "Zach Chandler")
-      const rawName0      = (meta.customer || '').replace(/^Public-/i, '').trim();
+      // Use original customer name for Clients list lookup (preserves "Public-" prefix and "Last, First" format)
+      const lookupName    = meta.customer || '';
+      // Clean display name: strip "Public-" and reverse "Last, First" to "First Last"
+      const rawName0      = lookupName.replace(/^Public-/i, '').trim();
       const rawName       = rawName0.includes(', ')
         ? rawName0.split(', ').reverse().join(' ')
         : rawName0;
-      const formattedName = formatCustomerName(rawName);
-      const clientInfo = await getClientInfo(rawName, token)
+      const formattedName = formatCustomerName(lookupName);
+      const clientInfo = await getClientInfo(lookupName, token)
         .then(async c => {
           if (c.email) return c;
-          if (rawName !== formattedName) return getClientInfo(formattedName, token).catch(() => c);
+          // Also try with formatted/reversed name as fallback
+          if (lookupName !== rawName) return getClientInfo(rawName, token).catch(() => c);
           return c;
         })
         .catch(() => empty);
@@ -586,9 +590,11 @@ app.http('generate-report', {
           today:      todayStr,
           log,
           meta: {
-            customer:     formatCustomerName(meta.customer || ''),
-            // clientName from Clients list takes priority over raw intake customer name
-            clientName:   clientInfo.clientName || formatCustomerName(meta.customer || ''),
+            customer:     rawName || formatCustomerName(meta.customer || ''),
+            // clientName from Clients list takes priority, fall back to cleaned display name
+            clientName:   clientInfo.clientName
+              ? clientInfo.clientName.replace(/^Public-/i,'').trim().replace(/^([^,]+),\s*(.+)$/, '$2 $1')
+              : rawName || formatCustomerName(meta.customer || ''),
             email:            clientInfo.email            || '',
             reportEmail:      clientInfo.reportEmail      || '',
             billingEmail:     clientInfo.billingEmail     || '',
