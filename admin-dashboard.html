@@ -5199,7 +5199,9 @@ document.addEventListener('DOMContentLoaded', function() {
       section:  'margin-bottom:12px;',
     };
 
-    const locationLine = [meta.location, [meta.city, meta.state, meta.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+    const cityStateZip  = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+    const fullSampleAddr = [meta.location, cityStateZip].filter(Boolean).join(', ');
+    const attAddress    = meta.billingAddress || fullSampleAddr || '';
     const sampleType   = isRadon ? 'Radon Water' : 'Potability';
 
     const hdrHtml = `
@@ -5224,7 +5226,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <td style="width:50%;vertical-align:top;padding-right:16px;">
             <table style="border-collapse:collapse;width:100%;">
               <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.clientName||meta.customer,'meta:customer')}</td></tr>
-              <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.billingAddress || [meta.location, [meta.city, meta.state, meta.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ') || '','meta:billingAddress')}</td></tr>
+              <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(attAddress,'meta:billingAddress')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.reportEmail||meta.email||'','meta:reportEmail')}</td></tr>
               <tr><td style="${S.labelTd}">Location:</td><td style="${S.valueTd}">${editable(meta.location,'meta:location')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable([meta.city,meta.state,meta.zip].filter(Boolean).join(', '),'meta:cityStateZip')}</td></tr>
@@ -5398,9 +5400,11 @@ document.addEventListener('DOMContentLoaded', function() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             labId,
-            pdfBase64:  pdfData.pdfBase64,
-            fileName:   pdfData.fileName,
-            reportType: currentReportData.reportType,
+            pdfBase64:   pdfData.pdfBase64,
+            fileName:    pdfData.fileName,
+            reportType:  currentReportData.reportType,
+            isRadon:     currentReportData.isRadon || false,
+            location:    currentReportData.meta?.location || '',
             authorizedBy,
             overrideEmail,
           }),
