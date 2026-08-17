@@ -85,16 +85,18 @@ function buildEmailBody(clientName, labId) {
     <p style="color:#cde;margin:4px 0 0;">Certificate of Analysis</p>
   </div>
   <div style="padding:24px;">
-    <p>Dear ${clientName},</p>
-    <p>Please find attached your Certificate of Analysis for lab sample <strong>${labId}</strong>.</p>
-    <p>If you have any questions regarding your results, please don't hesitate to contact us.</p>
+    <p>Please find the attached Radon Water report.</p>
+    <p style="margin:0;">Respectfully,</p>
     <br>
     <p style="margin:0;"><strong>Chanalytical Laboratories, Inc.</strong></p>
-    <p style="margin:0;">347 Main St., Unit 1B &nbsp;|&nbsp; Gorham, ME 04038</p>
-    <p style="margin:0;">Phone: ${PHONE} &nbsp;|&nbsp; Email: ${FROM_EMAIL}</p>
+    <p style="margin:0;">347 Main St., Unit 1B</p>
+    <p style="margin:0;">Gorham, ME 04038</p>
+    <p style="margin:0;">(207) 747-1815</p>
   </div>
-  <div style="background:#f4f4f4;padding:12px;text-align:center;font-size:11px;color:#888;">
-    This report shall not be reproduced, except in full, without written permission from Chanalytical Laboratories Inc.
+  <div style="padding:16px 24px;border-top:1px solid #eee;">
+    <p style="font-size:10px;color:#aaa;line-height:1.5;margin:0;">
+      CONFIDENTIALITY NOTICE: The contents of this email message and any attachments are intended solely for the addressee(s) and may contain confidential and/or privileged information and may be legally protected from disclosure. If you are not the intended recipient of this message or their agent, or if this message has been addressed to you in error, please immediately alert the sender by reply email and then delete this message and any attachments. If you are not the intended recipient, you are hereby notified that any use, dissemination, copying, or storage of this message or its attachments is strictly prohibited.
+    </p>
   </div>
 </body></html>`;
 }
