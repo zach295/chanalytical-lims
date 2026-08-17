@@ -5036,7 +5036,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Populate email field from meta or _clientsData lookup
       const emailInput = document.getElementById('rpt-send-email-input');
-      let reportEmail = data.meta?.email || '';
+      let reportEmail = data.meta?.reportEmail || data.meta?.email || '';
       if (!reportEmail && data.meta?.customer) {
         const custLower = data.meta.customer.toLowerCase().trim();
         // Try _clientsData (already in memory)
