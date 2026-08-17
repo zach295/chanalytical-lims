@@ -5263,7 +5263,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const radonRes    = resultsMap['Radon Water'] || {};
       const rawVal      = parseFloat(radonRes.value) || 0;
       const bg          = rawVal > 4000 ? '#FF4444' : (rawVal > 0 ? '#00CC44' : 'white');
-      const dispVal     = radonRes.value || '';
+      const dispVal     = !radonRes.value ? ''
+                        : rawVal < 100 ? '<100'
+                        : String(Math.round(rawVal / 100) * 100);
       const radonDate   = data?.radon?.date || currentReportData?.radon?.date || '';
       const radonTimeV  = radonRes.time || radonRes.analDT || data?.radon?.time || '';
       const radonAnalDT = [radonDate, radonTimeV].filter(Boolean).join(' ');
