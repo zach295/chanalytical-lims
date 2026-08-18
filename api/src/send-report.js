@@ -44,7 +44,7 @@ async function getGmailToken() {
 }
 
 // ── Build MIME email with PDF attachment ──────────────────────────────────────
-function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments) {
+function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, location, isRadon) {
   const boundary = 'coa_boundary_' + Date.now();
   const lines = [
     `From: ${FROM_NAME} <${FROM_EMAIL}>`,
@@ -193,7 +193,7 @@ app.http('send-report', {
 
       // Build and send MIME message
       const htmlBody = buildEmailBody(clientName || 'Valued Client', labId);
-      const raw      = buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments);
+      const raw      = buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, location, isRadon);
 
       const sendRes = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(FROM_EMAIL)}/messages/send`,
