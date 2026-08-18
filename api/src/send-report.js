@@ -49,7 +49,6 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, loc
   const lines = [
     `From: ${FROM_NAME} <${FROM_EMAIL}>`,
     `To: ${clientName ? `${clientName} <${toEmail}>` : toEmail}`,
-    `CC: ${FROM_EMAIL}`,
     `Subject: ${location ? `${location} ${isRadon ? 'RW ' : ''}Lab Report` : `Certificate of Analysis - ${labId}`}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -80,12 +79,8 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, loc
 function buildEmailBody(clientName, labId) {
   return `<!DOCTYPE html>
 <html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:600px;margin:0 auto;">
-  <div style="background:#1F3864;padding:20px;text-align:center;">
-    <h2 style="color:white;margin:0;">Chanalytical Laboratories, Inc.</h2>
-    <p style="color:#cde;margin:4px 0 0;">Certificate of Analysis</p>
-  </div>
   <div style="padding:24px;">
-    <p>Please find the attached Radon Water report.</p>
+    <p>Please find the attached water analysis report.</p>
     <p style="margin:0;">Respectfully,</p>
     <br>
     <p style="margin:0;"><strong>Chanalytical Laboratories, Inc.</strong></p>
