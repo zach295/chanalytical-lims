@@ -4,7 +4,7 @@
  * with Google Service Account domain-wide delegation
  */
 const { app }      = require('@azure/functions');
-const { getToken } = require('../shared/graph');
+const { getToken, createItem } = require('../shared/graph');
 const crypto       = require('crypto');
 
 const GRAPH      = 'https://graph.microsoft.com/v1.0';
@@ -176,6 +176,22 @@ app.http('send-report', {
         } catch (e) { context.log('[send-report] COC attach failed:', e.message); }
       }
 
+      // Skip email if saveOnly
+      if (body.saveOnly) {
+        // Just log and return
+        const now2     = new Date();
+        const logDate2 = now2.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const logTime2 = now2.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${logDate2} ${labId}`, Client: labId,
+          ActivityType: 'Report Saved',
+          Notes: 'PDF downloaded by lab staff',
+          By: authorizedBy || 'Lab Staff',
+          LogDate: logDate2, LogTime: logTime2, Quantity: 0,
+        }).catch(() => {});
+        return { status: 200, jsonBody: { success: true, logged: true } };
+      }
+
       // Get Gmail access token
       const gmailToken = await getGmailToken();
 
@@ -199,6 +215,25 @@ app.http('send-report', {
       }
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
+
+      // Log to Activity Log
+      try {
+        const now     = new Date();
+        const logDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const logTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        const action  = body.saveOnly ? 'Report Saved' : 'Report Emailed';
+        await createItem('Activity Log', {
+          Title:        `${logDate} ${labId}`,
+          Client:       labId,
+          ActivityType: action,
+          Notes:        body.saveOnly ? `PDF saved` : `Emailed to ${toEmail}`,
+          By:           body.authorizedBy || 'Lab Staff',
+          LogDate:      logDate,
+          LogTime:      logTime,
+          Quantity:     0,
+        }).catch(() => {});
+      } catch(e) { context.log('[send-report] ActivityLog error:', e.message); }
+
       return { status: 200, jsonBody: {
         success:     true,
         sentTo:      toEmail,
