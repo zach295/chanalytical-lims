@@ -170,7 +170,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // Map parameter names in sheet → row index
   // Only scan rows immediately after the header — stop at blank row or notation row
   const pMap = {};
-  global._lastPMap = pMap; // debug
   if (hdrRow >= 0) {
     let emptyStreak = 0;
     for (let r = hdrRow + 1; r < rows.length; r++) {
@@ -501,6 +500,6 @@ app.http('render-report-pdf', {
     context.log('[pdf] Temp file deleted');
 
     const reportFileName = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName, _pMapDebug: global._lastPMap } };
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
 });
