@@ -181,7 +181,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (name && (name.startsWith('notation') || name.startsWith('comment') || 
                    name.startsWith('this report') || name.startsWith('analytical') ||
                    name.startsWith('authorized') || name.startsWith('reporting limit'))) break;
-      if (!name) { emptyStreak++; if (emptyStreak >= 2) break; continue; }
+      if (!name) { emptyStreak++; if (emptyStreak >= 5) break; continue; }
       emptyStreak = 0;
       pMap[name] = r;
     }
