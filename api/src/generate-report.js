@@ -140,7 +140,7 @@ function formatResult(rawVal, rl, decimals) {
   const n = parseFloat(rawVal);
   if (isNaN(n)) return String(rawVal).trim();
   if (rl !== null && rl !== undefined && n < rl) return `<${rl}`;
-  if (decimals !== undefined && decimals !== null) return n.toFixed(decimals);
+  if (decimals !== undefined && decimals !== null) return parseFloat(n.toFixed(decimals)).toString();
   return parseFloat(n.toFixed(6)).toString();
 }
 
