@@ -78,21 +78,33 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, loc
 // ── Build HTML email body ─────────────────────────────────────────────────────
 function buildEmailBody(clientName, labId) {
   return `<!DOCTYPE html>
-<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:600px;margin:0 auto;">
-  <div style="padding:24px;">
-    <p>Please find the attached water analysis report.</p>
-    <p style="margin:0;">Respectfully,</p>
-    <br>
-    <p style="margin:0;"><strong>Chanalytical Laboratories, Inc.</strong></p>
-    <p style="margin:0;">347 Main St., Unit 1B</p>
-    <p style="margin:0;">Gorham, ME 04038</p>
-    <p style="margin:0;">(207) 747-1815</p>
-  </div>
-  <div style="padding:16px 24px;border-top:1px solid #eee;">
-    <p style="font-size:10px;color:#aaa;line-height:1.5;margin:0;">
-      CONFIDENTIALITY NOTICE: The contents of this email message and any attachments are intended solely for the addressee(s) and may contain confidential and/or privileged information and may be legally protected from disclosure. If you are not the intended recipient of this message or their agent, or if this message has been addressed to you in error, please immediately alert the sender by reply email and then delete this message and any attachments. If you are not the intended recipient, you are hereby notified that any use, dissemination, copying, or storage of this message or its attachments is strictly prohibited.
-    </p>
-  </div>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:4px;overflow:hidden;max-width:600px;width:100%;">
+        <!-- Body -->
+        <tr><td style="padding:36px 40px 24px;color:#222;font-size:14px;line-height:1.6;">
+          <p style="margin:0 0 16px;">Please find the attached water analysis report.</p>
+          <p style="margin:0 0 4px;">Respectfully,</p>
+          <p style="margin:0 0 4px;"><strong>Chanalytical Laboratories, Inc.</strong></p>
+          <p style="margin:0 0 4px;">347 Main St., Unit 1B</p>
+          <p style="margin:0 0 4px;">Gorham, ME 04038</p>
+          <p style="margin:0;">(207) 747-1815</p>
+        </td></tr>
+        <!-- Divider -->
+        <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #eeeeee;margin:0;"></td></tr>
+        <!-- Confidentiality -->
+        <tr><td style="padding:16px 40px 32px;font-size:10px;color:#aaaaaa;line-height:1.5;">
+          CONFIDENTIALITY NOTICE: The contents of this email message and any attachments are intended solely for the addressee(s) and may contain confidential and/or privileged information and may be legally protected from disclosure. If you are not the intended recipient of this message or their agent, or if this message has been addressed to you in error, please immediately alert the sender by reply email and then delete this message and any attachments. If you are not the intended recipient, you are hereby notified that any use, dissemination, copying, or storage of this message or its attachments is strictly prohibited.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body></html>`;
 }
 
