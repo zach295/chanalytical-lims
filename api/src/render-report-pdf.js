@@ -198,7 +198,11 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const toDelete = [];
 
   for (const [nameLow, ri] of Object.entries(pMap)) {
-    const p = params.find(x => normalizeCell(x.name) === nameLow);
+    // Match by exact name OR partial match (template may omit ", Total" suffix)
+    const p = params.find(x => {
+      const pn = normalizeCell(x.name);
+      return pn === nameLow || pn.startsWith(nameLow) || nameLow.startsWith(pn);
+    });
     if (!p) {
       toDelete.push(ri + 1); // 1-based row number
     } else {
