@@ -5161,7 +5161,11 @@ document.addEventListener('DOMContentLoaded', function() {
                    : val ? '#00CC44' : '#e8e8e8';
       const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
-      const bac    = isBac(p.name);
+      const bac      = isBac(p.name);
+      // Bacteria: Start=prepDT, End=analDT
+      // All others: Start=analDT, End=blank
+      const startDT  = bac ? prepDT : analDT;
+      const endDT    = bac ? analDT : '';
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
@@ -5170,8 +5174,8 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
-        <td style="${cStyle};text-align:center;">${bac ? editable(prepDT, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepDT || '')}</td>
-        <td style="${cStyle};text-align:center;">${editable(analDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
+        <td style="${cStyle};text-align:center;">${editable(startDT, bac ? 'prepDT:' + p.name : 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
+        <td style="${cStyle};text-align:center;">${bac ? editable(endDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : ''}</td>
       </tr>`;
     });
 
@@ -5435,6 +5439,15 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.removeChild(a2); URL.revokeObjectURL(url2);
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✅ PDF downloaded: ${pdfData2.fileName}`;
+        // Log to Activity Log
+        fetch('/api/send-report', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            labId, pdfBase64: pdfData2.pdfBase64, saveOnly: true,
+            authorizedBy, location: currentReportData.meta?.location || '',
+            isRadon: currentReportData.isRadon || false, overrideEmail: 'save@nolog',
+          }),
+        }).catch(()=>{});
         showToast('✅ PDF saved');
         // These lines prevent the print fallback from running
         const rLabId3 = currentReportData.labId || '';
