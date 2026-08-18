@@ -453,7 +453,19 @@ app.http('render-report-pdf', {
     }
 
     if (fhaSheet && needsFHA && fhaParams.length) {
+      // Write same header cells as standard template
+      await writeHeaders(fhaSheet.id, [
+        ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
+      ]);
       await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      // Write authorized by and review date
+      const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
+      const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
+        if (val) await fetch(`${wsBaseFHA}/range(address='${addr}')`, {
+          method: 'PATCH', headers: wbHdrFHA, body: JSON.stringify({ values: [[val]] })
+        }).catch(()=>{});
+      }
       await fitOnePage(fhaSheet.id);
     }
 
