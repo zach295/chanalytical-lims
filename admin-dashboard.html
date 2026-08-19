@@ -2336,7 +2336,9 @@ document.addEventListener('DOMContentLoaded', function() {
       await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
       const res  = await fetch('/api/get-scan-queue');
       const data = await res.json();
-      const scans = data.pending || [];
+      // Filter out locally-deleted scans (prevents re-appearance after F5)
+      const deletedScans = getDeletedScans();
+      const scans = (data.pending || []).filter(r => !deletedScans.has(r.fileId));
 
       // ── Approved Today + Northern Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
@@ -4206,8 +4208,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  // ── Deleted scans cache (persists across F5) ──────────────────────────────
+  const DELETED_SCANS_KEY = 'chanDeletedScans';
+  function getDeletedScans() {
+    try { return new Set(JSON.parse(localStorage.getItem(DELETED_SCANS_KEY) || '[]')); }
+    catch { return new Set(); }
+  }
+  function addDeletedScan(fileId) {
+    const set = getDeletedScans();
+    set.add(fileId);
+    // Keep only last 100 to prevent localStorage bloat
+    const arr = [...set].slice(-100);
+    localStorage.setItem(DELETED_SCANS_KEY, JSON.stringify(arr));
+  }
+
   async function discardScanCard(fileId, rowIndex) {
     if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
+
+    // Mark as deleted immediately in localStorage so it survives F5
+    addDeletedScan(fileId);
 
     // Remove card from UI immediately
     const card = document.getElementById(`scan-card-${fileId}`);
