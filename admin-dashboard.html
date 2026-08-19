@@ -3797,7 +3797,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const emailFieldHtml = `
       <div class="form-field" style="grid-column:1/-1;">
-        <label for="sc-${r.fileId}-email">Email Address${isNewClient ? ' <span style="font-size:11px;color:var(--warning);font-weight:400;">⚠️ New client</span>' : ''}</label>
+        <label for="sc-${r.fileId}-email">Report Email${isNewClient ? ' <span style="font-size:11px;color:var(--warning);font-weight:400;">⚠️ New client</span>' : ''}</label>
         <input type="text" id="sc-${r.fileId}-email" inputmode="email" autocomplete="new-password" spellcheck="false"
           value="${safeQ(clientEmail)}" placeholder="For report delivery"
           style="width:100%;padding:9px 12px;border:1.5px solid ${isNewClient?'var(--warning)':'var(--border)'};border-radius:8px;font-size:14px;" />
