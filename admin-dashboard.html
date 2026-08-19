@@ -1654,6 +1654,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
   let _clientsLastLoaded = 0;
   let _CLIENT_EMAILS     = {}; // map: clientName → report email
+  let _CLIENT_PHONES     = {}; // map: clientName → phone
   let _CLIENT_FLAGS      = {}; // map: clientName → warning message shown on scan card
 
   // Load from Sheets then render
@@ -2299,13 +2300,14 @@ document.addEventListener('DOMContentLoaded', function() {
       const clients = data.clients || [];
       _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
       _CLIENT_EMAILS = {};
+      _CLIENT_PHONES = {};
       for (const c of clients) {
         if (c.clientName) {
-          // reportEmail = Aliases field (Report Email Address)
           _CLIENT_EMAILS[c.clientName] = c.reportEmail || c.email || '';
-          // Also index by abbrev for matching
+          _CLIENT_PHONES[c.clientName] = c.phone || '';
           if (c.abbrev && c.abbrev !== 'PUBLIC') {
             _CLIENT_EMAILS[c.abbrev] = c.reportEmail || c.email || '';
+            _CLIENT_PHONES[c.abbrev] = c.phone || '';
           }
         }
       }
@@ -3890,11 +3892,14 @@ document.addEventListener('DOMContentLoaded', function() {
               const em = document.getElementById('sc-${r.fileId}-email');
               if (em) {
                 if (this.value) {
-                  // Known client selected — fill email from client map
+                  // Known client selected — fill email and phone from client map
                   const lookup = (_CLIENT_EMAILS && _CLIENT_EMAILS[this.value]) || '';
                   if (lookup) em.value = lookup;
+                  const ph = document.getElementById('sc-${r.fileId}-phone');
+                  const phoneLookup = (_CLIENT_PHONES && _CLIENT_PHONES[this.value]) || '';
+                  if (ph && phoneLookup) ph.value = phoneLookup;
                 } else {
-                  // Dropdown cleared — user will type a name; clear email so they can fill it
+                  // Dropdown cleared
                   em.value = '';
                 }
               }
