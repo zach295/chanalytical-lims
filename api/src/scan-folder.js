@@ -625,8 +625,13 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           ocr.zip      = fixZip(ocr.zip, ocr.state);
 
           // Validate email - must contain @ otherwise clear it
+          // If customer is also blank, rescue the name and use it as customer
           if (ocr.email && !ocr.email.includes('@')) {
             context.log(`[scan] Invalid email cleared: "${ocr.email}"`);
+            if (!ocr.customer) {
+              ocr.customer = ocr.email; // rescue misplaced name
+              context.log(`[scan] Rescued name "${ocr.customer}" from email field`);
+            }
             ocr.email = '';
           }
 
