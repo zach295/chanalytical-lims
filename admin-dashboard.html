@@ -1655,6 +1655,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let _clientsLastLoaded = 0;
   let _CLIENT_EMAILS     = {}; // map: clientName → report email
   let _CLIENT_PHONES     = {}; // map: clientName → phone
+  let _CLIENT_BADDRESS   = {}; // map: clientName → billing address
   let _CLIENT_FLAGS      = {}; // map: clientName → warning message shown on scan card
 
   // Load from Sheets then render
@@ -2299,15 +2300,18 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const clients = data.clients || [];
       _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
-      _CLIENT_EMAILS = {};
-      _CLIENT_PHONES = {};
+      _CLIENT_EMAILS   = {};
+      _CLIENT_PHONES   = {};
+      _CLIENT_BADDRESS = {};
       for (const c of clients) {
         if (c.clientName) {
-          _CLIENT_EMAILS[c.clientName] = c.reportEmail || c.email || '';
-          _CLIENT_PHONES[c.clientName] = c.phone || '';
+          _CLIENT_EMAILS[c.clientName]   = c.reportEmail || c.email || '';
+          _CLIENT_PHONES[c.clientName]   = c.phone || '';
+          _CLIENT_BADDRESS[c.clientName] = c.billingAddress || '';
           if (c.abbrev && c.abbrev !== 'PUBLIC') {
-            _CLIENT_EMAILS[c.abbrev] = c.reportEmail || c.email || '';
-            _CLIENT_PHONES[c.abbrev] = c.phone || '';
+            _CLIENT_EMAILS[c.abbrev]   = c.reportEmail || c.email || '';
+            _CLIENT_PHONES[c.abbrev]   = c.phone || '';
+            _CLIENT_BADDRESS[c.abbrev] = c.billingAddress || '';
           }
         }
       }
@@ -3793,7 +3797,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Use strict matching — avoid common words that cause false positives
 
     // Email — auto-filled from Clients list for known clients, OCR for new
-    const clientEmail  = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
+    // Validate email — must contain @ otherwise treat as empty
+    const rawEmail     = matchedClient ? (_CLIENT_EMAILS[matchedClient] || r.email || '') : (r.email || '');
+    const clientEmail  = rawEmail.includes('@') ? rawEmail : '';
     const isNewClient  = r.isNewClient === true || !matchedClient; // server flag or local detection
     const safeQ = s => (s||'').replace(/"/g,'&quot;');
 
@@ -3892,14 +3898,16 @@ document.addEventListener('DOMContentLoaded', function() {
               const em = document.getElementById('sc-${r.fileId}-email');
               if (em) {
                 if (this.value) {
-                  // Known client selected — fill email and phone from client map
-                  const lookup = (_CLIENT_EMAILS && _CLIENT_EMAILS[this.value]) || '';
-                  if (lookup) em.value = lookup;
+                  // Known client selected — fill email, phone, billing address
+                  const emailLookup = (_CLIENT_EMAILS && _CLIENT_EMAILS[this.value]) || '';
+                  if (emailLookup) em.value = emailLookup;
                   const ph = document.getElementById('sc-${r.fileId}-phone');
                   const phoneLookup = (_CLIENT_PHONES && _CLIENT_PHONES[this.value]) || '';
                   if (ph && phoneLookup) ph.value = phoneLookup;
+                  const ba = document.getElementById('sc-${r.fileId}-billingaddr');
+                  const baLookup = (_CLIENT_BADDRESS && _CLIENT_BADDRESS[this.value]) || '';
+                  if (ba && baLookup) ba.value = baLookup;
                 } else {
-                  // Dropdown cleared
                   em.value = '';
                 }
               }
