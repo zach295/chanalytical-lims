@@ -48,10 +48,11 @@ app.http('mark-scan-processed', {
 
       if (outcome === 'discarded') {
         try {
-          await deleteItem(LISTS.REVIEW_QUEUE, row);
-          context.log(`[mark-scan-processed] Deleted Review Queue item ${row}`);
+          // Mark as Processed so get-scan-queue filters it out (same as approve)
+          await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' });
+          context.log(`[mark-scan-processed] Marked discarded item ${row} as Processed`);
         } catch(deleteErr) {
-          context.log(`[mark-scan-processed] Delete failed for row ${row}:`, deleteErr.message);
+          context.log(`[mark-scan-processed] Update failed for row ${row}:`, deleteErr.message);
         }
         if (fileId) {
           const token = await getToken();
@@ -68,7 +69,7 @@ app.http('mark-scan-processed', {
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, driveDeleted: !!fileId }),
+        body: JSON.stringify({ success: true, driveDeleted: !!fileId, row, outcome }),
       };
     } catch(e) {
       context.log('[mark-scan-processed] Error:', e.message);
