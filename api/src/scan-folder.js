@@ -630,16 +630,10 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ocr.email = '';
           }
 
-          // Strip city/state/zip from billing address if OCR included them
-          if (ocr.billingAddress) {
-            ocr.billingAddress = ocr.billingAddress
-              .replace(/,?\s+[A-Za-z\s]+,\s*[A-Z]{2},?\s*\d{5}(-\d{4})?$/, '')
-              .trim();
-          }
-
-          // For public customers with no billing address, use street address only
+          // For public customers with no billing address, build full address
           if (!ocr.billingAddress) {
-            if (ocr.location) ocr.billingAddress = ocr.location;
+            const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
+            if (parts.length) ocr.billingAddress = parts.join(', ');
           }
 
           // ── Hallucination check ───────────────────────────────────────────────
