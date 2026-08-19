@@ -504,7 +504,7 @@ FIRST — determine form type:
 
 - customer:
   • PUBLIC FORM: Find the person's full name. Look in this order: 1) "Name:" field in "CUSTOMER & PROPERTY INFORMATION" or "CUSTOMER:" section 2) "Owner:" or "Submitter:" label 3) Any First Last name near the address, phone, or email. Never return "" if any name is visible anywhere on the form.
-  • BUSINESS FORM: The "REPORT TO BE SENT TO:" section may contain a checkbox list of multiple company names. ⛔ NEVER use the first name you see — you MUST find which one is CHECKED, MARKED, CIRCLED, or has an X/checkmark next to it. Only the marked company is the customer. If it is a fill-in line (not a checkbox list), copy exactly what is handwritten or typed. ⛔ If the section is BLANK, EMPTY, or nothing is written or marked → return "" — NEVER guess or fill in a company name. ⛔ NEVER substitute or replace what is marked/written with any other company name. ⛔ NEVER invent a company name. If nothing is marked or written → return "". ⛔ Never use form titles or guess.
+  • BUSINESS FORM: The "REPORT TO BE SENT TO:" section may contain a checkbox list of multiple company names. Find which one is CHECKED, MARKED, CIRCLED, or has an X/checkmark/tick/filled box next to it — look for any mark including a dot, dash, or scribble next to the name. If it is a fill-in blank line (not a checkbox list), copy exactly what is handwritten or typed there. If only one company appears and no others, use it. ⛔ If the section is truly BLANK with nothing written or marked → return "". ⛔ NEVER invent a company name.
 - location: Street address — for public forms use the Address field in CUSTOMER & PROPERTY INFORMATION (TOP section); for business forms use the Well Owner section (MIDDLE section). Include ALL lines under the "Address:" label until the next label (City:, State:, etc.) even if they look like partial words — e.g. "was" after a street name is likely "Way" misread by OCR, include it. No periods or commas. If a circled T or ⊕ symbol appears → set waterType to "Treated". ⛔ Never use Report To address.
 - city/state/zip: from MIDDLE OF FORM (Well Owner) ONLY. Maine zip starts with 04, NH starts with 03.
 - email: For PUBLIC forms, extract from "E-mail:" field in CUSTOMER & PROPERTY INFORMATION section. The email may span TWO lines (e.g. "travis.john.gould" on one line and "@gmail.com" on next) — concatenate them into one address with no spaces. If not a public form or email is blank → return "".
@@ -639,6 +639,13 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           if (!ocr.customer && ocr.reportToName) {
             ocr.customer = ocr.reportToName;
             context.log(`[scan] Used reportToName "${ocr.customer}" as customer`);
+          }
+
+          // For business forms: if customer still empty, try reportToAddress city
+          // to at least indicate something was detected
+          if (!ocr.customer && ocr.formType === 'business' && ocr.reportToAddress) {
+            // Will be matched against client list by matchClient — pass address as hint
+            context.log(`[scan] Business form with no customer name — reportToAddress: "${ocr.reportToAddress}"`);
           }
 
           // For public customers with no billing address, build full address
