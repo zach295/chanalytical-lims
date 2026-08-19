@@ -624,10 +624,22 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           ocr.location = cleanAddress(ocr.location);
           ocr.zip      = fixZip(ocr.zip, ocr.state);
 
-          // For public customers with no billing address, use sample address
+          // Validate email - must contain @ otherwise clear it
+          if (ocr.email && !ocr.email.includes('@')) {
+            context.log(`[scan] Invalid email cleared: "${ocr.email}"`);
+            ocr.email = '';
+          }
+
+          // Strip city/state/zip from billing address if OCR included them
+          if (ocr.billingAddress) {
+            ocr.billingAddress = ocr.billingAddress
+              .replace(/,?\s+[A-Za-z\s]+,\s*[A-Z]{2},?\s*\d{5}(-\d{4})?$/, '')
+              .trim();
+          }
+
+          // For public customers with no billing address, use street address only
           if (!ocr.billingAddress) {
-            const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
-            if (parts.length) ocr.billingAddress = parts.join(', ');
+            if (ocr.location) ocr.billingAddress = ocr.location;
           }
 
           // ── Hallucination check ───────────────────────────────────────────────
