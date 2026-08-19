@@ -503,7 +503,7 @@ FIRST — determine form type:
 - FORM TYPE DETECTION: Check the TOP OF FORM. If "Chanalytical Laboratories" appears as the printed header/logo AND the Report To section appears to be Chanalytical's own address (not a business client), this is a PUBLIC form submitted by an individual. Otherwise it is a BUSINESS form.
 
 - customer:
-  • PUBLIC FORM: Use the person's full name written in the "Name:" field of the "CUSTOMER & PROPERTY INFORMATION" section. This will be a person's name (e.g. "Travis Guld") NOT a company — that is correct. Return it as-is. If truly blank → return "".
+  • PUBLIC FORM: Find the person's full name. Look in this order: 1) "Name:" field in "CUSTOMER & PROPERTY INFORMATION" or "CUSTOMER:" section 2) "Owner:" or "Submitter:" label 3) Any First Last name near the address, phone, or email. Never return "" if any name is visible anywhere on the form.
   • BUSINESS FORM: The "REPORT TO BE SENT TO:" section may contain a checkbox list of multiple company names. ⛔ NEVER use the first name you see — you MUST find which one is CHECKED, MARKED, CIRCLED, or has an X/checkmark next to it. Only the marked company is the customer. If it is a fill-in line (not a checkbox list), copy exactly what is handwritten or typed. ⛔ If the section is BLANK, EMPTY, or nothing is written or marked → return "" — NEVER guess or fill in a company name. ⛔ NEVER substitute or replace what is marked/written with any other company name. ⛔ NEVER invent a company name. If nothing is marked or written → return "". ⛔ Never use form titles or guess.
 - location: Street address — for public forms use the Address field in CUSTOMER & PROPERTY INFORMATION (TOP section); for business forms use the Well Owner section (MIDDLE section). Include ALL lines under the "Address:" label until the next label (City:, State:, etc.) even if they look like partial words — e.g. "was" after a street name is likely "Way" misread by OCR, include it. No periods or commas. If a circled T or ⊕ symbol appears → set waterType to "Treated". ⛔ Never use Report To address.
 - city/state/zip: from MIDDLE OF FORM (Well Owner) ONLY. Maine zip starts with 04, NH starts with 03.
@@ -565,7 +565,7 @@ FORM LAYOUT:
 EXTRACT EVERYTHING YOU CAN FIND:
 - barcodeId: alphanumeric code from Lab Use Only box. "" if absent.
 - formType: "business" if Report To section has a real company name/address (not Chanalytical). "public" if Report To is blank, says Chanalytical, or has only the lab's address.
-- customer: For business=company name from Report To. For public=person name from Customer/Property section. "" if unclear.
+- customer: REQUIRED for all forms. For business=company name exactly as written in Report To section. For public=the person's full name from the Customer/Property Information section or the "Well Owner" name or any name written at the top of the form. Look everywhere — header, customer section, property information, submitter name. Never return "" unless no name appears anywhere on the form.
 - reportToName: Full name/company in Report To section exactly as written. "" if blank.
 - reportToAddress: Street address line from Report To section. "" if blank.
 - reportToCity: City from Report To section. "" if blank.
