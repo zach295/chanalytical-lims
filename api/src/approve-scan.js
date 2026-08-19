@@ -894,9 +894,7 @@ app.http('approve-scan', {
               Aliases:          clientInfo.reportEmail || email || '',         // Report Email Address
               Notes:            clientInfo.billingEmail || email || '',        // Billing Email Address
               Active:           clientInfo.phone || phone || '',               // Phone #
-              BillingAddress:   clientInfo.billingAddress || billingAddress || [location, city, state, zip].filter(Boolean).join(', '), // Billing Address
-              Phone:            clientInfo.dbaName || '',                // DBA Name
-              BillingAddress:   clientInfo.billingAddress || '',
+              BillingAddress:   billingAddress || clientInfo.billingAddress || [location, city, state, zip].filter(Boolean).join(', '),
               ClientCode:       '',
               Abbrev:           isPublicName ? 'PUBLIC' : getAbbrev(formalClientName),
               BillingFrequency: isPublicName ? 'Pre-Pay' : '',
