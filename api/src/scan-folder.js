@@ -635,6 +635,12 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ocr.email = '';
           }
 
+          // Use reportToName as fallback for customer if customer is still empty
+          if (!ocr.customer && ocr.reportToName) {
+            ocr.customer = ocr.reportToName;
+            context.log(`[scan] Used reportToName "${ocr.customer}" as customer`);
+          }
+
           // For public customers with no billing address, build full address
           if (!ocr.billingAddress) {
             const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
