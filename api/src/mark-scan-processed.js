@@ -47,7 +47,12 @@ app.http('mark-scan-processed', {
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
 
       if (outcome === 'discarded') {
-        await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
+        try {
+          await deleteItem(LISTS.REVIEW_QUEUE, row);
+          context.log(`[mark-scan-processed] Deleted Review Queue item ${row}`);
+        } catch(deleteErr) {
+          context.log(`[mark-scan-processed] Delete failed for row ${row}:`, deleteErr.message);
+        }
         if (fileId) {
           const token = await getToken();
           await deleteSpFile(fileId, token);
