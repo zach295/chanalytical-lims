@@ -26,11 +26,18 @@ async function moveSpFile(itemId, destFolderPath, token) {
 
 async function deleteSpFile(itemId, token) {
   const siteId = process.env.SP_SITE_ID;
+  if (!itemId) { console.warn('[deleteSpFile] No itemId provided'); return; }
   try {
-    await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
+    const res = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      console.warn(`[deleteSpFile] Failed ${res.status}: ${txt.slice(0, 100)}`);
+    } else {
+      console.log(`[deleteSpFile] Deleted ${itemId} (status ${res.status})`);
+    }
   } catch(e) { console.warn('[deleteSpFile]', e.message); }
 }
 
@@ -56,7 +63,10 @@ app.http('mark-scan-processed', {
         }
         if (fileId) {
           const token = await getToken();
+          context.log(`[mark-scan-processed] Deleting file ${fileId}`);
           await deleteSpFile(fileId, token);
+        } else {
+          context.log('[mark-scan-processed] No fileId to delete');
         }
       } else {
         await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' }).catch(() => {});
