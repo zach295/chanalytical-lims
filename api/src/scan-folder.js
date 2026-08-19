@@ -507,7 +507,7 @@ FIRST — determine form type:
   • BUSINESS FORM: The "REPORT TO BE SENT TO:" section may contain a checkbox list of multiple company names. Find which one is CHECKED, MARKED, CIRCLED, or has an X/checkmark/tick/filled box next to it — look for any mark including a dot, dash, or scribble next to the name. If it is a fill-in blank line (not a checkbox list), copy exactly what is handwritten or typed there. If only one company appears and no others, use it. ⛔ If the section is truly BLANK with nothing written or marked → return "". ⛔ NEVER invent a company name.
 - location: Street address — for public forms use the Address field in CUSTOMER & PROPERTY INFORMATION (TOP section); for business forms use the Well Owner section (MIDDLE section). Include ALL lines under the "Address:" label until the next label (City:, State:, etc.) even if they look like partial words — e.g. "was" after a street name is likely "Way" misread by OCR, include it. No periods or commas. If a circled T or ⊕ symbol appears → set waterType to "Treated". ⛔ Never use Report To address.
 - city/state/zip: from MIDDLE OF FORM (Well Owner) ONLY. Maine zip starts with 04, NH starts with 03.
-- email: For PUBLIC forms, extract from "E-mail:" field in CUSTOMER & PROPERTY INFORMATION section. The email may span TWO lines (e.g. "travis.john.gould" on one line and "@gmail.com" on next) — concatenate them into one address with no spaces. If not a public form or email is blank → return "".
+- email: Extract ONLY valid email addresses (must contain @ symbol). For PUBLIC forms, extract from "E-mail:" field in CUSTOMER & PROPERTY INFORMATION section. The email may span TWO lines — concatenate them. ⛔ If the field contains a name, label text, or anything without @ → return "". If not a public form or email is blank → return "".
 - dateDrawn: Date CLIENT collected sample — next to "Date Sampled:" label → YYYY-MM-DD. ⛔ If blank or not written on the form return "" — NEVER guess, infer, or use today's date. ⛔ If date is crossed out/scribed through, return "". 2-digit years: 26=2026, 25=2025.
 - timeDrawn: Time CLIENT collected sample — next to "Time Sampled:" label → HH:MM 24-hour. IMPORTANT: look carefully for this — it is often written as "9:59 AM", "9:59 A", "9:59a", "3:50 p", "3:50pm". "a"=AM, "p"=PM. Convert to 24hr (3:50 PM = 15:50, 9:59 AM = 09:59). ⛔ If time is crossed out, ignore it. Digit confusion: "0" vs "1", "5" vs "6". Minutes must be 00-59.
 - receivedDate: Date LAB received sample — in the small "Lab Use Only" box (upper right corner). Stamped or written by lab staff. Looks like "JUN 24" or "07/14/26". Year always 2026 → YYYY-MM-DD.
@@ -519,7 +519,7 @@ FIRST — determine form type:
 - notes: observations, illegible fields. Note "Public submission" for public forms.
 - barcodeId: barcode number like 0600326-006 or CHA-YYMMDD-####, else ""
 - phone: Check ALL phone fields: "Daytime Phone", "Daytime Phon", "Phone", "Cell", "Mobile". For PUBLIC forms look in CUSTOMER & PROPERTY INFORMATION section. Return number as-is. "" if truly blank.
-- billingAddress: BUSINESS forms only — full mailing address from Report To section as one line (e.g. "24 Freedom Dr, Standish, ME 04084"). PUBLIC forms → always "".
+- billingAddress: BUSINESS forms only — the STREET ADDRESS (number + street) from the Report To section, followed by city, state, zip as one line (e.g. "24 Freedom Dr, Standish, ME 04084"). ⛔ NEVER put a company name here — company name goes in customer field. ⛔ If you only see a company name and no street address in Report To → return "". PUBLIC forms → always "".
 - formType: "business" if Report To has a real company/person name that is NOT Chanalytical. "public" if Report To is blank or shows Chanalytical's own info.
 - confidence: 0-100
 
@@ -575,7 +575,7 @@ EXTRACT EVERYTHING YOU CAN FIND:
 - reportToPhone: Phone from Report To section. "" if blank.
 - email: Best email found anywhere on the form. Prefer Report To email for business, Customer section for public.
 - phone: Best phone found anywhere — check ALL of: "Daytime Phone", "Phone", "Cell", "Mobile". Return digits only or formatted number. "" if truly blank.
-- billingAddress: For business=full address from Report To (street, city, state zip on one line). For public="".
+- billingAddress: For business=STREET ADDRESS only from Report To (street number, street name, city, state, zip on one line). ⛔ NEVER put a company name here — company name goes in customer. For public="".
 - dateDrawn: YYYY-MM-DD from "Date Sampled". "" if blank — NEVER guess.
 - timeDrawn: HH:MM 24hr from "Time Sampled". "" if blank.
 - receivedDate: YYYY-MM-DD from Lab Use Only box only. "" if blank.
@@ -641,11 +641,18 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             context.log(`[scan] Used reportToName "${ocr.customer}" as customer`);
           }
 
-          // For business forms: if customer still empty, try reportToAddress city
-          // to at least indicate something was detected
-          if (!ocr.customer && ocr.formType === 'business' && ocr.reportToAddress) {
-            // Will be matched against client list by matchClient — pass address as hint
-            context.log(`[scan] Business form with no customer name — reportToAddress: "${ocr.reportToAddress}"`);
+          // If billingAddress looks like a company name (no digits = no street number),
+          // rescue it as the customer name
+          if (!ocr.customer && ocr.billingAddress && !/\d/.test(ocr.billingAddress)) {
+            ocr.customer = ocr.billingAddress;
+            ocr.billingAddress = '';
+            context.log(`[scan] Rescued company name "${ocr.customer}" from billingAddress`);
+          }
+
+          // Clear email if it looks like a form label (no @ and contains spaces suggesting a phrase)
+          if (ocr.email && !ocr.email.includes('@') && ocr.email.includes(' ')) {
+            context.log(`[scan] Cleared label text from email: "${ocr.email}"`);
+            ocr.email = '';
           }
 
           // For public customers with no billing address, build full address
