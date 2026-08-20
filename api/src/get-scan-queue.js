@@ -38,6 +38,7 @@ app.http('get-scan-queue', {
         formType:         r.FormType     || 'public',
         fileName:         r.FileName     || '',
         _rowIndex:        r._id,
+        _ocrDebug:        r.OCRDebug || '',
       }));
 
       // ── Recently approved from Archived Intake ────────────────────────────────
