@@ -706,22 +706,11 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           // ── Fallback matching: email → phone → billing address (tried individually) ──
           const normalize = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
 
-          // 1. Email: match stored report email in Clients list
+          // 1. Email: look up the exact email against Clients list report email
           if (!client && ocr.email && ocr.email.includes('@')) {
             const emailLow = ocr.email.toLowerCase();
             client = clients.find(c => (c.reportEmail||c.email||'').toLowerCase() === emailLow) || null;
-            if (client) context.log(`[scan] Matched by stored email: ${client.clientName}`);
-          }
-
-          // 2. Email: extract keywords from email username → match against client name
-          //    e.g. "yankeehomeinspections@gmail.com" → yankee+home+inspections → Yankee Home Inspections
-          if (!client && ocr.email && ocr.email.includes('@')) {
-            const username = ocr.email.split('@')[0].replace(/[^a-z]/gi,' ').toLowerCase().trim();
-            const words    = username.split(/\s+/).filter(w => w.length >= 4);
-            if (words.length >= 2) {
-              client = clients.find(c => { const cn = normalize(c.clientName); return words.every(w => cn.includes(w)); }) || null;
-              if (client) context.log(`[scan] Matched by email username: ${client.clientName}`);
-            }
+            if (client) context.log(`[scan] Matched by email: ${client.clientName}`);
           }
 
           // 3. Phone: match last 7 digits against Clients list phone
