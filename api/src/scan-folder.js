@@ -105,17 +105,17 @@ async function loadClients(token) {
   try {
     const siteId = process.env.SP_SITE_ID;
     const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientCode,Abbrev,Email,Aliases,Active,BillingAddress,Notes)&$top=500`,
+      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,ClientCode,Abbrev,Email,Aliases,Active,BillingAddress,Notes)&$top=500`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return [];
     const data = await res.json();
     return (data.value || []).map(item => ({
-      clientName:     item.fields?.Title          || '',
+      clientName:     item.fields?.ClientName || item.fields?.Title || '',
       clientCode:     item.fields?.ClientCode     || '',
       abbrev:         item.fields?.Abbrev         || '',
       email:          item.fields?.Aliases        || '', // Aliases = Report Email Address
-      reportEmail:    item.fields?.Aliases        || '', // same field
+      reportEmail:    item.fields?.Aliases        || '',
       aliases:        item.fields?.Aliases        || '',
       phone:          item.fields?.Active         || '', // Active = Phone #
       billingAddress: item.fields?.BillingAddress || '',
