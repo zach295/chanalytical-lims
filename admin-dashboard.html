@@ -1206,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="card-title">🔬 Individual Elements</div>
         <button class="btn-ok" onclick="openElementModal()" style="padding:8px 16px;font-size:13px;">+ New Element</button>
       </div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
         <thead><tr style="background:var(--navy);color:white;">
           <th style="padding:10px 12px;text-align:left;">Name</th>
           <th style="padding:10px 12px;text-align:left;">Abbreviation</th>
@@ -5184,21 +5184,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function buildParamTable(params, resultsMap, reportData) {
     // 5-column layout matching the actual COA template
-    const hStyle = 'background:#1F3864;color:white;padding:6px 8px;font-size:12px;font-weight:700;border:1px solid #1F3864;text-align:center;';
-    const cStyle = 'padding:5px 8px;border:1px solid #bbb;font-size:12px;vertical-align:middle;';
+    const hStyle = 'background:#1F3864;color:white;padding:3px 4px;font-size:9px;font-weight:700;border:1px solid #1F3864;text-align:center;white-space:nowrap;';
+    const cStyle = 'padding:2px 4px;border:1px solid #ccc;font-size:10px;vertical-align:middle;';
 
     const isBac = name => /coliform|e\.?\s*coli/i.test(name);
 
     let rows = `<tr>
-      <th style="${hStyle};text-align:left;width:26%;">Parameter</th>
-      <th style="${hStyle};width:28px;"></th>
-      <th style="${hStyle}">Your Result</th>
-      <th style="${hStyle}">EPA Limit</th>
-      <th style="${hStyle}">Qualifier</th>
-      <th style="${hStyle}">Unit</th>
-      <th style="${hStyle}">Method</th>
-      <th style="${hStyle}">Preparation Date/Time</th>
-      <th style="${hStyle}">Analysis Date/Time</th>
+      <th style="${hStyle};text-align:left;width:20%;">Parameter</th>
+      <th style="${hStyle};width:16px;"></th>
+      <th style="${hStyle};width:7%;">Result</th>
+      <th style="${hStyle};width:7%;">EPA Limit</th>
+      <th style="${hStyle};width:5%;">Qual.</th>
+      <th style="${hStyle};width:5%;">Unit</th>
+      <th style="${hStyle};width:8%;">Method</th>
+      <th style="${hStyle};width:12%;">Prep. Date/Time</th>
+      <th style="${hStyle};width:12%;">Analysis Date/Time</th>
     </tr>`;
 
     params.forEach(p => {
@@ -5218,7 +5218,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const prepVal  = prepDT || '';  // shows if populated (ICP-MS metals prep or bacteria start)
       const analVal  = analDT;
       rows += `<tr>
-        <td style="${cStyle}">${p.name}</td>
+        <td style="${cStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
           <div style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;"></div>
         </td>
@@ -5227,7 +5227,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;">${editable(res.qualifier||'', 'qualifier:' + p.name, 'text-align:center;width:100%;font-size:11px;')}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
         <td style="${cStyle};text-align:center;font-size:11px;color:var(--slate);">${p.method || ''}</td>
-        <td style="${cStyle};text-align:center;">${bac ? editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepVal || '')}</td>
+        <td style="${cStyle};text-align:center;">${editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${editable(analVal, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
       </tr>`;
     });
