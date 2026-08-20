@@ -763,6 +763,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
+            OCRDebug:         JSON.stringify({ customer: ocr.customer, email: ocr.email, phone: ocr.phone, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, formType: ocr.formType, confidence: ocr.confidence }),
           }, token);
 
           results.push({
