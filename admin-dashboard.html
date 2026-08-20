@@ -5196,6 +5196,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <th style="${hStyle}">EPA Limit</th>
       <th style="${hStyle}">Qualifier</th>
       <th style="${hStyle}">Unit</th>
+      <th style="${hStyle}">Method</th>
       <th style="${hStyle}">Preparation Date/Time</th>
       <th style="${hStyle}">Analysis Date/Time</th>
     </tr>`;
@@ -5225,6 +5226,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
         <td style="${cStyle};text-align:center;">${editable(res.qualifier||'', 'qualifier:' + p.name, 'text-align:center;width:100%;font-size:11px;')}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
+        <td style="${cStyle};text-align:center;font-size:11px;color:var(--slate);">${p.method || ''}</td>
         <td style="${cStyle};text-align:center;">${bac ? editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepVal || '')}</td>
         <td style="${cStyle};text-align:center;">${editable(analVal, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
       </tr>`;
