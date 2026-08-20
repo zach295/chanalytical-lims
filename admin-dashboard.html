@@ -2419,6 +2419,7 @@ document.addEventListener('DOMContentLoaded', function() {
       scans.forEach((r, i) => {
         const card = document.createElement('div');
         card.innerHTML = buildScanCard(r);
+        if (r._ocrDebug) _ocrDebugMap[r.fileId] = r._ocrDebug;
         container.appendChild(card.firstElementChild);
       });
 
@@ -3961,7 +3962,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ✅ Approve — Generate Lab ID &amp; Write to Sheets
           </button>
           <button style="padding:12px 20px;background:white;color:var(--slate);border:1.5px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font-body);"
-            onclick="showOCRDebug(${JSON.stringify(r._ocrDebug || '{}').replace(/'/g,'&#39;')})">
+            onclick="showOCRDebug('${r.fileId}')">
             🔍 OCR Debug
           </button>
           <button style="padding:12px 20px;background:var(--error);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-body);"
@@ -4226,12 +4227,16 @@ document.addEventListener('DOMContentLoaded', function() {
     localStorage.setItem(DELETED_SCANS_KEY, JSON.stringify(arr));
   }
 
-  function showOCRDebug(debugJson) {
+  const _ocrDebugMap = {};
+
+  function showOCRDebug(fileId) {
+    const data = _ocrDebugMap[fileId];
+    if (!data) { alert('No OCR debug data available. This scan may predate the debug feature.'); return; }
     try {
-      const data = typeof debugJson === 'string' ? JSON.parse(debugJson) : debugJson;
-      const msg = Object.entries(data).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+      const msg = Object.entries(parsed).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
       alert('OCR Raw Output:\n\n' + msg);
-    } catch(e) { alert('No OCR debug data available for this scan.'); }
+    } catch(e) { alert('Error reading OCR data: ' + e.message); }
   }
 
   async function discardScanCard(fileId, rowIndex) {
