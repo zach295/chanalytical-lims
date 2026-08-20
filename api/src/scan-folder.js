@@ -702,7 +702,22 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           }
 
           // ── Client matching ───────────────────────────────────────────────────
-          const client     = matchClient(validatedCustomer, clients);
+          let client = matchClient(validatedCustomer, clients);
+
+          // Fallback: match by email or phone if name didn't match
+          if (!client && ocr.email && ocr.email.includes('@')) {
+            const emailLow = ocr.email.toLowerCase();
+            client = clients.find(c => (c.reportEmail || c.email || '').toLowerCase() === emailLow) || null;
+            if (client) context.log(`[scan] Matched client by email: ${client.clientName}`);
+          }
+          if (!client && (ocr.phone || ocr.reportToPhone)) {
+            const pd = (ocr.phone || ocr.reportToPhone || '').replace(/\D/g, '');
+            if (pd.length >= 7) {
+              client = clients.find(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7))) || null;
+              if (client) context.log(`[scan] Matched client by phone: ${client.clientName}`);
+            }
+          }
+
           const clientName = client?.clientName || validatedCustomer || '';
 
           // ── AIO conversion ────────────────────────────────────────────────────
