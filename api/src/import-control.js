@@ -6,10 +6,32 @@
  * 4. Writes pH, bacteria, Gallery chemistry to Results Cache
  */
 const { app }    = require('@azure/functions');
-const { listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
+const { getToken, listItems, createItem, updateItem, LISTS } = require('../shared/graph');
+const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-control] xlsx not available:', e.message); }
+
+async function graphListFolder(folderRelPath, token) {
+  const siteId = process.env.SP_SITE_ID;
+  const enc    = folderRelPath.split('/').map(encodeURIComponent).join('/');
+  const res    = await fetch(
+    `${GRAPH}/sites/${siteId}/drive/root:/${enc}:/children?$select=id,name,file&$top=500`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`listFolder ${res.status}`);
+  return (await res.json()).value || [];
+}
+
+async function graphDownloadFile(itemId, token) {
+  const siteId = process.env.SP_SITE_ID;
+  const res    = await fetch(
+    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/content`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`downloadFile ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
 
 const COL = {
   BARCODE:0, PH:3, DT_PH:4, COLIFORM:5, ECOLI:6,
@@ -125,6 +147,7 @@ app.http('import-control', {
       if (!XLSX) return { status: 500, jsonBody: { error: 'xlsx not installed' } };
       const body = await request.json().catch(() => ({}));
       const { debug, all: importAll } = body;
+      const token = await getToken();
 
       const rawFolder = process.env.SP_CONTROL_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
@@ -177,7 +200,7 @@ app.http('import-control', {
 
         // List files in the month subfolder
         let monthFiles = [];
-        try { monthFiles = await listFolder(monthFolder); } catch(e) {
+        try { monthFiles = await graphListFolder(monthFolder, token); } catch(e) {
           context.log(`[import-control] Month folder not found: ${monthFolder}`);
           continue;
         }
@@ -188,7 +211,7 @@ app.http('import-control', {
         }
         for (const file of matchingFiles) {
           filesUsed.push(file.name);
-          const buffer = await downloadFile(file.id);
+          const buffer = await graphDownloadFile(file.id, token);
           const rows   = parseControlFile(buffer, ids);
           allRows.push(...rows);
           context.log(`[import-control] ${file.name}: ${rows.length} rows`);
