@@ -703,31 +703,47 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           validatedCustomer = ocr.customer || validatedCustomer;
           let client = matchClient(validatedCustomer, clients);
 
-          // Fallback: match by email or phone if name didn't match
+          // ── Fallback matching: email → phone → billing address (tried individually) ──
+          const normalize = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
+
+          // 1. Email: match stored report email in Clients list
           if (!client && ocr.email && ocr.email.includes('@')) {
             const emailLow = ocr.email.toLowerCase();
-            client = clients.find(c => (c.reportEmail || c.email || '').toLowerCase() === emailLow) || null;
-            if (client) context.log(`[scan] Matched client by email: ${client.clientName}`);
+            client = clients.find(c => (c.reportEmail||c.email||'').toLowerCase() === emailLow) || null;
+            if (client) context.log(`[scan] Matched by stored email: ${client.clientName}`);
           }
-          if (!client && (ocr.phone || ocr.reportToPhone)) {
-            const pd = (ocr.phone || ocr.reportToPhone || '').replace(/\D/g, '');
-            if (pd.length >= 7) {
-              client = clients.find(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7))) || null;
-              if (client) context.log(`[scan] Matched client by phone: ${client.clientName}`);
+
+          // 2. Email: extract keywords from email username → match against client name
+          //    e.g. "yankeehomeinspections@gmail.com" → yankee+home+inspections → Yankee Home Inspections
+          if (!client && ocr.email && ocr.email.includes('@')) {
+            const username = ocr.email.split('@')[0].replace(/[^a-z]/gi,' ').toLowerCase().trim();
+            const words    = username.split(/\s+/).filter(w => w.length >= 4);
+            if (words.length >= 2) {
+              client = clients.find(c => { const cn = normalize(c.clientName); return words.every(w => cn.includes(w)); }) || null;
+              if (client) context.log(`[scan] Matched by email username: ${client.clientName}`);
             }
           }
 
-          // Final fallback: match by billing address (street number + first word of street)
+          // 3. Phone: match last 7 digits against Clients list phone
+          if (!client && (ocr.phone || ocr.reportToPhone)) {
+            const pd = (ocr.phone||ocr.reportToPhone||'').replace(/\D/g,'');
+            if (pd.length >= 7) {
+              client = clients.find(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7))) || null;
+              if (client) context.log(`[scan] Matched by phone: ${client.clientName}`);
+            }
+          }
+
+          // 4. Billing address: match first 3 significant words against Clients list billing address
           if (!client && ocr.billingAddress) {
             const baLow   = ocr.billingAddress.toLowerCase().replace(/[.,]/g,'').trim();
             const baParts = baLow.split(/\s+/).filter(w => w.length >= 3);
             if (baParts.length >= 2) {
               client = clients.find(c => {
-                const ca = (c.billingAddress || '').toLowerCase().replace(/[.,]/g,'');
+                const ca = (c.billingAddress||'').toLowerCase().replace(/[.,]/g,'');
                 if (!ca) return false;
-                return baParts.slice(0, 3).every(w => ca.includes(w));
+                return baParts.slice(0,3).every(w => ca.includes(w));
               }) || null;
-              if (client) context.log(`[scan] Matched client by billing address: ${client.clientName}`);
+              if (client) context.log(`[scan] Matched by billing address: ${client.clientName}`);
             }
           }
 
