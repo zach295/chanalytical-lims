@@ -79,7 +79,7 @@ async function hideSheet(siteId, itemId, wsId, token, sid) {
   ).catch(() => {});
 }
 
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments='') {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments='', commentsCell='') {
   const _dbg = []; // debug collector
   _dbg.push('dtCollected=' + (meta?.dtCollected||'EMPTY') + ' location=' + (meta?.location||'EMPTY') + ' city=' + (meta?.city||'EMPTY'));
   const rr = await gReq('GET',
@@ -119,11 +119,14 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
-  // ── Write comments to template ─────────────────────────────────────────────
-  if (comments) {
-    const commLbl = findLabel(rows, 'comment');
-    if (commLbl) {
-      addCell(commLbl.r, commLbl.c + 1, comments);
+  // ── Write comments to specific cell ────────────────────────────────────────
+  if (comments && commentsCell) {
+    // commentsCell format: 'A48' → row=47 (0-based), col=0
+    const ccMatch = commentsCell.match(/^([A-Z]+)(\d+)$/i);
+    if (ccMatch) {
+      const ccCol = ccMatch[1].toUpperCase().split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+      const ccRow = parseInt(ccMatch[2], 10) - 1;
+      addCell(ccRow, ccCol, comments);
     }
   }
 
@@ -417,7 +420,7 @@ app.http('render-report-pdf', {
       await writeHeaders(radonSheet.id, [
         ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
       ]);
-      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', '');
 
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
@@ -438,7 +441,7 @@ app.http('render-report-pdf', {
       }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
-      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
+      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24');
       await fitOnePage(specSheet.id);
       // Hide Lab Report and FHA sheets
       if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
@@ -453,7 +456,7 @@ app.http('render-report-pdf', {
       await writeHeaders(labSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
 
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
@@ -471,7 +474,7 @@ app.http('render-report-pdf', {
       await writeHeaders(fhaSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
+      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27');
       // Write authorized by and review date
       const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
       const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
