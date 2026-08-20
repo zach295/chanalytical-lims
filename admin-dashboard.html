@@ -5206,10 +5206,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       const bac      = isBac(p.name);
-      // Bacteria: Start=prepDT, End=analDT
-      // All others: Start=analDT, End=blank
-      const startDT  = bac ? prepDT : analDT;
-      const endDT    = bac ? analDT : '';
+      // Bacteria: Preparation=prepDT (incubation start), Analysis=analDT (read time)
+      // All others: Preparation=blank, Analysis=analDT
+      const prepVal  = bac ? prepDT : '';
+      const analVal  = analDT;
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
@@ -5218,8 +5218,8 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
-        <td style="${cStyle};text-align:center;">${editable(startDT, bac ? 'prepDT:' + p.name : 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
-        <td style="${cStyle};text-align:center;">${bac ? editable(endDT, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : ''}</td>
+        <td style="${cStyle};text-align:center;">${bac ? editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepVal || '')}</td>
+        <td style="${cStyle};text-align:center;">${editable(analVal, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
       </tr>`;
     });
 
