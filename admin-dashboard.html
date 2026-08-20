@@ -5744,31 +5744,22 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function importControlSheet() {
-    const fileInput = document.getElementById('control-sheet-file');
     const resultEl = document.getElementById('control-sheet-result');
-    if (!fileInput.files.length) { resultEl.textContent = '⚠️ Select a file first.'; return; }
-    const file = fileInput.files[0];
-    resultEl.textContent = '⏳ Reading Excel file...';
+    resultEl.textContent = '⏳ Importing from SharePoint...';
     resultEl.style.color = 'var(--slate)';
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      resultEl.textContent = '⏳ Importing...';
-      const res = await fetch('/api/parse-control-sheet', {
+      const res = await fetch('/api/import-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileBase64: base64, fileName: file.name, uploadedBy: getAdminName() }),
+        body: JSON.stringify({ uploadedBy: getAdminName() }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 100)); }
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       resultEl.style.color = 'var(--success)';
-      resultEl.textContent = `✅ Imported ${data.parsed} results across ${data.sampleCount} samples.`;
-      showToast(`✅ Control Sheet imported — ${data.sampleCount} samples.`);
-      // Populate Lab ID dropdowns
+      resultEl.textContent = `✅ Imported ${data.updated || 0} updated, ${data.created || 0} created from ${(data.filesUsed || []).length} file(s).`;
+      showToast(`✅ Control Sheet imported.`);
       if (data.samples && data.samples.length) populateLabIdDropdowns(data.samples.sort());
     } catch (err) {
       resultEl.style.color = 'var(--error)';
