@@ -676,6 +676,10 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             }
           }
 
+          // ── Re-read validatedCustomer AFTER all rescues have run ──────────────
+          // (rescues above may have populated ocr.customer from reportToName, email, billingAddress)
+          validatedCustomer = ocr.customer || validatedCustomer;
+
           // ── Barcode lookup ────────────────────────────────────────────────────
           let barcodeMatch = null;
           let reviewStatus = 'Ready to Review';
