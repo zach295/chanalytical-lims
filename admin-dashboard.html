@@ -3960,6 +3960,10 @@ document.addEventListener('DOMContentLoaded', function() {
             onclick="this.disabled=true;this.textContent='⏳ Approving...';approveScan('${r.fileId}', ${r._rowIndex})">
             ✅ Approve — Generate Lab ID &amp; Write to Sheets
           </button>
+          <button style="padding:12px 20px;background:white;color:var(--slate);border:1.5px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;font-family:var(--font-body);"
+            onclick="showOCRDebug(${JSON.stringify(r._ocrDebug || '{}').replace(/'/g,'&#39;')})">
+            🔍 OCR Debug
+          </button>
           <button style="padding:12px 20px;background:var(--error);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-body);"
             onclick="discardScanCard('${r.fileId}', ${r._rowIndex})">
             🗑 Delete Scan
@@ -4220,6 +4224,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Keep only last 100 to prevent localStorage bloat
     const arr = [...set].slice(-100);
     localStorage.setItem(DELETED_SCANS_KEY, JSON.stringify(arr));
+  }
+
+  function showOCRDebug(debugJson) {
+    try {
+      const data = typeof debugJson === 'string' ? JSON.parse(debugJson) : debugJson;
+      const msg = Object.entries(data).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
+      alert('OCR Raw Output:\n\n' + msg);
+    } catch(e) { alert('No OCR debug data available for this scan.'); }
   }
 
   async function discardScanCard(fileId, rowIndex) {
