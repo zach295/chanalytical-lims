@@ -5142,6 +5142,10 @@ document.addEventListener('DOMContentLoaded', function() {
                        : color === '00CC00' || color === '00FF00' ? '#00CC44'
                        : val ? '#00CC44' : '#e8e8e8';
       if (colorDiv) colorDiv.style.background = colorHex;
+    } else if (key.startsWith('qualifier:')) {
+      const param = key.replace('qualifier:', '');
+      if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
+      currentReportData.resultsMap[param].qualifier = val;
     } else if (key.startsWith('prepDT:')) {
       const param = key.replace('prepDT:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
@@ -5186,10 +5190,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const isBac = name => /coliform|e\.?\s*coli/i.test(name);
 
     let rows = `<tr>
-      <th style="${hStyle};text-align:left;width:28%;">Parameter</th>
+      <th style="${hStyle};text-align:left;width:26%;">Parameter</th>
       <th style="${hStyle};width:28px;"></th>
       <th style="${hStyle}">Your Result</th>
       <th style="${hStyle}">EPA Limit</th>
+      <th style="${hStyle}">Qualifier</th>
       <th style="${hStyle}">Unit</th>
       <th style="${hStyle}">Preparation Date/Time</th>
       <th style="${hStyle}">Analysis Date/Time</th>
@@ -5218,6 +5223,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </td>
         <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
+        <td style="${cStyle};text-align:center;">${editable(res.qualifier||'', 'qualifier:' + p.name, 'text-align:center;width:100%;font-size:11px;')}</td>
         <td style="${cStyle};text-align:center;">${p.unit}</td>
         <td style="${cStyle};text-align:center;">${bac ? editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;') : (prepVal || '')}</td>
         <td style="${cStyle};text-align:center;">${editable(analVal, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
@@ -5398,7 +5404,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (res) {
         if (res.value  !== undefined) p.value  = res.value;
         if (res.analDT !== undefined) { p.analDT = res.analDT; p.time = res.analDT; }
-        if (res.prepDT !== undefined) p.prepDT = res.prepDT;
+        if (res.prepDT   !== undefined) p.prepDT   = res.prepDT;
+        if (res.qualifier !== undefined) p.qualifier = res.qualifier;
       }
     });
     (currentReportData.fhaParams || []).forEach(p => {
@@ -5407,8 +5414,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (res.value  !== undefined) p.value  = res.value;
         if (res.analDT !== undefined) { p.analDT = res.analDT; p.time = res.analDT; }
         if (res.prepDT !== undefined) p.prepDT = res.prepDT;
+        if (res.qualifier !== undefined) p.qualifier = res.qualifier;
       }
     });
+    // Sync comments
+    currentReportData._comments = currentReportData._comments || '';
+
     // Sync radon result
     if (currentReportData.isRadon) {
       const radonRes = currentReportData.resultsMap['Radon Water'];
