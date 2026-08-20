@@ -224,41 +224,39 @@ const SCAN_HARD_ALIASES = {
 // ── Client matching ───────────────────────────────────────────────────────────
 function matchClient(name, clients) {
   if (!name || !clients.length) return null;
-  const s = name.toLowerCase().trim();
-  if (s.length < 3) return null;
+  const normalize = str =>
+    String(str || '').toLowerCase().replace(/[.,'"()\-]/g,'').replace(/\s+/g,' ').trim();
+  const s = normalize(name);
+  if (s.length < 2) return null;
 
   // Hard-coded alias fallback
   const hardMatch = SCAN_HARD_ALIASES[s];
   if (hardMatch) {
-    const found = clients.find(c => c.clientName.toLowerCase() === hardMatch.toLowerCase());
+    const found = clients.find(c => normalize(c.clientName) === normalize(hardMatch));
     if (found) return found;
   }
 
-  // Normalize: remove punctuation/extra spaces for fuzzy comparison
-  const normalize = str => str.toLowerCase().replace(/[.,'-]/g,'').replace(/\s+/g,' ').trim();
-  const sNorm = normalize(s);
+  for (const c of clients) {
+    // Build all identifiers for this client: name, abbrev, clientCode, all aliases
+    const identifiers = [
+      c.clientName,
+      c.abbrev,
+      c.clientCode,
+      ...String(c.aliases || '').split(/[,;|\n]/).map(a => a.trim()).filter(Boolean),
+    ].map(normalize).filter(Boolean);
 
-  return (
-    // 1. Exact match
-    clients.find(c => c.clientName.toLowerCase() === s) ||
-    // 2. Normalized exact match (handles punctuation differences)
-    clients.find(c => normalize(c.clientName) === sNorm) ||
-    // 3. Alias match
-    clients.find(c => c.aliases.split(',').map(a => a.trim().toLowerCase())
-      .some(a => a.length >= 4 && (s === a || s.includes(a) || a.includes(s)))) ||
-    // 4. Prefix match — OCR often abbreviates (min 10 chars to avoid false positives)
-    (sNorm.length >= 10 ? clients.find(c => {
-      const cNorm = normalize(c.clientName);
-      return cNorm.startsWith(sNorm) || sNorm.startsWith(cNorm.slice(0, Math.min(cNorm.length, sNorm.length)));
-    }) : null) ||
-    // 5. Word-based match — all words in OCR name appear in client name
-    (sNorm.split(' ').length >= 2 ? clients.find(c => {
-      const cNorm  = normalize(c.clientName);
-      const ocrWords = sNorm.split(' ').filter(w => w.length >= 4);
-      return ocrWords.length >= 2 && ocrWords.every(w => cNorm.includes(w));
-    }) : null) ||
-    null
-  );
+    // 1. Exact match against any identifier
+    if (identifiers.some(n => n === s)) return c;
+
+    // 2. Containment match for useful aliases (min 4 chars)
+    if (identifiers.some(n => n.length >= 4 && (s.includes(n) || n.includes(s)))) return c;
+
+    // 3. Word-based match against client name
+    const cNorm  = normalize(c.clientName);
+    const words  = s.split(' ').filter(w => w.length >= 4);
+    if (words.length >= 2 && words.every(w => cNorm.includes(w))) return c;
+  }
+  return null;
 }
 
 // ── Test validation ───────────────────────────────────────────────────────────
@@ -676,10 +674,6 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             }
           }
 
-          // ── Re-read validatedCustomer AFTER all rescues have run ──────────────
-          // (rescues above may have populated ocr.customer from reportToName, email, billingAddress)
-          validatedCustomer = ocr.customer || validatedCustomer;
-
           // ── Barcode lookup ────────────────────────────────────────────────────
           let barcodeMatch = null;
           let reviewStatus = 'Ready to Review';
@@ -702,6 +696,8 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           }
 
           // ── Client matching ───────────────────────────────────────────────────
+          // Refresh validatedCustomer AFTER all rescues AND barcode lookup
+          validatedCustomer = ocr.customer || validatedCustomer;
           let client = matchClient(validatedCustomer, clients);
 
           // Fallback: match by email or phone if name didn't match
@@ -720,12 +716,13 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
 
           // Final fallback: match by billing address (street number + first word of street)
           if (!client && ocr.billingAddress) {
-            const baLow = ocr.billingAddress.toLowerCase().replace(/[.,]/g,'').trim();
+            const baLow   = ocr.billingAddress.toLowerCase().replace(/[.,]/g,'').trim();
             const baParts = baLow.split(/\s+/).filter(w => w.length >= 3);
             if (baParts.length >= 2) {
               client = clients.find(c => {
                 const ca = (c.billingAddress || '').toLowerCase().replace(/[.,]/g,'');
-                return baParts[0] === baParts[0] && baParts.slice(0,3).every(w => ca.includes(w));
+                if (!ca) return false;
+                return baParts.slice(0, 3).every(w => ca.includes(w));
               }) || null;
               if (client) context.log(`[scan] Matched client by billing address: ${client.clientName}`);
             }
@@ -767,6 +764,16 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
 
           // ── Write to SharePoint Review Queue list ─────────────────────────────
           // Field names match the SharePoint list columns from setup-lists.js
+          // Debug log: trace customer value through all stages
+          context.log('[scan] CUSTOMER DEBUG', JSON.stringify({
+            extracted:    ocr.customer,
+            validated:    validatedCustomer,
+            matched:      client?.clientName || '',
+            reportToName: ocr.reportToName || '',
+            formType:     ocr.formType || '',
+            billingAddr:  ocr.billingAddress || '',
+          }));
+
           await writeToReviewQueue({
             Title:            reviewStatus,
             LabID:            '',
