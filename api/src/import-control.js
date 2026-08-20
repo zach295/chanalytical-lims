@@ -122,7 +122,7 @@ app.http('import-control', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx not installed' }) };
+      if (!XLSX) return { status: 500, jsonBody: { error: 'xlsx not installed' } };
       const body = await request.json().catch(() => ({}));
       const { debug, all: importAll } = body;
 
@@ -146,8 +146,7 @@ app.http('import-control', {
       });
 
       if (!needsControl.length) {
-        return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ success: true, message: 'All Results Cache entries already have control data', updated: 0 }) };
+        return { status: 200, jsonBody: { success: true, message: 'All Results Cache entries already have control data', updated: 0 } };
       }
 
       // Group by date portion
@@ -197,8 +196,7 @@ app.http('import-control', {
       }
 
       if (debug) {
-        return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ filesUsed, rowCount: allRows.length, rows: allRows.slice(0, 5) }) };
+        return { status: 200, jsonBody: { filesUsed, rowCount: allRows.length, rows: allRows.slice(0, 5) } };
       }
 
       // Step 4: Merge rows by baseId and write
@@ -227,12 +225,11 @@ app.http('import-control', {
         }
       }
 
-      return { status: 200, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, filesUsed, rowCount: allRows.length, created, updated, errors, log }) };
+      return { status: 200, jsonBody: { success: true, filesUsed, rowCount: allRows.length, created, updated, errors, log, samples: Object.keys(byBase) } };
 
     } catch(e) {
-      context.log('[import-control] Error:', e.message);
-      return { status: 500, body: JSON.stringify({ error: e.message }) };
+      context.log('[import-control] Error:', e.message, e.stack);
+      return { status: 500, jsonBody: { error: e.message } };
     }
   }
 });
