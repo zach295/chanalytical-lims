@@ -5206,9 +5206,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       const bac      = isBac(p.name);
-      // Bacteria: Preparation=prepDT (incubation start), Analysis=analDT (read time)
-      // All others: Preparation=blank, Analysis=analDT
-      const prepVal  = bac ? prepDT : '';
+      // Bacteria: Preparation=incubation start, Analysis=read time
+      // ICP-MS: Preparation=MetalsStartDate, Analysis=AcquisitionTime
+      // Gallery/other: Preparation=blank, Analysis=analDT
+      const prepVal  = prepDT || '';  // shows if populated (ICP-MS metals prep or bacteria start)
       const analVal  = analDT;
       rows += `<tr>
         <td style="${cStyle}">${p.name}</td>
