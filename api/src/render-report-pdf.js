@@ -79,7 +79,7 @@ async function hideSheet(siteId, itemId, wsId, token, sid) {
   ).catch(() => {});
 }
 
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context) {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments='') {
   const _dbg = []; // debug collector
   _dbg.push('dtCollected=' + (meta?.dtCollected||'EMPTY') + ' location=' + (meta?.location||'EMPTY') + ' city=' + (meta?.city||'EMPTY'));
   const rr = await gReq('GET',
@@ -120,7 +120,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
   // ── Write comments to template ─────────────────────────────────────────────
-  const comments = reportData._comments || '';
   if (comments) {
     const commLbl = findLabel(rows, 'comment');
     if (commLbl) {
@@ -418,7 +417,7 @@ app.http('render-report-pdf', {
       await writeHeaders(radonSheet.id, [
         ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
       ]);
-      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
 
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
@@ -439,7 +438,7 @@ app.http('render-report-pdf', {
       }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
-      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
       await fitOnePage(specSheet.id);
       // Hide Lab Report and FHA sheets
       if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
@@ -454,7 +453,7 @@ app.http('render-report-pdf', {
       await writeHeaders(labSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
 
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
@@ -472,7 +471,7 @@ app.http('render-report-pdf', {
       await writeHeaders(fhaSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context);
+      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '');
       // Write authorized by and review date
       const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
       const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
