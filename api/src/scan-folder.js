@@ -706,11 +706,21 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           // ── Fallback matching: email → phone → billing address (tried individually) ──
           const normalize = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
 
+          // Debug: log state going into fallback matching
+          context.log(`[scan] Fallback input — email="${ocr.email}" phone="${ocr.phone}" billing="${ocr.billingAddress}" clients=${clients.length}`);
+          if (ocr.email) {
+            const sample = clients.slice(0,3).map(c => `${c.clientName}|${c.reportEmail||c.email}`).join('; ');
+            context.log(`[scan] Sample clients: ${sample}`);
+            const yankee = clients.find(c => c.clientName.toLowerCase().includes('yankee'));
+            if (yankee) context.log(`[scan] Yankee entry: reportEmail="${yankee.reportEmail}" email="${yankee.email}" phone="${yankee.phone}"`);
+          }
+
           // 1. Email: look up the exact email against Clients list report email
           if (!client && ocr.email && ocr.email.includes('@')) {
             const emailLow = ocr.email.toLowerCase();
             client = clients.find(c => (c.reportEmail||c.email||'').toLowerCase() === emailLow) || null;
             if (client) context.log(`[scan] Matched by email: ${client.clientName}`);
+            else context.log(`[scan] Email fallback: no match for "${emailLow}"`);
           }
 
           // 3. Phone: match last 7 digits against Clients list phone
