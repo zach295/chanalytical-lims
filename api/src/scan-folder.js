@@ -334,9 +334,9 @@ app.http('scan-folder', {
         getQueuedFileIds(token),
       ]);
       const aliasCtx = clients.map(c =>
-        `- "${c.clientName}"${c.aliases ? ` (aliases: ${c.aliases})` : ''}`
+        `- "${c.clientName}"${c.aliases ? ` (aliases: ${c.aliases})` : ''}${c.billingAddress ? ` [billing: ${c.billingAddress}]` : ''}`
       ).join('\n') +
-      '\n⚠️ IMPORTANT: Only match to a client above if their name or alias is EXPLICITLY WRITTEN on this form. Do NOT use your training knowledge to guess which client submitted it. If nothing is written, return "".';
+      '\n⚠️ Use ALL available evidence to identify the customer: the checked/marked name in the Report To section, OR match the billing address on the form against the [billing:] addresses above, OR the phone number. Return "" only if there is truly NO identifying information anywhere on the form.';
 
       // List files in INCOMING folder (PDF and image files only)
       const allFiles = await listSpFolder(SCAN_INCOMING, token);
@@ -504,7 +504,7 @@ FIRST — determine form type:
 
 - customer:
   • PUBLIC FORM: Find the person's full name. Look in this order: 1) "Name:" field in "CUSTOMER & PROPERTY INFORMATION" or "CUSTOMER:" section 2) "Owner:" or "Submitter:" label 3) Any First Last name near the address, phone, or email. Never return "" if any name is visible anywhere on the form.
-  • BUSINESS FORM: The "REPORT TO BE SENT TO:" section may contain a checkbox list of multiple company names. Find which one is CHECKED, MARKED, CIRCLED, or has an X/checkmark/tick/filled box next to it — look for any mark including a dot, dash, or scribble next to the name. If it is a fill-in blank line (not a checkbox list), copy exactly what is handwritten or typed there. If only one company appears and no others, use it. ⛔ If the section is truly BLANK with nothing written or marked → return "". ⛔ NEVER invent a company name.
+  • BUSINESS FORM: The "REPORT TO BE SENT TO:" section has a list of company names with checkboxes. In the extracted text, checked boxes appear as [CHECKED] and unchecked as [unchecked]. Find the company name immediately next to or preceded by [CHECKED]. If no [CHECKED] marker exists (hand-drawn mark on paper), look for any company name that appears to have a mark, X, tick, circle, or scribble near it in the text. If it is a fill-in blank line (not a checkbox list), copy exactly what is handwritten or typed there. If only one company appears in the Report To section and no others, use it. ⛔ If the section is truly BLANK with nothing written or marked → return "". ⛔ NEVER invent a company name.
 - location: Street address — for public forms use the Address field in CUSTOMER & PROPERTY INFORMATION (TOP section); for business forms use the Well Owner section (MIDDLE section). Include ALL lines under the "Address:" label until the next label (City:, State:, etc.) even if they look like partial words — e.g. "was" after a street name is likely "Way" misread by OCR, include it. No periods or commas. If a circled T or ⊕ symbol appears → set waterType to "Treated". ⛔ Never use Report To address.
 - city/state/zip: from MIDDLE OF FORM (Well Owner) ONLY. Maine zip starts with 04, NH starts with 03.
 - email: Extract ONLY valid email addresses (must contain @ symbol). For PUBLIC forms, extract from "E-mail:" field in CUSTOMER & PROPERTY INFORMATION section. The email may span TWO lines — concatenate them. ⛔ If the field contains a name, label text, or anything without @ → return "". If not a public form or email is blank → return "".
@@ -715,6 +715,19 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             if (pd.length >= 7) {
               client = clients.find(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7))) || null;
               if (client) context.log(`[scan] Matched client by phone: ${client.clientName}`);
+            }
+          }
+
+          // Final fallback: match by billing address (street number + first word of street)
+          if (!client && ocr.billingAddress) {
+            const baLow = ocr.billingAddress.toLowerCase().replace(/[.,]/g,'').trim();
+            const baParts = baLow.split(/\s+/).filter(w => w.length >= 3);
+            if (baParts.length >= 2) {
+              client = clients.find(c => {
+                const ca = (c.billingAddress || '').toLowerCase().replace(/[.,]/g,'');
+                return baParts[0] === baParts[0] && baParts.slice(0,3).every(w => ca.includes(w));
+              }) || null;
+              if (client) context.log(`[scan] Matched client by billing address: ${client.clientName}`);
             }
           }
 
