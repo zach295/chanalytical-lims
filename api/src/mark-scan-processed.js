@@ -28,6 +28,21 @@ async function deleteSpFile(itemId, token) {
   const siteId = process.env.SP_SITE_ID;
   if (!itemId) { console.warn('[deleteSpFile] No itemId provided'); return; }
   try {
+    // ── ABSOLUTE PROTECTION: Never delete files in the Archive ──────────────
+    const metaRes = await fetch(
+      `${GRAPH}/sites/${siteId}/drive/items/${itemId}?$select=id,name,parentReference`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      const parentPath = (meta.parentReference?.path || '').toLowerCase();
+      if (parentPath.includes('archived') || parentPath.includes('archive')) {
+        const err = `BLOCKED DELETE: file "${meta.name}" (${itemId}) is in Archive — deletion is forbidden`;
+        console.error(`[deleteSpFile] ${err}`);
+        throw new Error(err);
+      }
+    }
+    // ── Proceed with delete only if file is NOT in Archive ──────────────────
     const res = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
@@ -38,7 +53,7 @@ async function deleteSpFile(itemId, token) {
     } else {
       console.log(`[deleteSpFile] Deleted ${itemId} (status ${res.status})`);
     }
-  } catch(e) { console.warn('[deleteSpFile]', e.message); }
+  } catch(e) { console.warn('[deleteSpFile]', e.message); throw e; }
 }
 
 app.http('mark-scan-processed', {
