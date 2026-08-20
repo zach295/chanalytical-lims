@@ -119,6 +119,15 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
+  // ── Write comments to template ─────────────────────────────────────────────
+  const comments = reportData._comments || '';
+  if (comments) {
+    const commLbl = findLabel(rows, 'comment');
+    if (commLbl) {
+      addCell(commLbl.r, commLbl.c + 1, comments);
+    }
+  }
+
   if (attLbl) {
     const m             = meta || {};
     const attCol        = attLbl.c + 1;
@@ -152,20 +161,21 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   }
 
   // Find parameter table header row
-  let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1;
+  let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1, colQualifier = 5; // col F default
   for (let r = 0; r < rows.length; r++) {
     const rl = (rows[r] || []).map(c => normalizeCell(c));
     if (rl.some(c => c.includes('your result') || c === 'result')) {
       hdrRow = r;
       rl.forEach((c, i) => {
-        if (c.includes('your result') || c === 'result')          colResult = i;
-        else if (c.includes('preparation') || c.includes('prep')) colPrepDT = i;
-        else if (c.includes('analysis') || c.includes('anal'))    colAnalDT = i;
+        if (c.includes('your result') || c === 'result')          colResult    = i;
+        else if (c.includes('preparation') || c.includes('prep')) colPrepDT    = i;
+        else if (c.includes('analysis') || c.includes('anal'))    colAnalDT    = i;
+        else if (c.includes('qualifier') || c.includes('qual'))   colQualifier = i;
       });
       break;
     }
   }
-  context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT}`);
+  context.log(`[pdf] hdrRow=${hdrRow} colResult=${colResult} colPrepDT=${colPrepDT} colAnalDT=${colAnalDT} colQualifier=${colQualifier}`);
 
   // Map parameter names in sheet → row index
   // Only scan rows immediately after the header — stop at blank row or notation row
@@ -207,9 +217,10 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       toDelete.push(ri + 1); // 1-based row number
     } else {
       // Write result value and dates — template handles color fills itself
-      if (colResult >= 0 && p.value)              addCell(ri, colResult, p.value);
-      if (colPrepDT >= 0 && p.prepDT)             addCell(ri, colPrepDT, p.prepDT);
-      if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT, p.analDT || p.time);
+      if (colResult >= 0 && p.value)              addCell(ri, colResult,    p.value);
+      if (colPrepDT >= 0 && p.prepDT)             addCell(ri, colPrepDT,    p.prepDT);
+      if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT,    p.analDT || p.time);
+      if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
     }
   }
 
