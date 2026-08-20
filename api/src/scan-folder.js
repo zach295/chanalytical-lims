@@ -782,15 +782,20 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
 
           // ── Write to SharePoint Review Queue list ─────────────────────────────
           // Field names match the SharePoint list columns from setup-lists.js
-          // Debug log: trace customer value through all stages
-          context.log('[scan] CUSTOMER DEBUG', JSON.stringify({
-            extracted:    ocr.customer,
-            validated:    validatedCustomer,
-            matched:      client?.clientName || '',
-            reportToName: ocr.reportToName || '',
-            formType:     ocr.formType || '',
-            billingAddr:  ocr.billingAddress || '',
-          }));
+          // Build match debug info
+          const yankeeDbg = clients.find(c => c.clientName.toLowerCase().includes('yankee'));
+          const matchDebug = {
+            extracted:      ocr.customer,
+            validated:      validatedCustomer,
+            matched:        client?.clientName || 'NO MATCH',
+            formType:       ocr.formType || '',
+            clientsLoaded:  clients.length,
+            yankeeEmail:    yankeeDbg?.reportEmail || yankeeDbg?.email || 'NOT IN LIST',
+            yankeePhone:    yankeeDbg?.phone || 'NOT IN LIST',
+            ocr_email:      ocr.email,
+            ocr_phone:      ocr.phone,
+          };
+          context.log('[scan] CUSTOMER DEBUG', JSON.stringify(matchDebug));
 
           await writeToReviewQueue({
             Title:            reviewStatus,
@@ -820,7 +825,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
-            OCRDebug:         JSON.stringify({ customer: ocr.customer, email: ocr.email, phone: ocr.phone, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, formType: ocr.formType, confidence: ocr.confidence }),
+            OCRDebug:         JSON.stringify({ ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
           }, token);
 
           results.push({
