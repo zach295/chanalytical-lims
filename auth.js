@@ -274,6 +274,10 @@ const MsAuth = {
     if (error) return { success: false, error: params.get('error_description') || error };
     if (!code)  return null; // not a Microsoft callback
 
+    // Clear any existing session before starting fresh Microsoft login
+    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem('cha_admin_alive');
+
     // Retrieve PKCE state from localStorage
     let pkce;
     try { pkce = JSON.parse(localStorage.getItem('ms_pkce') || 'null'); } catch {}
