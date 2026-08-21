@@ -315,14 +315,17 @@ app.http('update-sample', {
               );
               const billedItems = ((await billedRes.json()).value || [])
                 .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+              let billedOk = 0;
               for (const item of billedItems) {
-                await fetch(
+                const pRes = await fetch(
                   `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
                   { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ Item_x002F_Service: newTest, Test_x0020_Type_x0020_SKU: newSuffix }) }
                 );
+                if (pRes.ok) billedOk++;
+                else { const t = await pRes.text(); log.push(`⚠️ RTB PATCH failed ${pRes.status}: ${t.slice(0,100)}`); }
               }
-              if (billedItems.length) log.push(`✅ Reports to be Billed test type updated (${billedItems.length} row(s))`);
+              if (billedOk > 0) log.push(`✅ Reports to be Billed test type updated (${billedOk} row(s))`);
             }
           } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
         } catch(testErr) {
@@ -355,14 +358,28 @@ app.http('update-sample', {
             if (updates.receivedDate) bFields["Date_x0020_Rec_x0027_d"]  = updates.receivedDate;
             if (updates.receivedTime) bFields["Time_x0020_Rec_x0027_d"]  = to24h(updates.receivedTime);
             if (Object.keys(bFields).length) {
-              await fetch(
+              const pRes2 = await fetch(
                 `${GRAPH3}/sites/${siteId}/lists/${blId}/items/${item.id}/fields`,
                 { method: 'PATCH', headers: { ...aHdr3, 'Content-Type': 'application/json' },
                   body: JSON.stringify(bFields) }
               );
+              if (!pRes2.ok) { const t = await pRes2.text(); log.push(`⚠️ RTB fields PATCH failed ${pRes2.status}: ${t.slice(0,100)}`); }
             }
           }
-          if (bItems.length) log.push(`✅ Reports to be Billed fields updated (${bItems.length} row(s))`);
+          const sentFields = Object.keys((() => {
+            const bf = {};
+            if (updates.customer)     bf.x = 1;
+            if (updates.location)     bf.x = 1;
+            if (updates.city)         bf.x = 1;
+            if (updates.state)        bf.x = 1;
+            if (updates.zip)          bf.x = 1;
+            if (updates.dateDrawn)    bf.x = 1;
+            if (updates.timeDrawn)    bf.x = 1;
+            if (updates.receivedDate) bf.x = 1;
+            if (updates.receivedTime) bf.x = 1;
+            return bf;
+          })()).length;
+          if (bItems.length && sentFields > 0) log.push(`✅ Reports to be Billed fields updated (${bItems.length} row(s))`);
         }
       } catch(e) { log.push(`⚠️ Reports to be Billed fields: ${e.message}`); }
 
