@@ -135,9 +135,12 @@ app.http('reject-sample', {
       if (!reason?.trim()) return { status: 400, body: JSON.stringify({ error: 'reason required' }) };
 
       const siteId = process.env.SP_SITE_ID;
+      const { getToken } = require('../shared/graph');
+      const token  = await getToken();
       const now    = new Date().toISOString();
       const baseId = labId.split(' ')[0].trim();
       const rejNote = `${rejectionType}: ${reason.trim()}`;
+      const rejLabId = `${baseId} REJ`;
       const log = [];
 
       // 1. Write to Rejected list
@@ -152,8 +155,7 @@ app.http('reject-sample', {
       log.push('✅ Written to Rejected list');
 
       // ── Update Control Sheet — change suffix to REJ ───────────────────────
-      const datePrefix = baseId.slice(0, 6); // MMDDYY from lab ID prefix
-      const rejLabId   = `${baseId} REJ`;
+      const datePrefix = baseId.slice(0, 6);
       try {
         const csResult = await updateControlSheet(siteId, datePrefix, baseId, rejLabId, token, context);
         log.push(csResult.updated
@@ -194,6 +196,45 @@ app.http('reject-sample', {
         context.log('[ActivityLog] Error:', e.message);
         log.push('⚠️ Activity Log write failed: ' + e.message);
       }
+
+      // ── Update Accession Log ──────────────────────────────────────────────
+      try {
+        const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
+          filter: `startswith(fields/BaseId,'${baseId}')`,
+          top: 20,
+        }).catch(() => []);
+        for (const item of accLogItems) {
+          await updateItem(LISTS.ACCESSION_LOG, item._id, {
+            TestType: rejectionType,
+            LabID:    rejLabId,
+          });
+        }
+        if (accLogItems.length) log.push(`✅ Accession Log updated (${accLogItems.length} row(s))`);
+      } catch(e) { log.push(`⚠️ Accession Log: ${e.message}`); }
+
+      // ── Update Reports to be Billed ───────────────────────────────────────
+      try {
+        const GRAPH   = 'https://graph.microsoft.com/v1.0';
+        const authHdr = { Authorization: `Bearer ${token}` };
+        const listsRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+        const billedListId = ((await listsRes.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
+        if (billedListId) {
+          const billedRes   = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${billedListId}/items?$expand=fields($select=Title)&$top=500`,
+            { headers: authHdr }
+          );
+          const billedItems = ((await billedRes.json()).value || [])
+            .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+          for (const item of billedItems) {
+            await fetch(
+              `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
+              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ Item_x002F_Service: rejectionType }) }
+            );
+          }
+          if (billedItems.length) log.push(`✅ Reports to be Billed updated (${billedItems.length} row(s))`);
+        }
+      } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
 
       // 2. Update Archived Intake — change suffix to REJ and append notes
       // field_1=fullId, field_2=coaTest, field_13=notes, field_14=status
