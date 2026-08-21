@@ -168,13 +168,17 @@ app.http('users-manage', {
       }
 
       if (action === 'setpw') {
-        // Set a new password for a user (admin action)
+        // Set a new password for a user (admin action or first-time setup)
         const { email: pwEmail, password: newPw } = body;
         const user = await findUserByEmail(pwEmail);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         const hashed = hashPassword(newPw || '');
-        await updateItem(LISTS.USERS, user._id, { field_8: hashed, field_9: true });
-        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+        await updateItem(LISTS.USERS, user._id, { field_8: hashed, field_7: false, field_9: true });
+        const mapped = mapUser(user);
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+          success: true,
+          user: { email: mapped.email, name: mapped.name, role: mapped.role, clientKey: mapped.clientKey },
+        })};
       }
 
       if (action === 'resetpw') {
