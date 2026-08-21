@@ -333,9 +333,10 @@ app.http('generate-report', {
       // then formatted name (e.g. "Zach Chandler")
       // Use original customer name for Clients list lookup (preserves "Public-" prefix and "Last, First" format)
       const lookupName    = meta.customer || '';
-      // Clean display name: strip "Public-" and reverse "Last, First" to "First Last"
+      const isPublicName  = /^Public-/i.test(lookupName);
+      // Strip "Public-" and reverse "Last, First" ONLY for public customers
       const rawName0      = lookupName.replace(/^Public-/i, '').trim();
-      const rawName       = rawName0.includes(', ')
+      const rawName       = isPublicName && rawName0.includes(', ')
         ? rawName0.split(', ').reverse().join(' ')
         : rawName0;
       const formattedName = formatCustomerName(lookupName);
