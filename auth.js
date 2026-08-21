@@ -209,10 +209,11 @@ const Auth = {
 
   requireAuth(roles) {
     const s = this.getSession();
-    if (!s || (roles && !roles.includes(s.role))) {
-      window.location.href = '/login.html';
-      return null;
-    }
+    if (!s) { window.location.href = '/login.html'; return null; }
+    // Support comma-separated multi-role: user passes if ANY of their roles matches
+    const userRoles = (s.role || '').split(',').map(r => r.trim());
+    const hasAccess = !roles || userRoles.some(r => roles.includes(r));
+    if (!hasAccess) { window.location.href = '/login.html'; return null; }
     return s;
   },
 };
