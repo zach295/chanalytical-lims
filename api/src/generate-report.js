@@ -608,7 +608,14 @@ app.http('generate-report', {
             customer:     rawName || formatCustomerName(meta.customer || ''),
             // clientName from Clients list takes priority, fall back to cleaned display name
             clientName:   clientInfo.clientName
-              ? clientInfo.clientName.replace(/^Public-/i,'').trim().replace(/^([^,]+),\s*(.+)$/, '$2 $1')
+              ? (() => {
+                  const cn = clientInfo.clientName;
+                  const isPublic = /^Public-/i.test(cn);
+                  const stripped = cn.replace(/^Public-/i, '').trim();
+                  return isPublic && stripped.includes(', ')
+                    ? stripped.replace(/^([^,]+),\s*(.+)$/, '$2 $1')
+                    : stripped;
+                })()
               : rawName || formatCustomerName(meta.customer || ''),
             email:            clientInfo.email            || '',
             reportEmail:      clientInfo.reportEmail      || '',
