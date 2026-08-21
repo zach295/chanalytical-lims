@@ -188,23 +188,21 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
     <button class="sb-btn" id="sb-billing-btn" onclick="showSection('billing',this)">💰 Billing</button>
     <button class="sb-btn" id="sb-revenue-btn" onclick="showSection('revenue',this)">📊 Revenue</button>
-    <button class="sb-btn" id="sb-coc-btn" onclick="showSection('coc',this)">📋 COC Batch Generator</button>
 
     <div class="sb-label" id="sb-inventory-label">Inventory</div>
     <button class="sb-btn" id="sb-kits-btn" onclick="showSection('kits',this)">📦 Kit Inventory</button>
-    <button class="sb-btn" id="sb-bottles-btn" onclick="showSection('bottles',this)">🧪 Bottle Inventory</button>
+    <button class="sb-btn" id="sb-bottles-btn" onclick="showSection('bottles',this)">📦 Bottle Inventory</button>
     <button class="sb-btn" id="sb-kitstk-btn" onclick="showSection('kitstk',this)">🗃️ Lab Kit Stock</button>
     <button class="sb-btn" id="sb-log-btn" onclick="showSection('log',this)">📋 Activity Log</button>
 
     <div class="sb-label" id="sb-actions-label">Actions</div>
     <button class="sb-btn" id="sb-sendkits-btn" onclick="openModal('send')">📤 Send Kits</button>
     <button class="sb-btn" id="sb-setstock-btn" onclick="openModal('initial')">➕ Set Stock</button>
-    <button class="sb-btn" id="sb-fieldapp-btn" onclick="window.open('/index.html','_blank')">🧪 Field App</button>
 
     <div class="sb-label" id="sb-admin-label" style="display:none;">Clients</div>
     <button class="sb-btn" id="sb-clients-btn" onclick="showSection('clients',this)" style="display:none;">👥 Clients &amp; Codes</button>
     <button class="sb-btn" id="sb-users-btn" onclick="showSection('users',this)" style="display:none;">👤 Users</button>
-    <button class="sb-btn" id="sb-testtypes-btn" onclick="showSection('testtypes',this)" style="display:none;">🧪 Test Types</button>
+    <button class="sb-btn" id="sb-testtypes-btn" onclick="showSection('testtypes',this)" style="display:none;">🔬 Test Types</button>
 
 
   </div>
@@ -222,66 +220,48 @@ document.addEventListener('DOMContentLoaded', function() {
   <!-- ══ OVERVIEW ══════════════════════════════════════════════════════════ -->
   <div class="section active" id="section-overview">
 
-    <div class="summary-row">
+    <!-- STAT CARDS -->
+    <div class="summary-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">
       <div class="stat-card teal">
-        <div class="stat-label">Kits in Field</div>
-        <div class="stat-value" id="ov-in-field">0</div>
-        <div class="stat-sub">Across all clients</div>
-      </div>
-      <div class="stat-card orange">
-        <div class="stat-label">Sampled / Pending</div>
-        <div class="stat-value" id="ov-sampled">0</div>
-        <div class="stat-sub">Not yet received</div>
-      </div>
-      <div class="stat-card green">
-        <div class="stat-label">Received This Month</div>
-        <div class="stat-value" id="ov-received">0</div>
-        <div class="stat-sub" id="ov-month">—</div>
+        <div class="stat-label" id="ov-this-month-label">This Month</div>
+        <div class="stat-value" id="ov-this-month-count">—</div>
+        <div class="stat-sub" id="ov-month-diff"></div>
       </div>
       <div class="stat-card navy">
-        <div class="stat-label">Kits Assemblable</div>
-        <div class="stat-value" id="ov-assemblable">0</div>
-        <div class="stat-sub">From bottle stock</div>
+        <div class="stat-label" id="ov-last-month-label">Last Month</div>
+        <div class="stat-value" id="ov-last-month-count">—</div>
+        <div class="stat-sub">Tests completed</div>
       </div>
     </div>
 
-    <!-- BOTTLE STOCK OVERVIEW -->
-    <div class="card" style="margin-bottom:20px;">
-      <div class="card-header">
-        <div class="card-title">🧪 Bottle Stock Overview</div>
-        <button class="action-btn" onclick="showSection('bottles',document.getElementById('tab-bottles'))">Manage →</button>
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;">
+
+      <!-- CLIENT TABLE -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Tests by Client</div></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th class="c">This Month</th>
+              <th class="c">Last Month</th>
+              <th class="c">All Time</th>
+            </tr>
+          </thead>
+          <tbody id="ov-client-tbody">
+            <tr><td colspan="4" style="text-align:center;color:var(--slate);padding:20px;">Loading...</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;" id="ov-bottle-row"></div>
-    </div>
 
-    <!-- HIGH STOCK ALERT -->
-    <div class="alert-banner alert-green" id="alert-high">
-      <span style="font-size:20px;">📦</span>
-      <div>
-        <div style="font-weight:700;color:var(--success);font-size:14px;">Kits Ready to Send</div>
-        <div id="alert-high-msg" style="font-size:13px;color:var(--slate);margin-top:2px;"></div>
+      <!-- TOP TEST TYPES -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Top 3 Test Types</div></div>
+        <div style="padding:16px;" id="ov-types">
+          <div style="color:var(--slate);font-size:13px;">Loading...</div>
+        </div>
       </div>
-    </div>
 
-    <!-- TOP 5 BY RECEIVED THIS MONTH -->
-    <div class="card">
-      <div class="card-header"><div class="card-title">Top Clients — Received This Month</div></div>
-      <table>
-        <thead><tr><th>Client</th><th class="c">In Stock</th><th class="c">Pending</th><th class="c">Recv'd This Month</th></tr></thead>
-        <tbody id="ov-top-clients"></tbody>
-      </table>
-    </div>
-
-    <!-- LOW STOCK — BOTTOM 5 -->
-    <div class="section-hdr">
-      <div class="section-hdr-title" style="color:var(--error);">⚠️ Lowest Kit Inventory</div>
-      <div style="font-size:12px;color:var(--slate);">Bottom 5 clients by kits in stock</div>
-    </div>
-    <div class="card">
-      <table>
-        <thead><tr><th>Client</th><th class="c">Kits in Stock</th><th class="c">Alert</th><th>Action</th></tr></thead>
-        <tbody id="ov-low-clients"></tbody>
-      </table>
     </div>
 
   </div>
@@ -1624,13 +1604,13 @@ document.addEventListener('DOMContentLoaded', function() {
   const ROLE_SECTIONS = {
     office: ['sb-billing-btn','sb-revenue-btn','sb-sendkits-btn','sb-clients-btn','sb-admin-label'],
     lab:    ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
-             'sb-labtool-label','sb-coc-btn','sb-clients-btn','sb-admin-label',
+             'sb-labtool-label','sb-clients-btn','sb-admin-label',
              'sb-testtypes-btn'],
     admin:  ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
-             'sb-labtool-label','sb-billing-btn','sb-revenue-btn','sb-coc-btn',
+             'sb-labtool-label','sb-billing-btn','sb-revenue-btn',
              'sb-inventory-label','sb-kits-btn','sb-bottles-btn','sb-kitstk-btn',
              'sb-log-btn','sb-actions-label','sb-sendkits-btn','sb-setstock-btn',
-             'sb-fieldapp-btn','sb-admin-label','sb-clients-btn','sb-users-btn',
+             'sb-admin-label','sb-clients-btn','sb-users-btn',
              'sb-testtypes-btn'],
   };
 
@@ -2227,6 +2207,7 @@ document.addEventListener('DOMContentLoaded', function() {
       window._reviewRefreshTimer = null;
     }
 
+    if (id === 'overview') loadOverview();
     if (id === 'review') {
       loadScanQueue();
       if (window._reviewRefreshTimer) {
@@ -2773,6 +2754,122 @@ document.addEventListener('DOMContentLoaded', function() {
   function enforceOneRejType(cb) {
     if (cb.checked) {
       document.querySelectorAll('.rej-type-cb').forEach(c => { if (c !== cb) c.checked = false; });
+    }
+  }
+
+  async function loadOverview() {
+    try {
+      // Fetch all Archived Intake records via accession-status
+      const res = await fetch('/api/accession-status');
+      if (!res.ok) throw new Error('Failed to load data');
+      const data  = await res.json();
+      const items = (data.items || data || []).filter(r => {
+        const s = (r.field_14 || r.status || '').toLowerCase();
+        return s && s !== 'rejected'; // exclude rejected
+      });
+
+      const now       = new Date();
+      const thisM     = now.getMonth();
+      const thisY     = now.getFullYear();
+      const lastM     = thisM === 0 ? 11 : thisM - 1;
+      const lastY     = thisM === 0 ? thisY - 1 : thisY;
+
+      function parseDate(r) {
+        const raw = r.field_6 || r.dateReceived || r.field_4 || r.dateDrawn || '';
+        if (!raw) return null;
+        const d = new Date(raw);
+        return isNaN(d) ? null : d;
+      }
+
+      const thisMonthItems = items.filter(r => { const d = parseDate(r); return d && d.getMonth()===thisM && d.getFullYear()===thisY; });
+      const lastMonthItems = items.filter(r => { const d = parseDate(r); return d && d.getMonth()===lastM && d.getFullYear()===lastY; });
+
+      const thisMonthName = now.toLocaleString('en-US',{month:'long',year:'numeric',timeZone:'America/New_York'});
+      const lastMonthDate = new Date(thisY, lastM, 1);
+      const lastMonthName = lastMonthDate.toLocaleString('en-US',{month:'long',year:'numeric'});
+
+      // ── Stat cards ──────────────────────────────────────────────────────────
+      document.getElementById('ov-this-month-label').textContent = thisMonthName;
+      document.getElementById('ov-last-month-label').textContent = lastMonthName;
+      document.getElementById('ov-this-month-count').textContent = thisMonthItems.length;
+      document.getElementById('ov-last-month-count').textContent = lastMonthItems.length;
+
+      const diff = thisMonthItems.length - lastMonthItems.length;
+      const diffEl = document.getElementById('ov-month-diff');
+      if (lastMonthItems.length > 0) {
+        const pct = Math.round((diff / lastMonthItems.length) * 100);
+        diffEl.textContent = `${diff >= 0 ? '+' : ''}${pct}% vs last month`;
+        diffEl.style.color = diff >= 0 ? 'var(--success)' : 'var(--error)';
+      } else {
+        diffEl.textContent = '';
+      }
+
+      // ── Client table ────────────────────────────────────────────────────────
+      const clientMap = {};
+      for (const r of items) {
+        const client = r.field_3 || r.customer || 'Unknown';
+        if (!clientMap[client]) clientMap[client] = { thisMonth: 0, lastMonth: 0, total: 0 };
+        const d = parseDate(r);
+        if (d) {
+          if (d.getMonth()===thisM && d.getFullYear()===thisY) clientMap[client].thisMonth++;
+          if (d.getMonth()===lastM && d.getFullYear()===lastY) clientMap[client].lastMonth++;
+        }
+        clientMap[client].total++;
+      }
+      const clientRows = Object.entries(clientMap)
+        .sort((a,b) => b[1].total - a[1].total);
+      const clientTbody = document.getElementById('ov-client-tbody');
+      clientTbody.innerHTML = clientRows.map(([name, c]) => `
+        <tr>
+          <td>${name}</td>
+          <td style="text-align:center;font-weight:600;">${c.thisMonth}</td>
+          <td style="text-align:center;">${c.lastMonth}</td>
+          <td style="text-align:center;color:var(--slate);">${c.total}</td>
+        </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--slate);padding:16px;">No data</td></tr>';
+
+      // ── Top 3 test types ────────────────────────────────────────────────────
+      const typeMap = {};
+      for (const r of items) {
+        const t = (r.field_2 || r.testType || 'Unknown').split('|')[0].trim();
+        typeMap[t] = (typeMap[t] || 0) + 1;
+      }
+      // Fetch rejection count separately
+      let rejTotal = 0;
+      try {
+        const rjRes = await fetch('/api/get-rejections');
+        if (rjRes.ok) { const rj = await rjRes.json(); rejTotal = (rj.items || rj || []).length; }
+      } catch(e) {}
+
+      const grandTotal = total + rejTotal;
+      const top3  = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
+      const colors = ['var(--teal)','var(--navy)','var(--slate)'];
+      const typesEl = document.getElementById('ov-types');
+      const bars = top3.map(([name, count], i) => {
+        const pct = grandTotal > 0 ? Math.round((count/grandTotal)*100) : 0;
+        return `<div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:13px;font-weight:600;">${name}</span>
+            <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${colors[i]};font-weight:700;">${count}</span></span>
+          </div>
+          <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
+            <div style="width:${pct}%;background:${colors[i]};height:100%;border-radius:4px;transition:width .4s;"></div>
+          </div>
+        </div>`;
+      });
+      const rejPct = grandTotal > 0 ? Math.round((rejTotal/grandTotal)*100) : 0;
+      bars.push(`<div style="padding-top:12px;border-top:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span style="font-size:13px;font-weight:600;color:var(--error);">Rejected</span>
+          <span style="font-size:13px;color:var(--slate);">${rejPct}%&nbsp;&nbsp;<span style="color:var(--error);font-weight:700;">${rejTotal}</span></span>
+        </div>
+        <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
+          <div style="width:${rejPct}%;background:var(--error);height:100%;border-radius:4px;transition:width .4s;"></div>
+        </div>
+      </div>`);
+      typesEl.innerHTML = bars.join('') || '<div style="color:var(--slate);font-size:13px;">No data</div>';
+
+    } catch(err) {
+      console.error('[Overview]', err);
     }
   }
 
