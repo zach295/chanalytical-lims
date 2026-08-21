@@ -709,6 +709,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
           ⚗️ Import ICP-MS Results
         </button>
+        
         <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
           📋 Import Control Sheet
         </button>
@@ -5745,6 +5746,26 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── CONTROL SHEET IMPORT ──────────────────────────────────────────────────
+  async function importAcidSheet(btn) {
+    const orig = btn?.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Importing...'; }
+    const resultEl = document.getElementById('import-result');
+    try {
+      const res  = await fetch('/api/import-acid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error(text.slice(0, 200)); }
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showToast(`✅ Acid sheet: ${data.updated || 0} metals start dates imported.`);
+      if (resultEl) resultEl.textContent = `✅ Acid sheet: ${data.updated || 0} updated, ${data.notFound || 0} not found.`;
+    } catch(err) {
+      showToast('⚠️ Acid import failed: ' + err.message);
+      if (resultEl) resultEl.textContent = '⚠️ Acid import failed: ' + err.message;
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = orig; }
+    }
+  }
+
   async function importRadon(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
