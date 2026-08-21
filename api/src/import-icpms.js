@@ -244,6 +244,7 @@ app.http('import-icpms', {
       // Results Cache "Lab ID" column may have internal name LabID OR Lab_x0020_ID
       const getLabId = r => String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
       const needsIcpms = cacheItems.filter(r => {
+        if (/\bREJ\b/i.test(r.LabID || '')) return false; // skip rejected samples
         const hasId = !!getLabId(r);
         if (!hasId) return false;
         // Skip only if ALL element fields are already populated
