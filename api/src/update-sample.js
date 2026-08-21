@@ -107,9 +107,14 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
       `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
       { headers: wbHdr }
     );
+    if (!rangeRes.ok) {
+      const errTxt = await rangeRes.text();
+      throw new Error(`usedRange failed (${rangeRes.status}): ${errTxt.slice(0, 150)}`);
+    }
     const rangeData = await rangeRes.json();
+    if (rangeData.error) throw new Error(`usedRange error: ${JSON.stringify(rangeData.error).slice(0, 150)}`);
     const rows = rangeData.values || [];
-    if (context) context.log(`[controlSheet] Opened ${sheets[0].name}, ${rows.length} rows`);
+    if (context) context.log(`[controlSheet] Sheet="${sheets[0].name}" rows=${rows.length} fileId=${fileId}`);
 
     let targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
@@ -299,6 +304,20 @@ app.http('update-sample', {
           }
           log.push(`Test type updated to ${newTest} (${newSuffix})`);
           log.push(`Note: update control sheet lab ID manually if suffix changed`);
+
+          // ── If previously rejected — restore status to Approved ─────────────
+          const prevTest = archivedItems[0]?.field_2 || '';
+          const wasRejected = /^rejected|rej/i.test(prevTest) || /\bREJ\b/i.test(archivedItems[0]?.field_1 || '');
+          if (wasRejected) {
+            for (const item of archivedItems) {
+              if (listId) await fetch(
+                `${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
+                { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ field_14: 'Pending' }) }
+              );
+            }
+            log.push(`✅ Status restored to Pending (was Rejected)`);
+          }
 
           // ── Update Accession Log test type ──────────────────────────────────
           try {
