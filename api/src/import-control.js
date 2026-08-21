@@ -204,7 +204,7 @@ app.http('import-control', {
         const hasChloride = !!(r.field_6  || '').toString().trim();
         const allFilled   = hasPH && hasColiform && hasChloride;
         return importAll || !allFilled;
-      });
+      }).slice(0, 30); // process max 30 per run to avoid timeout
 
       if (!needsControl.length) {
         return { status: 200, jsonBody: { success: true, message: 'All Results Cache entries already have control data', updated: 0 } };
