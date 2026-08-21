@@ -197,6 +197,29 @@ app.http('reject-sample', {
         log.push('⚠️ Activity Log write failed: ' + e.message);
       }
 
+      // ── Delete from Results Cache ─────────────────────────────────────────
+      try {
+        const GRAPH   = 'https://graph.microsoft.com/v1.0';
+        const authHdr = { Authorization: `Bearer ${token}` };
+        const rcListRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+        const rcListId  = ((await rcListRes.json()).value || []).find(l => l.displayName === 'Results Cache')?.id;
+        if (rcListId) {
+          const rcItemsRes = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields($select=LabID)&$top=500`,
+            { headers: authHdr }
+          );
+          const rcItem = ((await rcItemsRes.json()).value || [])
+            .find(i => String(i.fields?.LabID || '').split(' ')[0].trim() === baseId);
+          if (rcItem) {
+            await fetch(
+              `${GRAPH}/sites/${siteId}/lists/${rcListId}/items/${rcItem.id}`,
+              { method: 'DELETE', headers: authHdr }
+            );
+            log.push(`✅ Results Cache entry deleted for ${baseId}`);
+          }
+        }
+      } catch(e) { log.push(`⚠️ Results Cache delete: ${e.message}`); }
+
       // ── Update Accession Log ──────────────────────────────────────────────
       try {
         const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
