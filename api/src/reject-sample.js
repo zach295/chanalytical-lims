@@ -10,14 +10,26 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
   const marker    = 'Shared Documents/';
   const idx       = controlFolder.indexOf(marker);
   const relPath   = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\/+/, '');
-  const fileName  = `C_${datePrefix}.xlsx`;
-  const filePath  = `${relPath}/${fileName}`.split('/').map(encodeURIComponent).join('/');
   const authHdr   = { Authorization: `Bearer ${token}` };
+  const MONTHS    = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
 
-  // 1. Get file
-  const fileRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${filePath}`, { headers: authHdr });
-  if (!fileRes.ok) throw new Error(`Control sheet C_${datePrefix}.xlsx not found (${fileRes.status})`);
-  const { id: fileId } = await fileRes.json();
+  // Build month subfolder: "August 2026" from MMDDYY prefix
+  const mm         = parseInt(datePrefix.slice(0, 2)) - 1;
+  const yy         = datePrefix.slice(4, 6);
+  const year       = '20' + yy;
+  const monthName  = MONTHS[mm] || datePrefix.slice(0, 2);
+  const monthFolder = `${relPath}/${monthName} ${year}`;
+  const fileName   = `C_${datePrefix}.xlsx`;
+
+  // Try month subfolder first, then flat folder
+  let fileId = null;
+  for (const tryPath of [`${monthFolder}/${fileName}`, `${relPath}/${fileName}`]) {
+    const enc = tryPath.split('/').map(encodeURIComponent).join('/');
+    const r   = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${enc}`, { headers: authHdr });
+    if (r.ok) { fileId = (await r.json()).id; break; }
+  }
+  if (!fileId) throw new Error(`Control sheet C_${datePrefix}.xlsx not found`);
 
   // 2. Open session
   const sesRes  = await fetch(
@@ -223,13 +235,14 @@ app.http('reject-sample', {
       // ── Update Accession Log ──────────────────────────────────────────────
       try {
         const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
-          filter: `startswith(fields/BaseId,'${baseId}')`,
+          filter: `startswith(fields/field_1,'${baseId}')`,
           top: 20,
         }).catch(() => []);
         for (const item of accLogItems) {
           await updateItem(LISTS.ACCESSION_LOG, item._id, {
-            TestType: rejectionType,
-            LabID:    rejLabId,
+            field_2: rejLabId,       // full lab ID with REJ suffix
+            field_3: rejectionType,  // test type = rejection reason
+            field_4: 'REJ',          // suffix
           });
         }
         if (accLogItems.length) log.push(`✅ Accession Log updated (${accLogItems.length} row(s))`);
@@ -252,7 +265,10 @@ app.http('reject-sample', {
             await fetch(
               `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
               { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ Item_x002F_Service: rejectionType }) }
+                body: JSON.stringify({
+                  Item_x002F_Service:         rejectionType,
+                  Test_x0020_Type_x0020_SKU:  'REJ',
+                }) }
             );
           }
           if (billedItems.length) log.push(`✅ Reports to be Billed updated (${billedItems.length} row(s))`);
