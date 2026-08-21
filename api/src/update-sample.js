@@ -88,14 +88,17 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
     { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
       body: JSON.stringify({ persistChanges: true }) }
   );
-  const { id: sid } = await sesRes.json();
-  const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+  const sesData = await sesRes.json();
+  if (!sesData.id) throw new Error(`Could not open workbook session: ${JSON.stringify(sesData).slice(0,100)}`);
+  const sid    = sesData.id;
+  const wbHdr  = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
   const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
 
   try {
     // 3. Get first worksheet
     const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
-    const sheets    = (await sheetsRes.json()).value || [];
+    const sheetsData = await sheetsRes.json();
+    const sheets    = sheetsData.value || [];
     if (!sheets.length) throw new Error('No worksheets in control sheet');
     const wsId = sheets[0].id;
 
@@ -104,7 +107,9 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
       `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
       { headers: wbHdr }
     );
-    const rows = (await rangeRes.json()).values || [];
+    const rangeData = await rangeRes.json();
+    const rows = rangeData.values || [];
+    if (context) context.log(`[controlSheet] Opened ${sheets[0].name}, ${rows.length} rows`);
 
     let targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
@@ -188,6 +193,21 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
   } finally {
     await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
   }
+}
+
+// ── Reports to be Billed helpers ─────────────────────────────────────────────
+let _rtbListId = null;
+async function getRTBListId(siteId, token, GRAPH, authHdr) {
+  if (_rtbListId) return _rtbListId;
+  const r = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+  _rtbListId = ((await r.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id || null;
+  return _rtbListId;
+}
+async function getRTBColMap(siteId, listId, token, GRAPH, authHdr) {
+  const r = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=100`, { headers: authHdr });
+  const colMap = {};
+  if (r.ok) { ((await r.json()).value || []).forEach(c => { colMap[c.displayName] = c.name; }); }
+  return colMap;
 }
 
 app.http('update-sample', {
@@ -306,26 +326,29 @@ app.http('update-sample', {
 
           // ── Update Reports to be Billed ─────────────────────────────────────
           try {
-            const listsRes2  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
-            const billedListId = ((await listsRes2.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
-            if (billedListId) {
-              const billedRes = await fetch(
-                `${GRAPH}/sites/${siteId}/lists/${billedListId}/items?$expand=fields($select=Title,Item_x002F_Service)&$top=500`,
+            const rtbListId  = await getRTBListId(siteId, token, GRAPH, authHdr);
+            if (rtbListId) {
+              const colMap     = await getRTBColMap(siteId, rtbListId, token, GRAPH, authHdr);
+              const billedRes  = await fetch(
+                `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title)&$top=500`,
                 { headers: authHdr }
               );
               const billedItems = ((await billedRes.json()).value || [])
                 .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
               let billedOk = 0;
               for (const item of billedItems) {
+                const pFields = {};
+                pFields[colMap['Item/Service']   || 'Item_x002F_Service']  = newTest;
+                pFields[colMap['Test Type SKU']  || 'Test_x0020_Type_x0020_SKU'] = newSuffix;
                 const pRes = await fetch(
-                  `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
+                  `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items/${item.id}/fields`,
                   { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ Item_x002F_Service: newTest, Test_x0020_Type_x0020_SKU: newSuffix }) }
+                    body: JSON.stringify(pFields) }
                 );
                 if (pRes.ok) billedOk++;
                 else { const t = await pRes.text(); log.push(`⚠️ RTB PATCH failed ${pRes.status}: ${t.slice(0,100)}`); }
               }
-              if (billedOk > 0) log.push(`✅ Reports to be Billed test type updated (${billedOk} row(s))`);
+              if (billedOk > 0) log.push(`✅ Reports to be Billed updated (${billedOk} row(s))`);
             }
           } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
         } catch(testErr) {
@@ -335,32 +358,30 @@ app.http('update-sample', {
 
       // ── Update Reports to be Billed for any field change ──────────────────────
       try {
-        const GRAPH3 = 'https://graph.microsoft.com/v1.0';
-        const aHdr3  = { Authorization: `Bearer ${token}` };
-        const lRes3  = await fetch(`${GRAPH3}/sites/${siteId}/lists?$select=id,displayName`, { headers: aHdr3 });
-        const blId   = ((await lRes3.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
-        if (blId) {
-          const bRes  = await fetch(
-            `${GRAPH3}/sites/${siteId}/lists/${blId}/items?$expand=fields($select=Title)&$top=500`,
-            { headers: aHdr3 }
+        const rtbListId2 = await getRTBListId(siteId, token, GRAPH, authHdr);
+        if (rtbListId2) {
+          const colMap2 = await getRTBColMap(siteId, rtbListId2, token, GRAPH, authHdr);
+          const bRes    = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${rtbListId2}/items?$expand=fields($select=Title)&$top=500`,
+            { headers: authHdr }
           );
-          const bItems = ((await bRes.json()).value || [])
+          const bItems  = ((await bRes.json()).value || [])
             .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
           for (const item of bItems) {
             const bFields = {};
-            if (updates.customer)     bFields.Customer                    = updates.customer;
-            if (updates.location)     bFields.Location                    = updates.location;
-            if (updates.city)         bFields['City_x002F_Town']          = updates.city;
-            if (updates.state)        bFields.State                       = updates.state;
-            if (updates.zip)          bFields.Zip                         = updates.zip;
-            if (updates.dateDrawn)    bFields.Date_x0020_Drawn            = updates.dateDrawn;
-            if (updates.timeDrawn)    bFields.Time_x0020_Drawn            = to24h(updates.timeDrawn);
-            if (updates.receivedDate) bFields["Date_x0020_Rec_x0027_d"]  = updates.receivedDate;
-            if (updates.receivedTime) bFields["Time_x0020_Rec_x0027_d"]  = to24h(updates.receivedTime);
+            if (updates.customer)     bFields[colMap2['Customer']       || 'Customer']       = updates.customer;
+            if (updates.location)     bFields[colMap2['Location']       || 'Location']       = updates.location;
+            if (updates.city)         bFields[colMap2['City/Town']      || 'City_x002F_Town']= updates.city;
+            if (updates.state)        bFields[colMap2['State']          || 'State']          = updates.state;
+            if (updates.zip)          bFields[colMap2['Zip']            || 'Zip']            = updates.zip;
+            if (updates.dateDrawn)    bFields[colMap2['Date Drawn']     || 'Date_x0020_Drawn']           = updates.dateDrawn;
+            if (updates.timeDrawn)    bFields[colMap2['Time Drawn']     || 'Time_x0020_Drawn']           = to24h(updates.timeDrawn);
+            if (updates.receivedDate) bFields[colMap2["Date Rec'd"]     || 'Date_x0020_Rec_x0027_d']    = updates.receivedDate;
+            if (updates.receivedTime) bFields[colMap2["Time Rec'd"]     || 'Time_x0020_Rec_x0027_d']    = to24h(updates.receivedTime);
             if (Object.keys(bFields).length) {
               const pRes2 = await fetch(
-                `${GRAPH3}/sites/${siteId}/lists/${blId}/items/${item.id}/fields`,
-                { method: 'PATCH', headers: { ...aHdr3, 'Content-Type': 'application/json' },
+                `${GRAPH}/sites/${siteId}/lists/${rtbListId2}/items/${item.id}/fields`,
+                { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
                   body: JSON.stringify(bFields) }
               );
               if (!pRes2.ok) { const t = await pRes2.text(); log.push(`⚠️ RTB fields PATCH failed ${pRes2.status}: ${t.slice(0,100)}`); }
