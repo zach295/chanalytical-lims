@@ -91,19 +91,29 @@ function buildEmailBody(clientName, labId) {
 }
 // ── Find COC scan in SharePoint ───────────────────────────────────────────────
 async function findCOCScan(siteId, labId, token) {
+  // Search ONLY within the Archive folder — never search globally to avoid
+  // accidentally finding files mid-move or in processing folders.
+  // We only READ bytes — the original archived file is never modified or deleted.
   const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
     '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
   try {
+    const marker     = 'Shared Documents/';
+    const mi         = SCAN_ARCHIVE.indexOf(marker);
+    const folderPath = mi >= 0 ? SCAN_ARCHIVE.slice(mi + marker.length) : SCAN_ARCHIVE.replace(/^\/+/, '');
+
+    // Search inside the archive folder tree for this lab ID
     const searchRes = await fetch(
-      `${GRAPH}/sites/${siteId}/drive/root/search(q='${encodeURIComponent(labId)}')?$select=id,name&$top=20`,
+      `${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(folderPath)}:/search(q='${encodeURIComponent(labId)}')?$select=id,name,parentReference&$top=20`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!searchRes.ok) return null;
     const { value } = await searchRes.json();
+    // Find the COC scan PDF (not the report PDF, not temp files)
     return (value || []).find(f =>
       f.name?.toLowerCase().includes(labId.toLowerCase()) &&
       f.name?.toLowerCase().endsWith('.pdf') &&
       !f.name?.toLowerCase().includes('report') &&
+      !f.name?.toLowerCase().includes('rw report') &&
       !f.name?.toLowerCase().includes('temp_')
     ) || null;
   } catch (e) { return null; }
