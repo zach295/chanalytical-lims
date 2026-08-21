@@ -2759,23 +2759,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function loadOverview() {
     try {
-      // Fetch all Archived Intake records via accession-status
-      const res = await fetch('/api/accession-status');
-      if (!res.ok) throw new Error('Failed to load data');
-      const data  = await res.json();
-      const items = (data.items || data || []).filter(r => {
-        const s = (r.field_14 || r.status || '').toLowerCase();
-        return s && s !== 'rejected'; // exclude rejected
+      // Fetch all Archived Intake records via accession-status overview-stats action
+      const res = await fetch('/api/accession-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'overview-stats' }),
       });
+      if (!res.ok) throw new Error('Failed to load data');
+      const data    = await res.json();
+      const allRecs = data.records || [];
+      // Exclude rejected for test type and client counts
+      const items   = allRecs.filter(r => (r.status || '').toLowerCase() !== 'rejected');
 
-      const now       = new Date();
-      const thisM     = now.getMonth();
-      const thisY     = now.getFullYear();
-      const lastM     = thisM === 0 ? 11 : thisM - 1;
-      const lastY     = thisM === 0 ? thisY - 1 : thisY;
+      const now   = new Date();
+      const thisM = now.getMonth();
+      const thisY = now.getFullYear();
+      const lastM = thisM === 0 ? 11 : thisM - 1;
+      const lastY = thisM === 0 ? thisY - 1 : thisY;
 
       function parseDate(r) {
-        const raw = r.field_6 || r.dateReceived || r.field_4 || r.dateDrawn || '';
+        const raw = r.dateReceived || '';
         if (!raw) return null;
         const d = new Date(raw);
         return isNaN(d) ? null : d;
@@ -2807,7 +2810,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // ── Client table ────────────────────────────────────────────────────────
       const clientMap = {};
       for (const r of items) {
-        const client = r.field_3 || r.customer || 'Unknown';
+        const client = r.customer || 'Unknown';
         if (!clientMap[client]) clientMap[client] = { thisMonth: 0, lastMonth: 0, total: 0 };
         const d = parseDate(r);
         if (d) {
@@ -2830,7 +2833,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // ── Top 3 test types ────────────────────────────────────────────────────
       const typeMap = {};
       for (const r of items) {
-        const t = (r.field_2 || r.testType || 'Unknown').split('|')[0].trim();
+        const t = (r.testType || 'Unknown').split('|')[0].trim();
         typeMap[t] = (typeMap[t] || 0) + 1;
       }
       // Fetch rejection count separately
