@@ -895,13 +895,13 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="form-field"><label for="cu-name">Full Name</label><input type="text" id="cu-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
         <div class="form-field"><label for="cu-email">Email</label><input type="text" id="cu-email" inputmode="email" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
         <div class="form-field"><label for="cu-role">Role</label>
-          <select id="cu-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
-            <option value="office">Office Staff</option>
-            <option value="lab">Lab Staff</option>
-            <option value="admin">Admin</option>
-            <option value="wq">WQ/Inspector</option>
-            <option value="public">Public</option>
-          </select>
+<div id="cu-role-wrap"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 0;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="lab" style="width:14px;height:14px;"> Lab Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="office" style="width:14px;height:14px;"> Office Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="admin" style="width:14px;height:14px;"> Admin</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="wq" style="width:14px;height:14px;"> WQ/Inspector</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="public" style="width:14px;height:14px;"> Public</label>
+          </div></div>
         </div>
         <div class="form-field"><label for="cu-code">Registration Code (optional)</label><input type="text" id="cu-code" autocomplete="new-password" placeholder="e.g. FPI0823" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;"/></div>
         <div style="background:#f8f9fa;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;">
@@ -923,13 +923,13 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="form-field"><label for="edit-name">Full Name</label><input type="text" id="edit-name" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
         <div class="form-field"><label for="edit-email">Email</label><input type="text" id="edit-email" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;"/></div>
         <div class="form-field"><label for="edit-role">Role</label>
-          <select id="edit-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
-            <option value="office">Office Staff</option>
-            <option value="lab">Lab Staff</option>
-            <option value="admin">Admin</option>
-            <option value="wq">WQ/Inspector</option>
-            <option value="public">Public</option>
-          </select>
+<div id="edit-role-wrap"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 0;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="lab" style="width:14px;height:14px;"> Lab Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="office" style="width:14px;height:14px;"> Office Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="admin" style="width:14px;height:14px;"> Admin</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="wq" style="width:14px;height:14px;"> WQ/Inspector</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="public" style="width:14px;height:14px;"> Public</label>
+          </div></div>
         </div>
         <div class="form-field"><label for="edit-code">Registration Code</label><input type="text" id="edit-code" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;"/></div>
         <div style="display:flex;gap:10px;margin-top:16px;">
@@ -945,14 +945,13 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="font-size:18px;font-weight:700;margin-bottom:16px;">Change Role</div>
         <div id="role-email-display" style="font-size:13px;color:var(--slate);margin-bottom:16px;"></div>
         <div class="form-field"><label for="sr-role">New Role</label>
-          <select id="sr-role" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;">
-            <option value="lab">Lab Staff</option>
-            <option value="office">Office Staff</option>
-            <option value="lab">Lab Staff</option>
-            <option value="admin">Admin</option>
-            <option value="wq">WQ/Inspector</option>
-            <option value="public">Public</option>
-          </select>
+<div id="sr-role-wrap" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px 0;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="lab" style="width:14px;height:14px;"> Lab Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="office" style="width:14px;height:14px;"> Office Staff</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="admin" style="width:14px;height:14px;"> Admin</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="wq" style="width:14px;height:14px;"> WQ/Inspector</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" class="role-cb" value="public" style="width:14px;height:14px;"> Public</label>
+          </div>
         </div>
         <div style="display:flex;gap:10px;margin-top:20px;">
           <button class="btn-ok" onclick="doSetRole()" style="flex:1;">Save Role</button>
@@ -1614,20 +1613,40 @@ document.addEventListener('DOMContentLoaded', function() {
              'sb-testtypes-btn'],
   };
 
-  function applyRolePermissions(role) {
-    // First hide everything that requires a role
+  // ── Role helpers (supports comma-separated multi-role) ────────────────────
+  function getRolesFromWrap(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return 'lab';
+    const checked = [...wrap.querySelectorAll('.role-cb:checked')].map(cb => cb.value);
+    return checked.length ? checked.join(',') : 'lab';
+  }
+  function setRolesOnWrap(wrapId, roleStr) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const roles = (roleStr || '').split(',').map(r => r.trim());
+    wrap.querySelectorAll('.role-cb').forEach(cb => {
+      cb.checked = roles.includes(cb.value);
+    });
+  }
+  function roleLabel(roleStr) {
+    const MAP = { admin:'🔑 Admin', office:'🗂️ Office Staff', lab:'🔬 Lab Staff', wq:'🏢 WQ/Inspector', client:'🏢 Client', public:'🌐 Public', deactivated:'🚫 Deactivated' };
+    return (roleStr || '').split(',').map(r => MAP[r.trim()] || r).join(' + ');
+  }
+
+  function applyRolePermissions(roleStr) {
+    // Union permissions for all roles in a comma-separated string
+    const roles = (roleStr || 'office').split(',').map(r => r.trim());
     const allRoleBtns = new Set(Object.values(ROLE_SECTIONS).flat());
     allRoleBtns.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-    // Then show what this role can access
-    const allowed = ROLE_SECTIONS[role] || [];
+    const allowed = new Set(roles.flatMap(r => ROLE_SECTIONS[r] || ROLE_SECTIONS['office'] || []));
     allowed.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = '';
     });
-    if (allowed.includes('sb-clients-btn')) loadClients();
+    if (allowed.has('sb-clients-btn')) loadClients();
   }
 
   applyRolePermissions(_session?.role || 'office');
@@ -1681,102 +1700,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('kit-updated').textContent = new Date().toLocaleTimeString();
   }
 
-  function renderOverview() {
-    // Summary stats
-    let totalStock=0, totalSampled=0;
-    CLIENTS.forEach(c => {
-      const inv = inventory[c.key]||{};
-      totalStock += inv.inStock||0;
-      totalSampled += inv.sampled||0;
-    });
-
-    const now = new Date();
-    const m = now.getMonth(), y = now.getFullYear();
-    let monthlyRecv = 0;
-    const monthlyByClient = {};
-    activityLog.forEach(e => {
-      if (e.type==='received' && e.date) {
-        const d = new Date(e.date+'T12:00:00');
-        if (d.getMonth()===m && d.getFullYear()===y) {
-          monthlyRecv += e.qty||0;
-          monthlyByClient[e.client] = (monthlyByClient[e.client]||0) + (e.qty||0);
-        }
-      }
-    });
-
-    document.getElementById('ov-in-field').textContent = totalStock;
-    document.getElementById('ov-sampled').textContent = totalSampled;
-    document.getElementById('ov-received').textContent = monthlyRecv;
-    document.getElementById('ov-month').textContent = now.toLocaleString('default',{month:'long',year:'numeric'});
-    document.getElementById('ov-assemblable').textContent = kitsAssemblable();
-
-    // High stock alert
-    const assemblable = kitsAssemblable();
-    const alertHigh = document.getElementById('alert-high');
-    if (assemblable >= 75) {
-      alertHigh.classList.add('visible');
-      document.getElementById('alert-high-msg').textContent = `${assemblable} kits assemblable from current bottle stock — consider sending out to clients.`;
-    } else {
-      alertHigh.classList.remove('visible');
-    }
-
-    // Top 5 by received this month (always show 5 rows)
-    const topSorted = [...CLIENTS]
-      .sort((a,b)=>{
-        const recvDiff = (monthlyByClient[b.key]||0)-(monthlyByClient[a.key]||0);
-        if (recvDiff !== 0) return recvDiff;
-        return (inventory[b.key]?.sampled||0)-(inventory[a.key]?.sampled||0);
-      })
-      .slice(0,5);
-    document.getElementById('ov-top-clients').innerHTML = topSorted.length
-      ? topSorted.map(c => {
-          const inv = inventory[c.key]||{};
-          return `<tr>
-            <td class="client-name">${c.name}</td>
-            <td class="c">${inv.inStock||0}</td>
-            <td class="c">${inv.sampled||0}</td>
-            <td class="c" style="font-weight:700;color:var(--teal);">${monthlyByClient[c.key]||0}</td>
-          </tr>`;
-        }).join('')
-      : '<tr><td colspan="4"><div class="empty-state">No client data loaded yet.</div></td></tr>';
-
-    // Bottle overview row
-    const ovBottleRow = document.getElementById('ov-bottle-row');
-    if (ovBottleRow) {
-      const ovIcons = {bacteria:'🧫',metals:'⚗️',radon:'☢️',unmade_kits:'📦'};
-      const ovEntries = Object.entries(bottles);
-      ovBottleRow.innerHTML = ovEntries.map(([key, b], i) => {
-        const count = b.count||0;
-        const cls = count>50?'stock-high':count>10?'stock-med':'stock-low';
-        const icon = ovIcons[key] || '🧪';
-        const border = i < ovEntries.length-1 ? 'border-right:1px solid var(--border);' : '';
-        return `<div style="padding:12px 8px;text-align:center;${border}">
-          <div style="font-size:22px;margin-bottom:4px;">${icon}</div>
-          <div class="${cls}" style="font-size:18px;font-weight:700;">${count}</div>
-          <div style="font-size:10px;color:var(--slate);margin-top:2px;">${b.label||key}</div>
-        </div>`;
-      }).join('');
-    }
-
-    // Bottom 5 by kits in stock (lowest first)
-    const lowSorted = [...CLIENTS]
-      .sort((a,b)=>(inventory[a.key]?.inStock||0)-(inventory[b.key]?.inStock||0))
-      .slice(0,5);
-    document.getElementById('ov-low-clients').innerHTML = lowSorted.map(c => {
-      const inv = inventory[c.key]||{};
-      const stock = inv.inStock||0;
-      const cls = stock>=75 ? 'stock-high' : stock>20 ? 'stock-med' : 'stock-low';
-      const flag = stock < 75
-        ? `<span style="background:var(--error-light);color:var(--error);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">⚠ LOW</span>`
-        : `<span style="background:var(--success-light);color:var(--success);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;">✓ OK</span>`;
-      return `<tr>
-        <td class="client-name">${c.name}</td>
-        <td class="c"><span class="${cls}" style="font-size:18px;">${stock}</span></td>
-        <td class="c">${flag}</td>
-        <td><button class="action-btn" onclick="quickSend('${c.key}')">Send Kits →</button></td>
-      </tr>`;
-    }).join('');
-  }
+  function renderOverview() { /* overview now handled by loadOverview() */ }
 
   function renderKits() {
     document.getElementById('kit-body').innerHTML = CLIENTS.map(c => {
@@ -2543,7 +2467,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderUsersTable() {
     const body = document.getElementById('users-body');
-    const roleLabel = { admin:'🔑 Admin', office:'🗂️ Office Staff', lab:'🔬 Lab Staff', wq:'🏢 WQ/Inspector', client:'🏢 WQ/Inspector', public:'🌐 Public', deactivated:'🚫 Deactivated' };
+    // roleLabel is now a function defined above
     if (!_usersData.length) {
       body.innerHTML = '<tr><td colspan="7"><div class="empty-state">No accounts found.</div></td></tr>';
       return;
@@ -2565,7 +2489,7 @@ document.addEventListener('DOMContentLoaded', function() {
       return `<tr style="border-bottom:1px solid var(--border);${u.role==='deactivated'?'background:#fff5f5;':''}${!u.active&&u.role!=='deactivated'?'opacity:0.5;':''}">
         <td style="padding:10px 12px;font-weight:600;">${u.name||'—'}</td>
         <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${u.email}</td>
-        <td style="padding:10px 12px;">${u.role?roleLabel[u.role]||u.role:''}</td>
+        <td style="padding:10px 12px;">${u.role ? roleLabel(u.role) : ''}</td>
         <td style="padding:10px 12px;font-size:12px;font-family:monospace;">${u.regCode||u.clientKey||''}</td>
         <td style="padding:10px 12px;">
           ${isLocal?'<span style="background:#e3f2fd;color:#1565c0;border-radius:4px;padding:2px 8px;font-size:11px;">💻 Local</span>':''}
@@ -2614,7 +2538,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('user-dropdown').style.display = 'none';
     _activeUserEmail = email;
     document.getElementById('role-email-display').textContent = email;
-    document.getElementById('sr-role').value = currentRole || 'lab';
+    setRolesOnWrap('sr-role-wrap', currentRole || 'lab');
     document.getElementById('modal-set-role').style.display = 'flex';
   }
 
@@ -2623,7 +2547,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ action: 'setrole', email: _activeUserEmail, role }),
+        body: JSON.stringify({ action: 'setrole', email: _activeUserEmail, role: getRolesFromWrap('sr-role-wrap') }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -2657,7 +2581,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ action: 'create', name, email, role, regCode: code, createdBy: getAdminName() }),
+        body: JSON.stringify({ action: 'create', name, email, role: getRolesFromWrap('cu-role-wrap'), regCode: code, createdBy: getAdminName() }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -2675,7 +2599,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('edit-orig-email').value = email;
     document.getElementById('edit-name').value  = user.name || '';
     document.getElementById('edit-email').value = user.email || '';
-    document.getElementById('edit-role').value  = user.role || 'public';
+    setRolesOnWrap('edit-role-wrap', user.role || 'lab');
     document.getElementById('edit-code').value  = user.regCode || user.clientKey || '';
     document.getElementById('modal-edit-user').style.display = 'flex';
   }
@@ -2689,7 +2613,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ action: 'edit', email: origEmail, name, newEmail, role, regCode: code, clientKey: code }),
+        body: JSON.stringify({ action: 'edit', email: origEmail, name, newEmail, role: getRolesFromWrap('edit-role-wrap'), regCode: code, clientKey: code }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
