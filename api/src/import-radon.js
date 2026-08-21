@@ -9,6 +9,32 @@ const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 
 const GRAPH  = 'https://graph.microsoft.com/v1.0';
+
+// Convert any date/time value to military time "MM/DD/YY HH:MM"
+function toMilitaryDT(val) {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'number') {
+    const ms  = (val - 25569) * 86400 * 1000;
+    const d   = new Date(Math.round(ms));
+    return `${String(d.getUTCMonth()+1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCFullYear()).slice(-2)} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+  }
+  if (val instanceof Date) {
+    return `${String(val.getMonth()+1).padStart(2,'0')}/${String(val.getDate()).padStart(2,'0')}/${String(val.getFullYear()).slice(-2)} ${String(val.getHours()).padStart(2,'0')}:${String(val.getMinutes()).padStart(2,'0')}`;
+  }
+  const s    = String(val).trim();
+  const ampm = s.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (ampm) {
+    let [, datePart, h, m, ap] = ampm;
+    h = parseInt(h, 10); ap = (ap||'').toUpperCase();
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
+    return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
+  }
+  return s;
+}
+
+
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
@@ -231,8 +257,8 @@ app.http('import-radon', {
             { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 Radon:     rcsRow.result,
-                RadonDate: rcsRow.dateTested,
-                RadonTime: rcsRow.timeTested,
+                RadonDate: toMilitaryDT(rcsRow.dateTested),
+                RadonTime: toMilitaryDT(rcsRow.timeTested),
               }) }
           );
           if (!rcPatch.ok) {
