@@ -167,6 +167,25 @@ app.http('users-manage', {
             name: mapped.name, mustReset: mapped.mustReset, active: mapped.active }) };
       }
 
+      if (action === 'setpw') {
+        // Set a new password for a user (admin action)
+        const { email: pwEmail, password: newPw } = body;
+        const user = await findUserByEmail(pwEmail);
+        if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
+        const hashed = hashPassword(newPw || '');
+        await updateItem(LISTS.USERS, user._id, { field_8: hashed, field_9: true });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+      }
+
+      if (action === 'resetpw') {
+        // Reset password to welcome password — user must change on next login
+        const { email: pwEmail } = body;
+        const user = await findUserByEmail(pwEmail);
+        if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
+        await updateItem(LISTS.USERS, user._id, { field_8: WELCOME_HASH, field_9: true });
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+      }
+
       return { status: 400, body: JSON.stringify({ error: 'Unknown action: ' + action }) };
 
     } catch(e) {
