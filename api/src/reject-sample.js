@@ -57,12 +57,12 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
 
     let targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
-      const cell     = String(rows[i][0] || '').trim();
-      const cellBase = cell.split(' ')[0].trim();
-      if (cellBase === baseId || cell === baseId) { targetRow = i + 1; break; }
+      const cell     = String(rows[i][0] || '').trim().replace(/\s+/g, ' ');
+      const cellBase = cell.split(' ')[0].replace(/[^\w-]/g, '').trim();
+      if (cellBase === baseId.replace(/[^\w-]/g,'') || cell.startsWith(baseId)) { targetRow = i + 1; break; }
     }
 
-    if (targetRow < 0) throw new Error(`Lab ID ${baseId} not found in column A of C_${datePrefix}.xlsx`);
+    if (targetRow < 0) throw new Error(`Lab ID ${baseId} not found in column A of C_${datePrefix}.xlsx (scanned ${rows.length} rows)`);
 
     // 5. Update the cell with new lab ID
     await fetch(
