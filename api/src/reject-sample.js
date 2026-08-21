@@ -37,7 +37,9 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
     { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
       body: JSON.stringify({ persistChanges: true }) }
   );
-  const { id: sid } = await sesRes.json();
+  const sesData = await sesRes.json();
+  if (!sesData.id) throw new Error(`Could not open workbook session: ${JSON.stringify(sesData).slice(0,100)}`);
+  const sid   = sesData.id;
   const wbHdr = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
   const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
 
@@ -121,12 +123,15 @@ async function updateRadonSheet(siteId, datePrefix, baseId, newLabId, token, con
     const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
     const wsId      = ((await sheetsRes.json()).value || [])[0]?.id;
     if (!wsId) throw new Error('No worksheets in radon sheet');
-    const rangeRes  = await fetch(`${wbBase}/worksheets/${wsId}/usedRange?$select=values`, { headers: wbHdr });
-    const rows      = (await rangeRes.json()).values || [];
+    const rangeRes  = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A1:A150')`, { headers: wbHdr });
+    const rangeData = await rangeRes.json();
+    const rawVals   = rangeData.values || rangeData.text || [];
+    const rows      = Array.isArray(rawVals[0]) ? rawVals : rawVals.map(v => [v]);
     let   targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
-      const cell = String(rows[i][0] || '').trim();
-      if (cell.split(' ')[0] === baseId || cell === baseId) { targetRow = i + 1; break; }
+      const cell     = String(rows[i][0] || '').trim().replace(/\s+/g,' ');
+      const cellBase = cell.split(' ')[0].replace(/[^\w-]/g,'').trim();
+      if (cellBase === baseId.replace(/[^\w-]/g,'') || cell.startsWith(baseId)) { targetRow = i + 1; break; }
     }
     if (targetRow < 0) return { updated: false, reason: `${baseId} not found in radon sheet` };
     await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
@@ -236,44 +241,61 @@ app.http('reject-sample', {
 
       // ── Update Accession Log ──────────────────────────────────────────────
       try {
-        const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
-          filter: `startswith(fields/field_1,'${baseId}')`,
-          top: 20,
-        }).catch(() => []);
-        for (const item of accLogItems) {
-          await updateItem(LISTS.ACCESSION_LOG, item._id, {
-            field_2: rejLabId,       // full lab ID with REJ suffix
-            field_3: rejectionType,  // test type = rejection reason
-            field_4: 'REJ',          // suffix
-          });
+        const GRAPH   = 'https://graph.microsoft.com/v1.0';
+        const authHdr = { Authorization: `Bearer ${token}` };
+        const accListRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+        const accListId  = ((await accListRes.json()).value || []).find(l => l.displayName === 'Accession Log')?.id;
+        if (accListId) {
+          const accItemsRes = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/${accListId}/items?$expand=fields($select=field_1,field_2,field_3,field_4)&$top=500`,
+            { headers: authHdr }
+          );
+          const accItems = ((await accItemsRes.json()).value || [])
+            .filter(i => String(i.fields?.field_1 || '').split(' ')[0].trim() === baseId);
+          for (const item of accItems) {
+            await fetch(
+              `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,
+              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ field_2: rejLabId, field_3: rejectionType, field_4: 'REJ' }) }
+            );
+          }
+          if (accItems.length) log.push(`✅ Accession Log updated (${accItems.length} row(s))`);
+          else log.push(`ℹ️ Accession Log: no rows found for ${baseId}`);
         }
-        if (accLogItems.length) log.push(`✅ Accession Log updated (${accLogItems.length} row(s))`);
       } catch(e) { log.push(`⚠️ Accession Log: ${e.message}`); }
 
       // ── Update Reports to be Billed ───────────────────────────────────────
       try {
-        const GRAPH   = 'https://graph.microsoft.com/v1.0';
-        const authHdr = { Authorization: `Bearer ${token}` };
-        const listsRes = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
-        const billedListId = ((await listsRes.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
-        if (billedListId) {
+        const GRAPH2   = 'https://graph.microsoft.com/v1.0';
+        const authHdr2 = { Authorization: `Bearer ${token}` };
+        const lRes = await fetch(`${GRAPH2}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr2 });
+        const rtbListId = ((await lRes.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
+        if (rtbListId) {
+          // Get column display name → internal name map
+          const colsRes = await fetch(`${GRAPH2}/sites/${siteId}/lists/${rtbListId}/columns?$select=name,displayName&$top=100`, { headers: authHdr2 });
+          const colMap  = {};
+          if (colsRes.ok) { ((await colsRes.json()).value || []).forEach(c => { colMap[c.displayName] = c.name; }); }
+
           const billedRes   = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/${billedListId}/items?$expand=fields($select=Title)&$top=500`,
-            { headers: authHdr }
+            `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title)&$top=500`,
+            { headers: authHdr2 }
           );
           const billedItems = ((await billedRes.json()).value || [])
             .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+          let billedOk = 0;
           for (const item of billedItems) {
-            await fetch(
-              `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
-              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  Item_x002F_Service:         rejectionType,
-                  Test_x0020_Type_x0020_SKU:  'REJ',
-                }) }
+            const pFields = {};
+            pFields[colMap['Item/Service']  || 'Item_x002F_Service']         = rejectionType;
+            pFields[colMap['Test Type SKU'] || 'Test_x0020_Type_x0020_SKU']  = 'REJ';
+            const pRes = await fetch(
+              `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items/${item.id}/fields`,
+              { method: 'PATCH', headers: { ...authHdr2, 'Content-Type': 'application/json' },
+                body: JSON.stringify(pFields) }
             );
+            if (pRes.ok) billedOk++;
+            else { const t = await pRes.text(); log.push(`⚠️ RTB PATCH failed ${pRes.status}: ${t.slice(0,100)}`); }
           }
-          if (billedItems.length) log.push(`✅ Reports to be Billed updated (${billedItems.length} row(s))`);
+          if (billedOk > 0) log.push(`✅ Reports to be Billed updated (${billedOk} row(s))`);
         }
       } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
 
