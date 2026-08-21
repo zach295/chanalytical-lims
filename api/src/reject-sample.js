@@ -50,10 +50,12 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
 
     // 4. Read used range to find matching row
     const rangeRes  = await fetch(
-      `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
+      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')/values`,
       { headers: wbHdr }
     );
-    const rows = (await rangeRes.json()).values || [];
+    const rangeData = await rangeRes.json();
+    const rawVals   = rangeData.values || rangeData.text || [];
+    const rows      = Array.isArray(rawVals[0]) ? rawVals : rawVals.map(v => [v]);
 
     let targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
