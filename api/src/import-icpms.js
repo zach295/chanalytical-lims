@@ -358,7 +358,7 @@ app.http('import-icpms', {
       }
 
       return { status: 200, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log, acidDebug }) };
+        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log }) };
 
     } catch(e) {
       context.log('[import-icpms] Error:', e.message);
