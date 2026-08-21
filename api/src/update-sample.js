@@ -108,12 +108,13 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
 
     let targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
-      const cell     = String(rows[i][0] || '').trim();
-      const cellBase = cell.split(' ')[0].trim();
-      if (cellBase === baseId || cell === baseId) { targetRow = i + 1; break; }
+      const cell     = String(rows[i][0] || '').trim().replace(/\s+/g, ' ');
+      const cellBase = cell.split(' ')[0].replace(/[^\w-]/g, '').trim();
+      const baseClean = baseId.replace(/[^\w-]/g, '').trim();
+      if (cellBase === baseClean || cell.startsWith(baseId)) { targetRow = i + 1; break; }
     }
 
-    if (targetRow < 0) throw new Error(`Lab ID ${baseId} not found in column A of C_${datePrefix}.xlsx`);
+    if (targetRow < 0) throw new Error(`Lab ID ${baseId} not found in column A of C_${datePrefix}.xlsx (scanned ${rows.length} rows)`);
 
     // 5. Update the cell with new lab ID
     await fetch(
@@ -281,20 +282,27 @@ app.http('update-sample', {
 
           // ── Update Accession Log test type ──────────────────────────────────
           try {
-            const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
-              filter: `startswith(fields/field_1,'${baseId}')`,
-              top: 20,
-            }).catch(() => []);
-            const newFullId = `${baseId} ${newSuffix}`;
-            for (const item of accLogItems) {
-              await updateItem(LISTS.ACCESSION_LOG, item._id, {
-                field_2: newFullId,  // full lab ID with new suffix
-                field_3: newTest,    // test type name
-                field_4: newSuffix,  // suffix e.g. SS
-              });
+            const accListRes  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+            const accListId   = ((await accListRes.json()).value || []).find(l => l.displayName === 'Accession Log')?.id;
+            if (accListId) {
+              const accItemsRes = await fetch(
+                `${GRAPH}/sites/${siteId}/lists/${accListId}/items?$expand=fields($select=field_1,field_2,field_3,field_4)&$top=500`,
+                { headers: authHdr }
+              );
+              const accItems = ((await accItemsRes.json()).value || [])
+                .filter(i => String(i.fields?.field_1 || '').split(' ')[0].trim() === baseId);
+              const newFullId = `${baseId} ${newSuffix}`;
+              for (const item of accItems) {
+                await fetch(
+                  `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,
+                  { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ field_2: newFullId, field_3: newTest, field_4: newSuffix }) }
+                );
+              }
+              if (accItems.length) log.push(`✅ Accession Log updated (${accItems.length} row(s))`);
+              else log.push(`ℹ️ Accession Log: no rows found for ${baseId}`);
             }
-            if (accLogItems.length) log.push(`✅ Accession Log test type updated (${accLogItems.length} row(s))`);
-          } catch(e) { log.push(`⚠️ Accession Log test type: ${e.message}`); }
+          } catch(e) { log.push(`⚠️ Accession Log: ${e.message}`); }
 
           // ── Update Reports to be Billed ─────────────────────────────────────
           try {
@@ -426,32 +434,7 @@ app.http('update-sample', {
         }
       }
 
-      // ── Results Cache — update lab ID to new suffix ──────────────────────
-      if (updates.coaTest) {
-        try {
-          const GRAPH2   = 'https://graph.microsoft.com/v1.0';
-          const authHdr2 = { Authorization: `Bearer ${token}` };
-          const rcListRes = await fetch(`${GRAPH2}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr2 });
-          const rcListId  = ((await rcListRes.json()).value || []).find(l => l.displayName === 'Results Cache')?.id;
-          if (rcListId) {
-            const rcItemsRes = await fetch(
-              `${GRAPH2}/sites/${siteId}/lists/${rcListId}/items?$expand=fields($select=LabID)&$top=500`,
-              { headers: authHdr2 }
-            );
-            const rcItem = ((await rcItemsRes.json()).value || [])
-              .find(i => String(i.fields?.LabID || '').split(' ')[0].trim() === baseId);
-            if (rcItem) {
-              const newFullId = `${baseId} ${getSuffix(updates.coaTest.trim())}`;
-              await fetch(
-                `${GRAPH2}/sites/${siteId}/lists/${rcListId}/items/${rcItem.id}/fields`,
-                { method: 'PATCH', headers: { ...authHdr2, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ LabID: newFullId }) }
-              );
-              log.push(`✅ Results Cache lab ID updated to ${newFullId}`);
-            }
-          }
-        } catch(e) { log.push(`⚠️ Results Cache: ${e.message}`); }
-      }
+      // Results Cache: lab ID stores base ID only — no suffix — no update needed on correction
 
       // ── Write to Activity Log ───────────────────────────────────────────────
       try {
