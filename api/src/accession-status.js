@@ -64,6 +64,19 @@ app.http('accession-status', {
         const body   = await request.json().catch(() => ({}));
         const action = body.action || '';
 
+        // overview-stats — returns raw records for the Overview tab
+        if (action === 'overview-stats') {
+          const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
+          const records  = allItems.map(r => ({
+            labId:        (r.field_1  || '').trim(),
+            testType:     (r.field_2  || '').trim(),
+            customer:     fmtName(r.field_3 || ''),
+            dateReceived: (r.field_6  || '').trim(),
+            status:       (r.field_14 || 'Pending').trim(),
+          })).filter(r => r.labId);
+          return { status: 200, jsonBody: { records } };
+        }
+
         // read-clients
         if (action === 'read-clients') {
           const { getToken } = require('../shared/graph');
