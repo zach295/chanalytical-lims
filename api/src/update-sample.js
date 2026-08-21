@@ -102,18 +102,20 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
     if (!sheets.length) throw new Error('No worksheets in control sheet');
     const wsId = sheets[0].id;
 
-    // 4. Read used range to find matching row
+    // 4. Read column A only (avoids RangeExceedsLimit on large sheets)
     const rangeRes  = await fetch(
-      `${wbBase}/worksheets/${wsId}/usedRange?$select=values`,
+      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')/values`,
       { headers: wbHdr }
     );
     if (!rangeRes.ok) {
       const errTxt = await rangeRes.text();
-      throw new Error(`usedRange failed (${rangeRes.status}): ${errTxt.slice(0, 150)}`);
+      throw new Error(`range read failed (${rangeRes.status}): ${errTxt.slice(0, 150)}`);
     }
     const rangeData = await rangeRes.json();
-    if (rangeData.error) throw new Error(`usedRange error: ${JSON.stringify(rangeData.error).slice(0, 150)}`);
-    const rows = rangeData.values || [];
+    if (rangeData.error) throw new Error(`range error: ${JSON.stringify(rangeData.error).slice(0, 150)}`);
+    // values is a 2D array [[cell], [cell], ...] — wrap if flat
+    const rawVals = rangeData.values || rangeData.text || [];
+    const rows    = Array.isArray(rawVals[0]) ? rawVals : rawVals.map(v => [v]);
     if (context) context.log(`[controlSheet] Sheet="${sheets[0].name}" rows=${rows.length} fileId=${fileId}`);
 
     let targetRow = -1;
