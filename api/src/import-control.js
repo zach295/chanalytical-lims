@@ -198,6 +198,7 @@ app.http('import-control', {
       // Process rows missing pH (Title) OR coliform OR any Gallery chemistry
       const needsControl = cacheItems.filter(r => {
         const hasId = !!(r.LabID || '').trim();
+        if (/\bREJ\b/i.test(r.LabID || '')) return false; // skip rejected samples
         if (!hasId) return false;
         const hasPH       = !!(r.Title   || '').toString().trim();
         const hasColiform = !!(r.field_2  || '').toString().trim();
