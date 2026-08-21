@@ -27,22 +27,45 @@ async function moveSpFile(itemId, destFolderPath, token) {
 async function deleteSpFile(itemId, token) {
   const siteId = process.env.SP_SITE_ID;
   if (!itemId) { console.warn('[deleteSpFile] No itemId provided'); return; }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ABSOLUTE ARCHIVE PROTECTION — HARDCODED — NEVER REMOVE OR BYPASS
+  // Files in the Archive folder CANNOT be deleted under ANY circumstances.
+  // This check runs BEFORE any delete attempt and throws if violated.
+  // ══════════════════════════════════════════════════════════════════════════
   try {
-    // ── ABSOLUTE PROTECTION: Never delete files in the Archive ──────────────
     const metaRes = await fetch(
       `${GRAPH}/sites/${siteId}/drive/items/${itemId}?$select=id,name,parentReference`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (metaRes.ok) {
-      const meta = await metaRes.json();
+      const meta       = await metaRes.json();
       const parentPath = (meta.parentReference?.path || '').toLowerCase();
-      if (parentPath.includes('archived') || parentPath.includes('archive')) {
-        const err = `BLOCKED DELETE: file "${meta.name}" (${itemId}) is in Archive — deletion is forbidden`;
-        console.error(`[deleteSpFile] ${err}`);
-        throw new Error(err);
+      const itemName   = (meta.name || '');
+
+      // HARD CHECK 1: path contains archive-related keywords
+      const archiveKeywords = ['archived', 'archive', 'lab scans/arch'];
+      const inArchive = archiveKeywords.some(kw => parentPath.includes(kw));
+
+      // HARD CHECK 2: item looks like a completed COA (lab ID filename)
+      const looksLikeCOA = /^\d{6}-\d{3}.*\.pdf$/i.test(itemName);
+
+      if (inArchive || (looksLikeCOA && parentPath.includes('lab scan'))) {
+        const msg = `HARD BLOCK: Cannot delete "${itemName}" — it is in the Archive. Path: ${parentPath}`;
+        console.error(`[deleteSpFile] ${msg}`);
+        throw new Error(msg);
       }
     }
-    // ── Proceed with delete only if file is NOT in Archive ──────────────────
+  } catch(guardErr) {
+    // Re-throw if it's our own guard error
+    if (guardErr.message.startsWith('HARD BLOCK')) throw guardErr;
+    // If metadata fetch failed, REFUSE to delete (fail safe)
+    console.error(`[deleteSpFile] Could not verify file location for ${itemId} — delete REFUSED for safety`);
+    throw new Error(`Delete refused: could not verify file ${itemId} is not in Archive`);
+  }
+  // ══════════════════════════════════════════════════════════════════════════
+
+  try {
     const res = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
