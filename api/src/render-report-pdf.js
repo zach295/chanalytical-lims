@@ -136,8 +136,10 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     const cityStateZip  = [m.city, m.state, m.zip].filter(Boolean).join(', ');
     const fullSampleAddr = [m.location, cityStateZip].filter(Boolean).join(', ');
     const attAddress    = m.billingAddress || fullSampleAddr || '';
-    const rawNameStr    = (m.clientName || m.customer || '').replace(/^Public-/i, '').trim();
-    const cleanName     = rawNameStr.includes(', ')
+    const rawClientName = m.clientName || m.customer || '';
+    const isPublicClient = /^Public-/i.test(rawClientName);
+    const rawNameStr    = rawClientName.replace(/^Public-/i, '').trim();
+    const cleanName     = isPublicClient && rawNameStr.includes(', ')
       ? rawNameStr.split(', ').reverse().join(' ')
       : rawNameStr;
     addCell(attLbl.r,     attCol, cleanName);
