@@ -226,6 +226,19 @@ app.http('send-report', {
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
 
+      // Clear Results Cache entry for this lab ID now that report has been sent
+      try {
+        const cacheItems = await listItems('Results Cache', { top: 500 });
+        const baseId     = String(labId).split(' ')[0].trim();
+        const cacheEntry = cacheItems.find(r => String(r.LabID || '').split(' ')[0].trim() === baseId);
+        if (cacheEntry) {
+          await deleteItem('Results Cache', cacheEntry._id);
+          context.log(`[send-report] Cleared Results Cache for ${baseId}`);
+        }
+      } catch(cacheErr) {
+        context.log('[send-report] Results Cache clear error (non-fatal):', cacheErr.message);
+      }
+
       // Log to Activity Log
       try {
         const now     = new Date();
