@@ -267,6 +267,44 @@ app.http('update-sample', {
           }
           log.push(`Test type updated to ${newTest} (${newSuffix})`);
           log.push(`Note: update control sheet lab ID manually if suffix changed`);
+
+          // ── Update Accession Log test type ──────────────────────────────────
+          try {
+            const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
+              filter: `startswith(fields/BaseId,'${baseId}')`,
+              top: 20,
+            }).catch(() => []);
+            const newFullId = `${baseId} ${newSuffix}`;
+            for (const item of accLogItems) {
+              await updateItem(LISTS.ACCESSION_LOG, item._id, {
+                TestType: newTest,
+                LabID:    newFullId,
+              });
+            }
+            if (accLogItems.length) log.push(`✅ Accession Log test type updated (${accLogItems.length} row(s))`);
+          } catch(e) { log.push(`⚠️ Accession Log test type: ${e.message}`); }
+
+          // ── Update Reports to be Billed ─────────────────────────────────────
+          try {
+            const listsRes2  = await fetch(`${GRAPH}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr });
+            const billedListId = ((await listsRes2.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
+            if (billedListId) {
+              const billedRes = await fetch(
+                `${GRAPH}/sites/${siteId}/lists/${billedListId}/items?$expand=fields($select=Title,Item_x002F_Service)&$top=500`,
+                { headers: authHdr }
+              );
+              const billedItems = ((await billedRes.json()).value || [])
+                .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+              for (const item of billedItems) {
+                await fetch(
+                  `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
+                  { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ Item_x002F_Service: newTest }) }
+                );
+              }
+              if (billedItems.length) log.push(`✅ Reports to be Billed updated (${billedItems.length} row(s))`);
+            }
+          } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
         } catch(testErr) {
           log.push(`Test update failed: ${testErr.message}`);
         }
