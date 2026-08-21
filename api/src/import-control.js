@@ -12,6 +12,44 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-control] xlsx not available:', e.message); }
 
+// Convert any date/time value to military time "MM/DD/YY HH:MM"
+function toMilitaryDT(val) {
+  if (!val && val !== 0) return '';
+  // Excel serial number (number type)
+  if (typeof val === 'number') {
+    const ms      = (val - 25569) * 86400 * 1000;
+    const d       = new Date(Math.round(ms));
+    const mm      = String(d.getUTCMonth()+1).padStart(2,'0');
+    const dd      = String(d.getUTCDate()).padStart(2,'0');
+    const yy      = String(d.getUTCFullYear()).slice(-2);
+    const hh      = String(d.getUTCHours()).padStart(2,'0');
+    const min     = String(d.getUTCMinutes()).padStart(2,'0');
+    return `${mm}/${dd}/${yy} ${hh}:${min}`;
+  }
+  // JS Date object
+  if (val instanceof Date) {
+    const mm  = String(val.getMonth()+1).padStart(2,'0');
+    const dd  = String(val.getDate()).padStart(2,'0');
+    const yy  = String(val.getFullYear()).slice(-2);
+    const hh  = String(val.getHours()).padStart(2,'0');
+    const min = String(val.getMinutes()).padStart(2,'0');
+    return `${mm}/${dd}/${yy} ${hh}:${min}`;
+  }
+  // String — strip AM/PM and normalize
+  const s     = String(val).trim();
+  const ampm  = s.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (ampm) {
+    let [, datePart, h, m, ap] = ampm;
+    h  = parseInt(h, 10);
+    ap = (ap||'').toUpperCase();
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
+    return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
+  }
+  return s;
+}
+
 async function graphListFolder(folderRelPath, token) {
   const siteId = process.env.SP_SITE_ID;
   const enc    = folderRelPath.split('/').map(encodeURIComponent).join('/');
@@ -113,29 +151,29 @@ function parseControlFile(buffer, targetIds) {
 function buildFields(row) {
   const f = {};
   if (row.ph)            f.Title    = sn(row.ph);
-  if (row.dt_ph)         f.field_1  = row.dt_ph;
+  if (row.dt_ph)         f.field_1 = toMilitaryDT(row.dt_ph);
   if (row.coliform)      f.field_2  = row.coliform;
   if (row.ecoli)         f.field_3  = row.ecoli;
-  if (row.start_dt)      f.field_4  = row.start_dt;
-  if (row.end_dt)        f.field_5  = row.end_dt;
+  if (row.start_dt)      f.field_4 = toMilitaryDT(row.start_dt);
+  if (row.end_dt)        f.field_5 = toMilitaryDT(row.end_dt);
   if (row.chloride)      f.field_6  = sn(row.chloride);
-  if (row.dt_chloride)   f.field_7  = row.dt_chloride;
+  if (row.dt_chloride)   f.field_7 = toMilitaryDT(row.dt_chloride);
   if (row.fluoride)      f.field_8  = sn(row.fluoride);
-  if (row.dt_fluoride)   f.field_9  = row.dt_fluoride;
+  if (row.dt_fluoride)   f.field_9 = toMilitaryDT(row.dt_fluoride);
   if (row.nitrite)       f.field_10 = sn(row.nitrite);
-  if (row.dt_nitrite)    f.field_11 = row.dt_nitrite;
+  if (row.dt_nitrite)    f.field_11 = toMilitaryDT(row.dt_nitrite);
   if (row.nitrate)       f.field_12 = sn(row.nitrate);
-  if (row.dt_nitrate)    f.field_13 = row.dt_nitrate;
+  if (row.dt_nitrate)    f.field_13 = toMilitaryDT(row.dt_nitrate);
   if (row.alkalinity)    f.field_14 = sn(row.alkalinity);
-  if (row.dt_alkalinity) f.field_15 = row.dt_alkalinity;
+  if (row.dt_alkalinity) f.field_15 = toMilitaryDT(row.dt_alkalinity);
   if (row.sulfate)       f.field_16 = sn(row.sulfate);
-  if (row.dt_sulfate)    f.field_17 = row.dt_sulfate;
+  if (row.dt_sulfate)    f.field_17 = toMilitaryDT(row.dt_sulfate);
   if (row.tannins)       f.field_18 = sn(row.tannins);
-  if (row.dt_tannins)    f.field_19 = row.dt_tannins;
+  if (row.dt_tannins)    f.field_19 = toMilitaryDT(row.dt_tannins);
   if (row.tds)           f.field_20 = sn(row.tds);
-  if (row.dt_tds)        f.field_21 = row.dt_tds;
+  if (row.dt_tds)        f.field_21 = toMilitaryDT(row.dt_tds);
   if (row.bromide)       f.field_22 = sn(row.bromide);
-  if (row.dt_bromide)    f.field_23 = row.dt_bromide;
+  if (row.dt_bromide)    f.field_23 = toMilitaryDT(row.dt_bromide);
   return f;
 }
 
