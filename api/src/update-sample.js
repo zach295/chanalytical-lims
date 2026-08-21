@@ -282,14 +282,15 @@ app.http('update-sample', {
           // ── Update Accession Log test type ──────────────────────────────────
           try {
             const accLogItems = await listItems(LISTS.ACCESSION_LOG, {
-              filter: `startswith(fields/BaseId,'${baseId}')`,
+              filter: `startswith(fields/field_1,'${baseId}')`,
               top: 20,
             }).catch(() => []);
             const newFullId = `${baseId} ${newSuffix}`;
             for (const item of accLogItems) {
               await updateItem(LISTS.ACCESSION_LOG, item._id, {
-                TestType: newTest,
-                LabID:    newFullId,
+                field_2: newFullId,  // full lab ID with new suffix
+                field_3: newTest,    // test type name
+                field_4: newSuffix,  // suffix e.g. SS
               });
             }
             if (accLogItems.length) log.push(`✅ Accession Log test type updated (${accLogItems.length} row(s))`);
@@ -360,7 +361,7 @@ app.http('update-sample', {
       // ── Update customer name in Accession Log ─────────────────────────────────
       if (updates.customer !== undefined) {
         const accItems = await listItems(LISTS.ACCESSION_LOG, {
-          filter: `startswith(fields/BaseId,'${baseId}')`,
+          filter: `startswith(fields/field_1,'${baseId}')`,
           top: 20,
         }).catch(() => []);
 
@@ -413,9 +414,10 @@ app.http('update-sample', {
             : `ℹ️ Control sheet: ${csResult.reason || 'no change needed'}`);
         } catch(e) { log.push(`⚠️ Control sheet: ${e.message}`); }
 
-        // Radon sheet — only if sample has radon component
+        // Radon sheet — if new OR old test type includes radon
         const isRadon = (updates.coaTest || '').toLowerCase().includes('radon') ||
-          archivedItems.some(r => (r.field_2||'').toLowerCase().includes('radon'));
+          (updates.coaTest || '').toLowerCase().includes('rw') ||
+          archivedItems.some(r => (r.field_2||'').toLowerCase().includes('radon') || (r.field_2||'').toLowerCase().includes('rw'));
         if (isRadon) {
           try {
             const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context);
