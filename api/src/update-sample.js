@@ -62,14 +62,25 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
   const marker    = 'Shared Documents/';
   const idx       = controlFolder.indexOf(marker);
   const relPath   = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\/+/, '');
-  const fileName  = `C_${datePrefix}.xlsx`;
-  const filePath  = `${relPath}/${fileName}`.split('/').map(encodeURIComponent).join('/');
   const authHdr   = { Authorization: `Bearer ${token}` };
+  const MONTHS    = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
 
-  // 1. Get file
-  const fileRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${filePath}`, { headers: authHdr });
-  if (!fileRes.ok) throw new Error(`Control sheet C_${datePrefix}.xlsx not found (${fileRes.status})`);
-  const { id: fileId } = await fileRes.json();
+  // Build month subfolder: "August 2026" from MMDDYY prefix
+  const mm        = parseInt(datePrefix.slice(0, 2)) - 1;
+  const yy        = datePrefix.slice(4, 6);
+  const year      = '20' + yy;
+  const monthName = MONTHS[mm] || datePrefix.slice(0, 2);
+  const fileName  = `C_${datePrefix}.xlsx`;
+
+  // Try month subfolder first, then flat folder
+  let fileId = null;
+  for (const tryPath of [`${relPath}/${monthName} ${year}/${fileName}`, `${relPath}/${fileName}`]) {
+    const enc = tryPath.split('/').map(encodeURIComponent).join('/');
+    const r   = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${enc}`, { headers: authHdr });
+    if (r.ok) { fileId = (await r.json()).id; break; }
+  }
+  if (!fileId) throw new Error(`Control sheet C_${datePrefix}.xlsx not found`);
 
   // 2. Open session
   const sesRes  = await fetch(
@@ -299,16 +310,52 @@ app.http('update-sample', {
                 await fetch(
                   `${GRAPH}/sites/${siteId}/lists/${billedListId}/items/${item.id}/fields`,
                   { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ Item_x002F_Service: newTest }) }
+                    body: JSON.stringify({ Item_x002F_Service: newTest, Test_x0020_Type_x0020_SKU: newSuffix }) }
                 );
               }
-              if (billedItems.length) log.push(`✅ Reports to be Billed updated (${billedItems.length} row(s))`);
+              if (billedItems.length) log.push(`✅ Reports to be Billed test type updated (${billedItems.length} row(s))`);
             }
           } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
         } catch(testErr) {
           log.push(`Test update failed: ${testErr.message}`);
         }
       }
+
+      // ── Update Reports to be Billed for any field change ──────────────────────
+      try {
+        const GRAPH3 = 'https://graph.microsoft.com/v1.0';
+        const aHdr3  = { Authorization: `Bearer ${token}` };
+        const lRes3  = await fetch(`${GRAPH3}/sites/${siteId}/lists?$select=id,displayName`, { headers: aHdr3 });
+        const blId   = ((await lRes3.json()).value || []).find(l => l.displayName === 'Reports to be Billed')?.id;
+        if (blId) {
+          const bRes  = await fetch(
+            `${GRAPH3}/sites/${siteId}/lists/${blId}/items?$expand=fields($select=Title)&$top=500`,
+            { headers: aHdr3 }
+          );
+          const bItems = ((await bRes.json()).value || [])
+            .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+          for (const item of bItems) {
+            const bFields = {};
+            if (updates.customer)     bFields.Customer                    = updates.customer;
+            if (updates.location)     bFields.Location                    = updates.location;
+            if (updates.city)         bFields['City_x002F_Town']          = updates.city;
+            if (updates.state)        bFields.State                       = updates.state;
+            if (updates.zip)          bFields.Zip                         = updates.zip;
+            if (updates.dateDrawn)    bFields.Date_x0020_Drawn            = updates.dateDrawn;
+            if (updates.timeDrawn)    bFields.Time_x0020_Drawn            = to24h(updates.timeDrawn);
+            if (updates.receivedDate) bFields["Date_x0020_Rec_x0027_d"]  = updates.receivedDate;
+            if (updates.receivedTime) bFields["Time_x0020_Rec_x0027_d"]  = to24h(updates.receivedTime);
+            if (Object.keys(bFields).length) {
+              await fetch(
+                `${GRAPH3}/sites/${siteId}/lists/${blId}/items/${item.id}/fields`,
+                { method: 'PATCH', headers: { ...aHdr3, 'Content-Type': 'application/json' },
+                  body: JSON.stringify(bFields) }
+              );
+            }
+          }
+          if (bItems.length) log.push(`✅ Reports to be Billed fields updated (${bItems.length} row(s))`);
+        }
+      } catch(e) { log.push(`⚠️ Reports to be Billed fields: ${e.message}`); }
 
       // ── Update customer name in Accession Log ─────────────────────────────────
       if (updates.customer !== undefined) {
@@ -375,6 +422,33 @@ app.http('update-sample', {
             log.push(rwResult.updated ? `✅ Radon sheet updated` : `ℹ️ Radon: ${rwResult.reason}`);
           } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
         }
+      }
+
+      // ── Results Cache — update lab ID to new suffix ──────────────────────
+      if (updates.coaTest) {
+        try {
+          const GRAPH2   = 'https://graph.microsoft.com/v1.0';
+          const authHdr2 = { Authorization: `Bearer ${token}` };
+          const rcListRes = await fetch(`${GRAPH2}/sites/${siteId}/lists?$select=id,displayName`, { headers: authHdr2 });
+          const rcListId  = ((await rcListRes.json()).value || []).find(l => l.displayName === 'Results Cache')?.id;
+          if (rcListId) {
+            const rcItemsRes = await fetch(
+              `${GRAPH2}/sites/${siteId}/lists/${rcListId}/items?$expand=fields($select=LabID)&$top=500`,
+              { headers: authHdr2 }
+            );
+            const rcItem = ((await rcItemsRes.json()).value || [])
+              .find(i => String(i.fields?.LabID || '').split(' ')[0].trim() === baseId);
+            if (rcItem) {
+              const newFullId = `${baseId} ${getSuffix(updates.coaTest.trim())}`;
+              await fetch(
+                `${GRAPH2}/sites/${siteId}/lists/${rcListId}/items/${rcItem.id}/fields`,
+                { method: 'PATCH', headers: { ...authHdr2, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ LabID: newFullId }) }
+              );
+              log.push(`✅ Results Cache lab ID updated to ${newFullId}`);
+            }
+          }
+        } catch(e) { log.push(`⚠️ Results Cache: ${e.message}`); }
       }
 
       // ── Write to Activity Log ───────────────────────────────────────────────
