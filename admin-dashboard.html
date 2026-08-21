@@ -3041,8 +3041,12 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
 
-      statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s) across Archived Intake, COA, and RW sheets.`;
       statusEl.style.color = 'var(--success)';
+      if (data.log && data.log.length) {
+        statusEl.innerHTML = data.log.map(l => `<div>${l}</div>`).join('');
+      } else {
+        statusEl.textContent = `✅ Updated ${data.rowsUpdated || 0} row(s)`;
+      }
       showToast(`✅ Sample ${_scCurrentData.baseId} updated successfully`);
     } catch(e) {
       statusEl.textContent = '⚠️ ' + e.message;
