@@ -11,6 +11,44 @@ const { listFolder, downloadFile, listItems, createItem, updateItem } = require(
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-icpms] xlsx not available:', e.message); }
 
+// Convert any date/time value to military time "MM/DD/YY HH:MM"
+function toMilitaryDT(val) {
+  if (!val && val !== 0) return '';
+  // Excel serial number (number type)
+  if (typeof val === 'number') {
+    const ms      = (val - 25569) * 86400 * 1000;
+    const d       = new Date(Math.round(ms));
+    const mm      = String(d.getUTCMonth()+1).padStart(2,'0');
+    const dd      = String(d.getUTCDate()).padStart(2,'0');
+    const yy      = String(d.getUTCFullYear()).slice(-2);
+    const hh      = String(d.getUTCHours()).padStart(2,'0');
+    const min     = String(d.getUTCMinutes()).padStart(2,'0');
+    return `${mm}/${dd}/${yy} ${hh}:${min}`;
+  }
+  // JS Date object
+  if (val instanceof Date) {
+    const mm  = String(val.getMonth()+1).padStart(2,'0');
+    const dd  = String(val.getDate()).padStart(2,'0');
+    const yy  = String(val.getFullYear()).slice(-2);
+    const hh  = String(val.getHours()).padStart(2,'0');
+    const min = String(val.getMinutes()).padStart(2,'0');
+    return `${mm}/${dd}/${yy} ${hh}:${min}`;
+  }
+  // String — strip AM/PM and normalize
+  const s     = String(val).trim();
+  const ampm  = s.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (ampm) {
+    let [, datePart, h, m, ap] = ampm;
+    h  = parseInt(h, 10);
+    ap = (ap||'').toUpperCase();
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
+    return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
+  }
+  return s;
+}
+
 const ELEMENT_MAP = {
   'Na 23':  'Sodium_x0028_Na23_x0029_',
   'Mg 24':  'Magnesium_x0028_Mg24_x0029_',
@@ -272,7 +310,7 @@ app.http('import-icpms', {
       const log = []; let updated = 0, created = 0, errors = 0;
 
       for (const [baseId, result] of Object.entries(merged)) {
-        const fields = { AcquisitionTime: result.acqTime || '' };
+        const fields = { AcquisitionTime: toMilitaryDT(result.acqTime) };
         for (const [elemKey, elemResult] of Object.entries(result.elements)) {
           const fieldName = ELEMENT_MAP[elemKey];
           if (fieldName && elemResult) {
@@ -320,23 +358,32 @@ app.http('import-icpms', {
       }
 
       // ── Read Metals Prep (Acid Sheet) for MetalsStartDate_x002f_Time ──────────
+      const acidDebug = { step: 'start', folder: '', fileFound: false, sheetFound: false, rows: 0, updated: 0 };
       try {
         const acidFolderRaw = process.env.SP_ACID_FOLDER || '';
         const acidMarker    = 'Shared Documents/';
         const acidMi        = acidFolderRaw.indexOf(acidMarker);
         const acidFolder    = acidMi >= 0 ? acidFolderRaw.slice(acidMi + acidMarker.length) : acidFolderRaw.replace(/^\/+/, '');
+        acidDebug.folder    = acidFolder;
+        acidDebug.step      = 'folder resolved';
 
         if (acidFolder) {
           const acidFiles = await listFolder(acidFolder);
           const acidFile  = acidFiles.find(f => /metals.?prep/i.test(f.name) && /\.xlsx?$/i.test(f.name));
 
           if (acidFile) {
+            acidDebug.fileFound = true;
+            acidDebug.fileName  = acidFile.name;
             const acidBuf   = await downloadFile(acidFile.id);
             const acidWb    = XLSX.read(acidBuf, { type: 'buffer', cellDates: true });
+            acidDebug.sheets = acidWb.SheetNames;
             const monthAbbr = new Date().toLocaleString('en-US', { month: 'short', timeZone: 'America/New_York' });
+            acidDebug.monthAbbr = monthAbbr;
             const sheetName = acidWb.SheetNames.find(s => s.toLowerCase().includes(monthAbbr.toLowerCase()));
 
             if (sheetName) {
+              acidDebug.sheetFound = true;
+              acidDebug.sheetName  = sheetName;
               const acidWs    = acidWb.Sheets[sheetName];
               const acidRange = XLSX.utils.decode_range(acidWs['!ref'] || 'A1:F1');
               const acidMap   = {};
@@ -391,6 +438,9 @@ app.http('import-icpms', {
                 }
               }
               context.log(`[import-icpms] Acid sheet: ${Object.keys(acidMap).length} rows, ${acidUpdated} MetalsStart updated`);
+              acidDebug.rows    = Object.keys(acidMap).length;
+              acidDebug.updated = acidUpdated;
+              acidDebug.sampleIds = Object.keys(acidMap).slice(0, 5);
             } else {
               context.log(`[import-icpms] Acid sheet: no sheet matching "${monthAbbr}"`);
             }
@@ -400,10 +450,11 @@ app.http('import-icpms', {
         }
       } catch(acidErr) {
         context.log('[import-icpms] Acid sheet error:', acidErr.message);
+        acidDebug.error = acidErr.message;
       }
 
       return { status: 200, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log }) };
+        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log, acidDebug }) };
 
     } catch(e) {
       context.log('[import-icpms] Error:', e.message);
