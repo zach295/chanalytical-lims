@@ -50,7 +50,7 @@ async function updateControlSheet(siteId, datePrefix, baseId, newLabId, token, c
 
     // 4. Read used range to find matching row
     const rangeRes  = await fetch(
-      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')/values`,
+      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')`,
       { headers: wbHdr }
     );
     const rangeData = await rangeRes.json();
