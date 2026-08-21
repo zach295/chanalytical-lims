@@ -5238,7 +5238,22 @@ document.addEventListener('DOMContentLoaded', function() {
   // Format datetime string to ensure colon in time: "07/08/26 1604" → "07/08/26 16:04"
   function fmtDisplayDT(dt) {
     if (!dt) return dt;
-    return String(dt).replace(/(\d{2}\/\d{2}\/\d{2})\s+(\d{2})(\d{2})$/, '$1 $2:$3');
+    const s = String(dt).trim();
+    // Convert 12-hour AM/PM to 24-hour military time
+    // e.g. "8/20/2026 10:25:20 AM" → "8/20/26 10:25"
+    //      "7/29/26 9:33 PM"       → "7/29/26 21:33"
+    const ampmMatch = s.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      let [, datePart, h, m, ampm] = ampmMatch;
+      h = parseInt(h, 10);
+      if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+      if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+      // Normalize year to 2-digit if 4-digit
+      datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
+      return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
+    }
+    // Compact format MMDDYY HHMM → MM/DD/YY HH:MM
+    return s.replace(/(\d{2}\/\d{2}\/\d{2})\s+(\d{2})(\d{2})$/, '$1 $2:$3');
   }
 
   function renderEditableReport(data) {
