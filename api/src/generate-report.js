@@ -118,7 +118,17 @@ const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safet
 function ensureColon(dt) {
   if (!dt) return dt;
   const s = String(dt).trim();
-  // Match "MM/DD/YY 1402" or "MM/DD/YY 1402" (no colon in time)
+  // Handle full datetime with AM/PM e.g. "8/20/2026 10:25:20 AM" → "8/20/26 10:25"
+  const ampmFull = s.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampmFull) {
+    let [, datePart, h, m, ampm] = ampmFull;
+    h = parseInt(h, 10);
+    if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+    if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+    datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
+    return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
+  }
+  // Handle compact HHMM format
   return s.replace(/(\d{2}\/\d{2}\/\d{2})\s+(\d{2})(\d{2})$/, '$1 $2:$3')
           .replace(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{2})(\d{2})$/, '$1 $2:$3');
 }
