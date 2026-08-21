@@ -119,6 +119,7 @@ app.http('import-acid', {
 
       const cacheItems = await listItems('Results Cache', { top: 500 });
       const needsAcid  = cacheItems.filter(r => {
+        if (/\bREJ\b/i.test(r.LabID || '')) return false; // skip rejected samples
         const hasId   = !!(r.LabID || '').trim();
         const hasDate = !!(r.MetalsStartDate_x002f_Time || '').toString().trim();
         return hasId && (importAll || !hasDate);
