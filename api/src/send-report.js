@@ -228,12 +228,30 @@ app.http('send-report', {
 
       // Clear Results Cache entry for this lab ID now that report has been sent
       try {
-        const cacheItems = await listItems('Results Cache', { top: 500 });
-        const baseId     = String(labId).split(' ')[0].trim();
-        const cacheEntry = cacheItems.find(r => String(r.LabID || '').split(' ')[0].trim() === baseId);
-        if (cacheEntry) {
-          await deleteItem('Results Cache', cacheEntry._id);
-          context.log(`[send-report] Cleared Results Cache for ${baseId}`);
+        const graphToken = await getToken();
+        const siteId2    = process.env.SP_SITE_ID;
+        const baseId2    = String(labId).split(' ')[0].trim();
+        const gHdr       = { Authorization: `Bearer ${graphToken}` };
+        const GURL       = 'https://graph.microsoft.com/v1.0';
+
+        const rcListRes  = await fetch(`${GURL}/sites/${siteId2}/lists?$select=id,displayName`, { headers: gHdr });
+        const rcListId   = ((await rcListRes.json()).value || []).find(l => l.displayName === 'Results Cache')?.id;
+        if (rcListId) {
+          const rcItemsRes = await fetch(
+            `${GURL}/sites/${siteId2}/lists/${rcListId}/items?$expand=fields($select=LabID)&$top=500`,
+            { headers: gHdr }
+          );
+          const rcItem = ((await rcItemsRes.json()).value || [])
+            .find(i => String(i.fields?.LabID || '').split(' ')[0].trim() === baseId2);
+          if (rcItem) {
+            await fetch(
+              `${GURL}/sites/${siteId2}/lists/${rcListId}/items/${rcItem.id}`,
+              { method: 'DELETE', headers: gHdr }
+            );
+            context.log(`[send-report] Cleared Results Cache for ${baseId2}`);
+          } else {
+            context.log(`[send-report] No Results Cache entry found for ${baseId2}`);
+          }
         }
       } catch(cacheErr) {
         context.log('[send-report] Results Cache clear error (non-fatal):', cacheErr.message);
