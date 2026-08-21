@@ -297,7 +297,7 @@ app.http('import-icpms', {
             const asIIIVal = String(result.arsenicIII);
             const asIIITime = result.arsenicIIIAcqTime || '';
             const fieldVariants = [
-              { Arsenic3: asIIIVal }, // SP internal name for "ArsenicIII" column
+              { Arsenic3: asIIIVal, Arsenic3AcquisitionTime: asIIITime }, // SP internal names
               { ArsenicIII: asIIIVal }, // fallback attempts
               { ArsenicIII0: asIIIVal },
             ];
@@ -317,6 +317,89 @@ app.http('import-icpms', {
             .then(() => { created++; log.push(`Created: ${baseId}`); })
             .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
         }
+      }
+
+      // ── Read Metals Prep (Acid Sheet) for MetalsStartDate_x002f_Time ──────────
+      try {
+        const acidFolderRaw = process.env.SP_ACID_FOLDER || '';
+        const acidMarker    = 'Shared Documents/';
+        const acidMi        = acidFolderRaw.indexOf(acidMarker);
+        const acidFolder    = acidMi >= 0 ? acidFolderRaw.slice(acidMi + acidMarker.length) : acidFolderRaw.replace(/^\/+/, '');
+
+        if (acidFolder) {
+          const acidFiles = await listFolder(acidFolder);
+          const acidFile  = acidFiles.find(f => /metals.?prep/i.test(f.name) && /\.xlsx?$/i.test(f.name));
+
+          if (acidFile) {
+            const acidBuf   = await downloadFile(acidFile.id);
+            const acidWb    = XLSX.read(acidBuf, { type: 'buffer', cellDates: true });
+            const monthAbbr = new Date().toLocaleString('en-US', { month: 'short', timeZone: 'America/New_York' });
+            const sheetName = acidWb.SheetNames.find(s => s.toLowerCase().includes(monthAbbr.toLowerCase()));
+
+            if (sheetName) {
+              const acidWs    = acidWb.Sheets[sheetName];
+              const acidRange = XLSX.utils.decode_range(acidWs['!ref'] || 'A1:F1');
+              const acidMap   = {};
+
+              for (let r = 1; r <= acidRange.e.r; r++) {
+                const datCell = acidWs[XLSX.utils.encode_cell({ r, c: 0 })]; // col A: date
+                const timCell = acidWs[XLSX.utils.encode_cell({ r, c: 1 })]; // col B: time
+                const idCell  = acidWs[XLSX.utils.encode_cell({ r, c: 5 })]; // col F: sample ID
+                if (!idCell) continue;
+
+                const baseId  = String(idCell.v || '').trim().match(/(\d{6}-\d{3})/)?.[1] || '';
+                if (!baseId) continue;
+
+                // Format date from col A
+                let dateStr = '';
+                if (datCell) {
+                  if (datCell.t === 'd' && datCell.v instanceof Date) {
+                    const d = datCell.v;
+                    dateStr = `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`;
+                  } else { dateStr = String(datCell.w || datCell.v || '').trim(); }
+                }
+
+                // Format time from col B — convert to military if needed
+                let timeStr = '';
+                if (timCell) {
+                  if (timCell.t === 'd' && timCell.v instanceof Date) {
+                    const t = timCell.v;
+                    timeStr = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+                  } else {
+                    const tw   = String(timCell.w || timCell.v || '').trim();
+                    const ampm = tw.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
+                    if (ampm) {
+                      let h = parseInt(ampm[1], 10); const m = ampm[2];
+                      if ((ampm[3]||'').toUpperCase() === 'PM' && h < 12) h += 12;
+                      if ((ampm[3]||'').toUpperCase() === 'AM' && h === 12) h = 0;
+                      timeStr = `${String(h).padStart(2,'0')}:${m}`;
+                    } else { timeStr = tw; }
+                  }
+                }
+
+                if (dateStr) acidMap[baseId] = timeStr ? `${dateStr} ${timeStr}` : dateStr;
+              }
+
+              // Write to Results Cache
+              let acidUpdated = 0;
+              for (const [baseId, startDT] of Object.entries(acidMap)) {
+                const existing = cacheItems.find(r => String(r.LabID||'').split(' ')[0].trim() === baseId);
+                if (existing) {
+                  await updateItem('Results Cache', existing._id, { MetalsStartDate_x002f_Time: startDT })
+                    .then(() => acidUpdated++)
+                    .catch(() => {});
+                }
+              }
+              context.log(`[import-icpms] Acid sheet: ${Object.keys(acidMap).length} rows, ${acidUpdated} MetalsStart updated`);
+            } else {
+              context.log(`[import-icpms] Acid sheet: no sheet matching "${monthAbbr}"`);
+            }
+          } else {
+            context.log('[import-icpms] Acid sheet: metals prep file not found');
+          }
+        }
+      } catch(acidErr) {
+        context.log('[import-icpms] Acid sheet error:', acidErr.message);
       }
 
       return { status: 200, headers: { 'content-type': 'application/json' },
