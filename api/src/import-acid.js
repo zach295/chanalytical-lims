@@ -137,8 +137,8 @@ app.http('import-acid', {
       const folder    = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
       const files      = await listFolder(folder);
-      const xlsxFiles  = files.filter(f => /\.xlsx?m?$/i.test(f.name));
-      if (!xlsxFiles.length) return { status: 404, jsonBody: { error: 'No Excel files in acid folder', folder, filesFound: files.map(f => f.name) } };
+      const xlsxFiles  = files.filter(f => /\.(xlsx?|xlsm|xlsb)$/i.test(f.name));
+      if (!xlsxFiles.length) return { status: 404, jsonBody: { error: 'No Excel files in acid folder', folder, allFilesFound: files.map(f => f.name), hint: 'Check SP_ACID_FOLDER env var' } };
 
       const year     = String(new Date().getFullYear());
       const latest   = xlsxFiles.find(f => f.name.includes(year)) || xlsxFiles[xlsxFiles.length - 1];
