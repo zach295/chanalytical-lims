@@ -104,7 +104,7 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
 
     // 4. Read column A only (avoids RangeExceedsLimit on large sheets)
     const rangeRes  = await fetch(
-      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')/values`,
+      `${wbBase}/worksheets/${wsId}/range(address='A1:A150')`,
       { headers: wbHdr }
     );
     if (!rangeRes.ok) {
