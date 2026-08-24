@@ -910,8 +910,12 @@ app.http('approve-scan', {
       // ── Delete from Review Queue ─────────────────────────────────────────────
       if (reviewQueueRow) {
         // Mark Approved first — so even if delete fails, get-scan-queue filters it out on refresh
-        await updateItem(LISTS.REVIEW_QUEUE, reviewQueueRow, { Title: 'Approved' }).catch(() => {});
-        await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
+        await updateItem(LISTS.REVIEW_QUEUE, reviewQueueRow, { Title: 'Approved' })
+          .catch(e => context.log('[ReviewQueue] Mark Approved failed:', e.message));
+        await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow)
+          .catch(e => context.log('[ReviewQueue] Delete failed:', e.message));
+      } else {
+        context.log('[ReviewQueue] reviewQueueRow is undefined — cannot mark or delete');
       }
 
       // ── Move and rename scan file to Archive (organized by Month/Day) ──────────
