@@ -909,6 +909,8 @@ app.http('approve-scan', {
 
       // ── Delete from Review Queue ─────────────────────────────────────────────
       if (reviewQueueRow) {
+        // Mark Approved first — so even if delete fails, get-scan-queue filters it out on refresh
+        await updateItem(LISTS.REVIEW_QUEUE, reviewQueueRow, { Title: 'Approved' }).catch(() => {});
         await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow).catch(() => {});
       }
 
@@ -1057,6 +1059,30 @@ app.http('approve-scan', {
           context.log('[RCS] Error:', e.message);
         }
       }
+
+      // ── Write Approval to Activity Log ────────────────────────────────────────
+      try {
+        const _now3    = new Date();
+        const _ld      = _now3.toLocaleDateString('en-US',{ timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const _lt      = _now3.toLocaleTimeString('en-US',{ timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        const _labIds  = labItems.map(i => i.fullId).join(', ');
+        const _tests   = labItems.map(i => i.coaTest).join(', ');
+        const _details = [
+          `Lab IDs: ${_labIds}`,
+          `Test types: ${_tests}`,
+          `Customer: ${formalName || customer || '—'}`,
+          `Written to: Archived Intake | Accession Log | Reports to be Billed | Results Cache`,
+          `COA scan archived | Review Queue row deleted`,
+        ].join('\n');
+        await createItem('Activity Log', {
+          Title: `${_ld} ${labItems[0]?.baseId||''}`,
+          Client: labItems[0]?.baseId||'',
+          ActivityType: 'Sample Approved',
+          Notes: _details,
+          By: reviewedBy||'Lab Staff',
+          LogDate: _ld, LogTime: _lt, Quantity: labItems.length,
+        }).catch(()=>{});
+      } catch(e) {}
 
       return {
         status: 200,
