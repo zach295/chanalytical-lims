@@ -2275,7 +2275,11 @@ document.addEventListener('DOMContentLoaded', function() {
       // Filter out locally-deleted scans (prevents re-appearance after F5)
       const deletedScans = getDeletedScans();
       console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
-      const scans = (data.pending || []).filter(r => !deletedScans.has(r.fileId));
+      const scans = (data.pending || []).filter(r =>
+        !deletedScans.has(r.fileId) &&
+        !deletedScans.has(r.barcodeId) &&
+        !deletedScans.has(r.baseId)
+      );
 
       // ── Approved Today + Northern Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
@@ -4400,8 +4404,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
 
     // Mark as deleted immediately in localStorage so it survives F5
-    console.log('[approve] addDeletedScan:', fileId);
+    const _cardEl = document.getElementById(`scan-card-${fileId}`);
+    const _barcodeId = _cardEl?.dataset?.barcode || '';
+    console.log('[approve] addDeletedScan:', fileId, 'barcode:', _barcodeId);
     addDeletedScan(fileId);
+    if (_barcodeId) addDeletedScan(_barcodeId);
 
     // Remove card from UI immediately
     const card = document.getElementById(`scan-card-${fileId}`);
