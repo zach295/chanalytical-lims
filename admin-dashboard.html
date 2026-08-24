@@ -2926,9 +2926,13 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const matches = data.matches || [];
       if (matches.length) {
-        resultEl.innerHTML = matches.map(r =>
-          `<div style="margin-bottom:4px;">✅ <strong>${r.field_1}</strong> — ${r.field_2||''}</div>`
-        ).join('');
+        resultEl.innerHTML = matches.map(r => {
+          const addr = [r.field_8, r.field_9, r.field_10].filter(Boolean).join(', ');
+          return `<div style="margin-bottom:6px;">
+            ✅ <strong>${r.field_1}</strong> — ${r.field_2||''}
+            ${addr ? `<div style="font-size:12px;color:var(--slate);margin-top:2px;margin-left:18px;">📍 ${addr}</div>` : ''}
+          </div>`;
+        }).join('');
         // Auto-fill with the full lab ID if only one match
         if (matches.length === 1) {
           document.getElementById('rej-labid').value = matches[0].field_1;
