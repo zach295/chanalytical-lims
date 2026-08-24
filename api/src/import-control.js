@@ -287,6 +287,18 @@ app.http('import-control', {
         }
       }
 
+            // ── Activity Log ─────────────────────────────────────────────────────────
+      try {
+        const _now = new Date();
+        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${_ld} Control Sheet Import`, Client: 'Import',
+          ActivityType: 'Control Sheet Import', Notes: `Updated: ${updated}, Created: ${created}, Errors: ${errors} | Files: ${filesUsed.join(", ")}`,
+          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+        }).catch(()=>{});
+      } catch(e) {}
+
       return { status: 200, jsonBody: { success: true, filesUsed, rowCount: allRows.length, created, updated, errors, log, samples: Object.keys(byBase) } };
 
     } catch(e) {
