@@ -125,7 +125,7 @@
     .msg-inline{padding:9px 13px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none;}
     .msg-inline.ok{background:var(--success-light);color:var(--success);display:block;}
     .msg-inline.err{background:var(--error-light);color:var(--error);display:block;}
-    @media(max-width:700px){#sidebar{display:none;}}
+    @media(max-width:700px){#sidebar{display:none;}#sb-expand{display:block!important;}}
     #sidebar.collapsed{width:0!important;min-width:0!important;overflow:hidden;}
     #sidebar.collapsed #sb-brand,#sidebar.collapsed .sb-label,#sidebar.collapsed .sb-btn span:not(#review-badge),#sidebar.collapsed #sb-username{display:none;}
     #sb-expand{display:none;position:fixed;top:12px;left:8px;z-index:100;background:var(--navy);border:none;color:white;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:14px;}
@@ -2050,6 +2050,36 @@ document.addEventListener('DOMContentLoaded', function() {
   initSidebar();
   loadOverview();
 
+  // ── Sidebar toggle ────────────────────────────────────────────────────────
+  function toggleSidebar() {
+    const sb     = document.getElementById('sidebar');
+    const expand = document.getElementById('sb-expand');
+    const isMobile = window.innerWidth <= 700;
+    if (isMobile) {
+      // On mobile: show/hide fully
+      const isHidden = sb.style.display === 'none' || !sb.style.display;
+      sb.style.display = isHidden ? 'flex' : 'none';
+      if (expand) expand.style.display = isHidden ? 'none' : 'block';
+    } else {
+      // On desktop: collapse/expand
+      sb.classList.toggle('collapsed');
+      const isCollapsed = sb.classList.contains('collapsed');
+      if (expand) expand.style.display = isCollapsed ? 'block' : 'none';
+      document.getElementById('sb-toggle').textContent = isCollapsed ? '▶' : '◀';
+    }
+  }
+
+  // Close sidebar on mobile when a nav item is clicked
+  document.querySelectorAll('.sb-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (window.innerWidth <= 700) {
+        document.getElementById('sidebar').style.display = 'none';
+        const expand = document.getElementById('sb-expand');
+        if (expand) expand.style.display = 'block';
+      }
+    });
+  });
+
   function getAdminName() {
     const s = Auth.getSession();
     return s ? (s.name || s.email) : 'Admin';
@@ -2763,6 +2793,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const t = (r.testType || 'Unknown').split('|')[0].trim();
         typeMap[t] = (typeMap[t] || 0) + 1;
       }
+      const total = Object.values(typeMap).reduce((a,b) => a + b, 0);
       // Fetch rejection count separately
       let rejTotal = 0;
       try {
