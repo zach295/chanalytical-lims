@@ -208,8 +208,12 @@
   }
 
   function redirect(role) {
-    if (role === 'admin') { sessionStorage.setItem('cha_admin_alive','1'); window.location.href='/admin-dashboard.html'; }
-    else if (role === 'lab' || role === 'office') window.location.href='/admin-dashboard.html';
+    const roles = (role || '').split(',').map(r => r.trim());
+    const isAdmin  = roles.includes('admin');
+    const isLab    = roles.includes('lab');
+    const isOffice = roles.includes('office');
+    if (isAdmin) { sessionStorage.setItem('cha_admin_alive','1'); window.location.href='/admin-dashboard.html'; }
+    else if (isLab || isOffice) window.location.href='/admin-dashboard.html';
     else window.location.href='/dashboard.html';
   }
 
