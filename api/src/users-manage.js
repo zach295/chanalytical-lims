@@ -186,7 +186,7 @@ app.http('users-manage', {
         const { email: pwEmail } = body;
         const user = await findUserByEmail(pwEmail);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, { field_8: WELCOME_HASH, field_9: true });
+        await updateItem(LISTS.USERS, user._id, { field_8: WELCOME_HASH, field_7: true, field_9: true });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
