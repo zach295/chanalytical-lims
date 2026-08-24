@@ -2304,6 +2304,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Sort by lab ID descending (largest/latest first)
         allApproved.sort((a,b) => (b.fullId||'').localeCompare(a.fullId||''));
 
+        // Seed in-memory cache from server so immediate UI updates show full history
+        if (recentlyApprovedCache.length === 0 && allApproved.length > 0) {
+          recentlyApprovedCache = allApproved.slice(0, 20);
+        }
+
         // Approved Today counter — use server total (reads all of Archived Intake for today)
         if (todayEl) todayEl.textContent = Math.max(serverTotal, allApproved.length);
 
@@ -4288,21 +4293,21 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       if (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
 
-      // Immediately prepend the new approval to the recently approved table
+      // Rebuild recently approved table from cache (shows all approvals this session)
       const approvedBodyEl = document.getElementById('rq-approved-body');
       if (approvedBodyEl) {
-        const a = recentlyApprovedCache[0];
-        const newRow = document.createElement('tr');
-        newRow.innerHTML = `
+        const recent = recentlyApprovedCache.slice(0, 5);
+        approvedBodyEl.innerHTML = recent.map(a => `<tr>
           <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
           <td class="client-name">${a.customer||'—'}</td>
           <td style="font-size:12px;">${a.coaTest||'—'}</td>
-          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>`;
-        approvedBodyEl.insertBefore(newRow, approvedBodyEl.firstChild);
-        // Trim to 5 rows
-        while (approvedBodyEl.rows.length > 5) approvedBodyEl.deleteRow(-1);
+          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
+        </tr>`).join('');
         const todayEl = document.getElementById('rq-today');
-        if (todayEl) todayEl.textContent = parseInt(todayEl.textContent||'0', 10) + 1;
+        if (todayEl) {
+          const current = parseInt(todayEl.textContent || '0', 10);
+          if (!isNaN(current)) todayEl.textContent = Math.max(current + 1, recentlyApprovedCache.length);
+        }
       }
 
       // ── ACTIVITY LOG: always record approval ──────────────────────────────
