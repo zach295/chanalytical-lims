@@ -2806,12 +2806,11 @@ document.addEventListener('DOMContentLoaded', function() {
         typeMap[t] = (typeMap[t] || 0) + 1;
       }
       const total = Object.values(typeMap).reduce((a,b) => a + b, 0);
-      // Fetch rejection count separately
-      let rejTotal = 0;
-      try {
-        const rjRes = await fetch('/api/get-rejections');
-        if (rjRes.ok) { const rj = await rjRes.json(); rejTotal = (rj.rows || rj.items || []).length; }
-      } catch(e) {}
+      // Count rejections directly from allRecs
+      const rejTotal = allRecs.filter(r => (r.status || '').toLowerCase() === 'rejected').length;
+
+      const grandTotal = total + rejTotal;
+      _ovRejTotal = rejTotal; // store for filter function
 
       const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
       const colors  = ['var(--teal)','var(--navy)','var(--slate)'];
@@ -2830,8 +2829,6 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>`;
       });
       // Rejection % is share of ALL samples including rejected
-      const grandTotal = total + rejTotal;
-      _ovRejTotal = rejTotal; // store for filter function
       const rejPct = grandTotal > 0 ? Math.round((rejTotal / grandTotal) * 100) : 0;
       bars.push(`<div style="padding-top:12px;border-top:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -2888,7 +2885,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const top3     = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
     const colors   = ['var(--teal)','var(--navy)','var(--slate)'];
     const typesEl  = document.getElementById('ov-types');
-    const rejTotal = _ovRejTotal;
+    const rejTotal = (window._ovAllRecs || []).filter(r => (r.status || '').toLowerCase() === 'rejected').length;
     const grandTotal = total + rejTotal;
 
     const bars = top3.map(([name, count], i) => {
