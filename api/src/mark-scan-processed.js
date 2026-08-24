@@ -93,9 +93,9 @@ app.http('mark-scan-processed', {
 
       if (outcome === 'discarded') {
         try {
-          // Mark as Processed so get-scan-queue filters it out (same as approve)
-          await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' });
-          context.log(`[mark-scan-processed] Marked discarded item ${row} as Processed`);
+          // Delete the row entirely from Review Queue
+          await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
+          context.log(`[mark-scan-processed] Deleted discarded item ${row} from Review Queue`);
         } catch(deleteErr) {
           context.log(`[mark-scan-processed] Update failed for row ${row}:`, deleteErr.message);
         }
@@ -107,7 +107,7 @@ app.http('mark-scan-processed', {
           context.log('[mark-scan-processed] No fileId to delete');
         }
       } else {
-        await updateItem(LISTS.REVIEW_QUEUE, row, { Title: 'Processed' }).catch(() => {});
+        await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
         if (fileId) {
           const token = await getToken();
           await moveSpFile(fileId, SCAN_ARCHIVE, token);
