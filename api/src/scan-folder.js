@@ -420,8 +420,11 @@ app.http('scan-folder', {
                 'mastercard','cvv code','there is a 4% tech fee',
               ];
               const isBackPage = text => {
-                const t = text.toLowerCase();
-                return BACK_PAGE_KEYWORDS.some(k => t.includes(k));
+                const t = text.toLowerCase().trim();
+                // Only exclude paragraph if it's clearly back-page content
+                // (short paragraph dominated by back-page keywords, or contains multiple keywords)
+                const hits = BACK_PAGE_KEYWORDS.filter(k => t.includes(k)).length;
+                return hits >= 2 || (hits === 1 && t.length < 200);
               };
 
               const paragraphs = (azureResult.analyzeResult?.paragraphs || [])
@@ -471,7 +474,12 @@ app.http('scan-folder', {
                 azureText += '\n';
               }
 
-              context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs`);
+              context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs, text length: ${azureText.length}`);
+
+              if (azureText.length < 50) {
+                context.log(`[scan] ⚠️ Azure returned almost no text (${azureText.length} chars) — form may be blank, low quality, or back-page only. Skipping Claude extraction.`);
+                // Don't skip — fall through to Claude with empty text so the card still appears
+              }
 
               // Claude Sonnet structures Azure's text into JSON
               const extractRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -483,7 +491,7 @@ app.http('scan-folder', {
                 },
                 body: JSON.stringify({
                   model:      'claude-sonnet-4-6',
-                  max_tokens: 1000,
+                  max_tokens: 2000,
                   system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation, no preamble.',
                   messages: [{ role: 'user', content:
 `Extract structured data from this water testing Chain of Custody form.
