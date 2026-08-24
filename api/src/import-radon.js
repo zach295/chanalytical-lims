@@ -6,7 +6,7 @@
  *   - Reports to be Billed list (RW Results column)
  */
 const { app }      = require('@azure/functions');
-const { getToken } = require('../shared/graph');
+const { getToken, createItem, listItems } = require('../shared/graph');
 
 const GRAPH  = 'https://graph.microsoft.com/v1.0';
 
@@ -162,7 +162,19 @@ app.http('import-radon', {
         .filter(i => i.fields?.LabID && !i.fields?.Radon && !/\bREJ\b/i.test(i.fields.LabID) && radonBaseIds.has(i.fields.LabID.trim()));
 
       if (!rcItems.length) {
-        return { status: 200, jsonBody: { success: true, message: 'No pending radon samples found', updated: 0 } };
+              // ── Activity Log ─────────────────────────────────────────────────────────
+      try {
+        const _now = new Date();
+        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${_ld} Radon Import`, Client: 'Import',
+          ActivityType: 'Radon Import', Notes: `Updated: ${updated}, Not found: ${notFound}, Errors: ${errors}`,
+          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+        }).catch(()=>{});
+      } catch(e) {}
+
+      return { status: 200, jsonBody: { success: true, message: 'No pending radon samples found', updated: 0 } };
       }
 
       // ── 2. Group by MMDDYY prefix ─────────────────────────────────────────────
