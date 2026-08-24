@@ -4287,6 +4287,20 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       if (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
 
+      // Immediately update the recently approved table from cache
+      const approvedBodyEl = document.getElementById('rq-approved-body');
+      if (approvedBodyEl) {
+        const recent = recentlyApprovedCache.slice(0, 5);
+        approvedBodyEl.innerHTML = recent.map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
+          <td class="client-name">${a.customer||'—'}</td>
+          <td style="font-size:12px;">${a.coaTest||'—'}</td>
+          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
+        </tr>`).join('');
+        const todayEl = document.getElementById('rq-today');
+        if (todayEl) todayEl.textContent = parseInt(todayEl.textContent||'0', 10) + 1;
+      }
+
       // ── ACTIVITY LOG: always record approval ──────────────────────────────
       const etDate = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
       await logActivity({
