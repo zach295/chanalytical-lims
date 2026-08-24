@@ -2810,7 +2810,7 @@ document.addEventListener('DOMContentLoaded', function() {
       let rejTotal = 0;
       try {
         const rjRes = await fetch('/api/get-rejections');
-        if (rjRes.ok) { const rj = await rjRes.json(); rejTotal = (rj.items || rj || []).length; }
+        if (rjRes.ok) { const rj = await rjRes.json(); rejTotal = (rj.rows || rj.items || []).length; }
       } catch(e) {}
 
       const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
