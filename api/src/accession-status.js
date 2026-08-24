@@ -92,6 +92,7 @@ app.http('accession-status', {
           const clients = (data.value || []).map(item => {
             const f = item.fields || {};
             return {
+              _id:              item.id,
               clientName:       f.ClientName        || f.Title || '',
               clientCode:       f.ClientCode        || '',
               reportEmail:      f.Aliases           || '',
