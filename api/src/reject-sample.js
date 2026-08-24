@@ -194,6 +194,19 @@ app.http('reject-sample', {
         } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
       }
 
+      // ── Delete from Review Queue ─────────────────────────────────────────
+      try {
+        const rqItems = await listItems(LISTS.REVIEW_QUEUE, { top: 500 });
+        const rqRow   = rqItems.find(r => {
+          const bc = (r.BarcodeID || r.barcodeId || '').split(' ')[0].trim();
+          return bc === baseId;
+        });
+        if (rqRow) {
+          await deleteItem(LISTS.REVIEW_QUEUE, rqRow._id);
+          log.push(`✅ Review Queue row deleted`);
+        }
+      } catch(e) { log.push(`⚠️ Review Queue: ${e.message}`); }
+
       // ── Write to Activity Log ─────────────────────────────────────────────
       const actNow = new Date();
       const dateStr = actNow.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
