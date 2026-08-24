@@ -351,16 +351,51 @@ app.http('update-sample', {
             if (rtbListId) {
               const colMap     = await getRTBColMap(siteId, rtbListId, token, GRAPH, authHdr);
               const billedRes  = await fetch(
-                `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title)&$top=500`,
+                `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title,Customer)&$top=500`,
                 { headers: authHdr }
               );
               const billedItems = ((await billedRes.json()).value || [])
                 .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
+
+              // Look up rate from Current Pricing-V1 for new test type
+              let rate = 0;
+              try {
+                const customer     = archivedItems[0]?.field_3 || billedItems[0]?.fields?.Customer || '';
+                const cRes         = await fetch(
+                  `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,PricingCategory)&$top=500`,
+                  { headers: authHdr }
+                );
+                const cLow         = customer.toLowerCase().trim();
+                const cMatch       = cRes.ok ? ((await cRes.json()).value||[]).find(i => (i.fields?.ClientName||'').toLowerCase().trim() === cLow) : null;
+                const pricingCat   = cMatch?.fields?.PricingCategory || '';
+                const catLow       = pricingCat.toLowerCase();
+                const priceCol     = catLow.includes('inspector') ? 'InspectorPricing'
+                                   : catLow.includes('wq')        ? 'WQPricing'
+                                   : 'PublicPricing';
+                const pRes2        = await fetch(
+                  `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
+                  { headers: authHdr }
+                );
+                if (pRes2.ok) {
+                  const tLow  = newTest.toLowerCase().trim();
+                  const sLow  = newSuffix.toLowerCase().trim();
+                  const pMatch = ((await pRes2.json()).value||[]).find(i => {
+                    const svc  = (i.fields?.Service||'').toLowerCase().trim();
+                    const abbr = (i.fields?.CoreAbbr_x002f_Symbol||'').toLowerCase().trim();
+                    return svc === tLow || abbr === sLow || svc.includes(tLow) || tLow.includes(svc);
+                  });
+                  if (pMatch) rate = parseFloat(String(pMatch.fields?.[priceCol]||'').replace(/[$,]/g,'')) || 0;
+                }
+              } catch(rateErr) { log.push(`ℹ️ Rate lookup failed: ${rateErr.message}`); }
+              const amt = rate ? parseFloat((1 * rate).toFixed(2)) : null;
+
               let billedOk = 0;
               for (const item of billedItems) {
                 const pFields = {};
-                pFields[colMap['Item/Service']   || 'Item_x002F_Service']  = newTest;
-                pFields[colMap['Test Type SKU']  || 'Test_x0020_Type_x0020_SKU'] = newSuffix;
+                pFields[colMap['Item/Service']   || 'Item_x002F_Service']         = newTest;
+                pFields[colMap['Test Type SKU']  || 'Test_x0020_Type_x0020_SKU']  = newSuffix;
+                if (rate)  pFields[colMap['Rate'] || 'Rate'] = rate;
+                if (amt)   pFields[colMap['Amt']  || 'Amt']  = amt;
                 const pRes = await fetch(
                   `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items/${item.id}/fields`,
                   { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
@@ -369,7 +404,7 @@ app.http('update-sample', {
                 if (pRes.ok) billedOk++;
                 else { const t = await pRes.text(); log.push(`⚠️ RTB PATCH failed ${pRes.status}: ${t.slice(0,100)}`); }
               }
-              if (billedOk > 0) log.push(`✅ Reports to be Billed updated (${billedOk} row(s))`);
+              if (billedOk > 0) log.push(`✅ Reports to be Billed updated (${billedOk} row(s))${rate ? ` @ $${rate}` : ''}`);
             }
           } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
         } catch(testErr) {
@@ -507,11 +542,15 @@ app.http('update-sample', {
           .filter(([,v]) => v !== undefined && v !== '')
           .map(([k,v]) => `${fieldLabels[k] || k} → ${v}`)
           .join('; ');
+        // Combine what changed with where it was written
+        const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
+        const fullNotes = [changes && `Changed: ${changes}`, updateResults && `Updates: ${updateResults}`]
+          .filter(Boolean).join('\n');
         await createItem('Activity Log', {
           Title:        `${logDate} ${baseId}`,
           Client:       baseId,
           ActivityType: 'Sample Correction',
-          Notes:        changes,
+          Notes:        fullNotes.slice(0, 3000),
           By:           updatedBy || 'Lab Staff',
           LogDate:      logDate,
           LogTime:      logTime,
