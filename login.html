@@ -212,9 +212,14 @@
     const isAdmin  = roles.includes('admin');
     const isLab    = roles.includes('lab');
     const isOffice = roles.includes('office');
+    const isWQ     = roles.includes('wq');
     if (isAdmin) { sessionStorage.setItem('cha_admin_alive','1'); window.location.href='/admin-dashboard.html'; }
-    else if (isLab || isOffice) window.location.href='/admin-dashboard.html';
-    else window.location.href='/dashboard.html';
+    else if (isLab || isOffice || isWQ) window.location.href='/admin-dashboard.html';
+    else {
+      // No client portal — show access denied
+      const errEl = document.getElementById('login-err');
+      if (errEl) { errEl.textContent = 'Your account does not have access to this system. Contact your administrator.'; errEl.style.display = 'block'; }
+    }
   }
 
   function showErr(el, msg) { el.textContent = msg; el.classList.add('show'); }
