@@ -4287,16 +4287,19 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       if (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
 
-      // Immediately update the recently approved table from cache
+      // Immediately prepend the new approval to the recently approved table
       const approvedBodyEl = document.getElementById('rq-approved-body');
       if (approvedBodyEl) {
-        const recent = recentlyApprovedCache.slice(0, 5);
-        approvedBodyEl.innerHTML = recent.map(a => `<tr>
+        const a = recentlyApprovedCache[0];
+        const newRow = document.createElement('tr');
+        newRow.innerHTML = `
           <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
           <td class="client-name">${a.customer||'—'}</td>
           <td style="font-size:12px;">${a.coaTest||'—'}</td>
-          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
-        </tr>`).join('');
+          <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>`;
+        approvedBodyEl.insertBefore(newRow, approvedBodyEl.firstChild);
+        // Trim to 5 rows
+        while (approvedBodyEl.rows.length > 5) approvedBodyEl.deleteRow(-1);
         const todayEl = document.getElementById('rq-today');
         if (todayEl) todayEl.textContent = parseInt(todayEl.textContent||'0', 10) + 1;
       }
