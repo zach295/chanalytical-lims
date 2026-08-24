@@ -6,7 +6,7 @@
  * 4. Writes the date+time back to Results Cache
  */
 const { app }    = require('@azure/functions');
-const { listFolder, downloadFile, listItems, updateItem } = require('../shared/graph');
+const { listFolder, downloadFile, listItems, updateItem, createItem } = require('../shared/graph');
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-acid] xlsx not available:', e.message); }
 
@@ -164,6 +164,18 @@ app.http('import-acid', {
           .then(() => { updated++; log.push(`${baseId} → ${entry.formatted}`); })
           .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
       }
+
+            // ── Activity Log ─────────────────────────────────────────────────────────
+      try {
+        const _now = new Date();
+        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${_ld} Acid Sheet Import`, Client: 'Import',
+          ActivityType: 'Acid Sheet Import', Notes: `Updated: ${updated}, Not found: ${notFound}, Errors: ${errors}`,
+          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+        }).catch(()=>{});
+      } catch(e) {}
 
       return { status: 200, jsonBody: { success: true, fileName: latest.name, updated, notFound, errors, log: log.slice(0, 30) } };
 
