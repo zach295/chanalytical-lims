@@ -90,7 +90,11 @@ app.http('get-scan-queue', {
 
       return {
         status: 200,
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store, no-cache, must-revalidate',
+          'pragma': 'no-cache',
+        },
         body: JSON.stringify({ pending, todayApproved, todayCount }),
       };
 
