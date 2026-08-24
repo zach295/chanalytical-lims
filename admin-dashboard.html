@@ -257,7 +257,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <!-- TOP TEST TYPES -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Top 3 Test Types</div>
+          <div class="card-title">Test Types</div>
           <div style="display:flex;gap:4px;">
             <button onclick="filterTestTypes('month')"  id="tt-btn-month"  class="tt-filter-btn tt-active" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--teal);background:var(--teal);color:white;cursor:pointer;font-weight:600;">Month</button>
             <button onclick="filterTestTypes('6month')" id="tt-btn-6month" class="tt-filter-btn" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;">6 Mo</button>
@@ -2778,7 +2778,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // ── Client table ────────────────────────────────────────────────────────
       const clientMap = {};
-      for (const r of items) {
+      for (const r of allRecs) {
         const client = r.customer || 'Unknown';
         if (!clientMap[client]) clientMap[client] = { thisMonth: 0, lastMonth: 0, total: 0 };
         const d = parseDate(r);
@@ -2812,7 +2812,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const grandTotal = total + rejTotal;
       _ovRejTotal = rejTotal; // store for filter function
 
-      const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
+      const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]);
       const colors  = ['var(--teal)','var(--navy)','var(--slate)'];
       const typesEl = document.getElementById('ov-types');
       const bars = top3.map(([name, count], i) => {
@@ -2882,7 +2882,7 @@ document.addEventListener('DOMContentLoaded', function() {
       typeMap[t] = (typeMap[t] || 0) + 1;
     }
     const total    = Object.values(typeMap).reduce((a,b) => a + b, 0);
-    const top3     = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
+    const top3     = Object.entries(typeMap).sort((a,b) => b[1]-a[1]);
     const colors   = ['var(--teal)','var(--navy)','var(--slate)'];
     const typesEl  = document.getElementById('ov-types');
     const rejTotal = (window._ovAllRecs || []).filter(r => (r.status || '').toLowerCase() === 'rejected').length;
