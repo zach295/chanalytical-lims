@@ -256,7 +256,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
       <!-- TOP TEST TYPES -->
       <div class="card">
-        <div class="card-header"><div class="card-title">Top 3 Test Types</div></div>
+        <div class="card-header">
+          <div class="card-title">Top 3 Test Types</div>
+          <div style="display:flex;gap:4px;">
+            <button onclick="filterTestTypes('month')"  id="tt-btn-month"  class="tt-filter-btn tt-active" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--teal);background:var(--teal);color:white;cursor:pointer;font-weight:600;">Month</button>
+            <button onclick="filterTestTypes('6month')" id="tt-btn-6month" class="tt-filter-btn" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;">6 Mo</button>
+            <button onclick="filterTestTypes('year')"   id="tt-btn-year"   class="tt-filter-btn" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;">Year</button>
+            <button onclick="filterTestTypes('all')"    id="tt-btn-all"    class="tt-filter-btn" style="padding:4px 8px;font-size:11px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;">All</button>
+          </div>
+        </div>
         <div style="padding:16px;" id="ov-types">
           <div style="color:var(--slate);font-size:13px;">Loading...</div>
         </div>
@@ -2722,6 +2730,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!res.ok) throw new Error('Failed to load data');
       const data    = await res.json();
       const allRecs = data.records || [];
+      window._ovAllRecs = allRecs; // store for filter buttons
       // Exclude rejected for test type and client counts
       const items   = allRecs.filter(r => (r.status || '').toLowerCase() !== 'rejected');
 
@@ -2819,6 +2828,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       // Rejection % is share of ALL samples including rejected
       const grandTotal = total + rejTotal;
+      _ovRejTotal = rejTotal; // store for filter function
       const rejPct = grandTotal > 0 ? Math.round((rejTotal / grandTotal) * 100) : 0;
       bars.push(`<div style="padding-top:12px;border-top:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -2834,6 +2844,73 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch(err) {
       console.error('[Overview]', err);
     }
+  }
+
+  // ── Test types filter ─────────────────────────────────────────────────────
+  let _ovRejTotal = 0;
+  async function filterTestTypes(period) {
+    // Update active button style
+    document.querySelectorAll('.tt-filter-btn').forEach(b => {
+      b.style.background = 'white'; b.style.color = 'var(--navy)'; b.style.borderColor = 'var(--border)';
+    });
+    const activeBtn = document.getElementById('tt-btn-' + period);
+    if (activeBtn) { activeBtn.style.background = 'var(--teal)'; activeBtn.style.color = 'white'; activeBtn.style.borderColor = 'var(--teal)'; }
+
+    const allRecs = window._ovAllRecs || [];
+    const now     = new Date();
+    let filtered;
+    if (period === 'all') {
+      filtered = allRecs.filter(r => (r.status || '').toLowerCase() !== 'rejected');
+    } else {
+      const cutoff = new Date(now);
+      if (period === 'month')  cutoff.setMonth(cutoff.getMonth() - 1);
+      if (period === '6month') cutoff.setMonth(cutoff.getMonth() - 6);
+      if (period === 'year')   cutoff.setFullYear(cutoff.getFullYear() - 1);
+      filtered = allRecs.filter(r => {
+        if ((r.status || '').toLowerCase() === 'rejected') return false;
+        const raw = r.dateReceived || '';
+        if (!raw) return false;
+        const short = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+        const d = short ? new Date(`${short[1]}/${short[2]}/20${short[3]}`) : new Date(raw);
+        return !isNaN(d) && d >= cutoff;
+      });
+    }
+
+    const typeMap = {};
+    for (const r of filtered) {
+      const t = (r.testType || 'Unknown').split('|')[0].trim();
+      typeMap[t] = (typeMap[t] || 0) + 1;
+    }
+    const total    = Object.values(typeMap).reduce((a,b) => a + b, 0);
+    const top3     = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
+    const colors   = ['var(--teal)','var(--navy)','var(--slate)'];
+    const typesEl  = document.getElementById('ov-types');
+    const rejTotal = _ovRejTotal;
+    const grandTotal = total + rejTotal;
+
+    const bars = top3.map(([name, count], i) => {
+      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+      return `<div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span style="font-size:13px;font-weight:600;">${name}</span>
+          <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${colors[i]};font-weight:700;">${count}</span></span>
+        </div>
+        <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
+          <div style="width:${pct}%;background:${colors[i]};height:100%;border-radius:4px;transition:width .4s;"></div>
+        </div>
+      </div>`;
+    });
+    const rejPct = grandTotal > 0 ? Math.round((rejTotal / grandTotal) * 100) : 0;
+    bars.push(`<div style="padding-top:12px;border-top:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:13px;font-weight:600;color:var(--error);">Rejected</span>
+        <span style="font-size:13px;color:var(--slate);">${rejPct}%&nbsp;&nbsp;<span style="color:var(--error);font-weight:700;">${rejTotal}</span></span>
+      </div>
+      <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
+        <div style="width:${rejPct}%;background:var(--error);height:100%;border-radius:4px;transition:width .4s;"></div>
+      </div>
+    </div>`);
+    if (typesEl) typesEl.innerHTML = bars.join('') || '<div style="color:var(--slate);font-size:13px;">No data for this period</div>';
   }
 
   async function loadRejectedTab() {
