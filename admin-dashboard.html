@@ -3258,7 +3258,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let currentIncludes = [];
     if (rowNum) {
-      const tt = _ttData.testTypes.find(t => t._row === rowNum);
+      const tt = _ttData.testTypes.find(t => String(t._row) === String(rowNum));
       if (tt) {
         document.getElementById('tt-name').value     = tt.name;
         document.getElementById('tt-category').value = tt.category || 'Package';
@@ -3322,7 +3322,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function deleteTestType(rowNum, evt) { const name = (evt?.target || evt?.currentTarget || document.querySelector(`[data-name]`))?.dataset?.name || rowNum;
-    const tt = _ttData.testTypes.find(t => t._row === rowNum);
+    const tt = _ttData.testTypes.find(t => String(t._row) === String(rowNum));
     const action = tt?.active ? `Remove "${name}"?` : `Restore "${name}"?`;
     if (!confirm(action)) return;
     const res = await fetch('/api/test-types-write', {
@@ -3341,7 +3341,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('el-abbrev').value   = '';
     document.getElementById('el-price').value    = '';
     if (rowNum) {
-      const el = _ttData.elements.find(e => e._row === rowNum);
+      const el = _ttData.elements.find(e => String(e._row) === String(rowNum));
       if (el) {
         document.getElementById('el-name').value   = el.name;
         document.getElementById('el-abbrev').value = el.abbrev;
@@ -3370,8 +3370,8 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch(e) { showToast('⚠️ ' + e.message); }
   }
 
-  async function deleteElement(rowNum) { const elItem = _ttData.elements.find(e=>e._row===rowNum); const name = elItem?.name || ''; if (!name) return;
-    const el = _ttData.elements.find(e => e._row === rowNum);
+  async function deleteElement(rowNum) { const elItem = _ttData.elements.find(e=>String(e._row)===String(rowNum)); const name = elItem?.name || ''; if (!name) return;
+    const el = _ttData.elements.find(e => String(e._row) === String(rowNum));
     const action = elItem?.active ? `Remove "${name}"?` : `Restore "${name}"?`;
     if (!confirm(action)) return;
     const active = elItem?.active ? 'FALSE' : 'TRUE';
