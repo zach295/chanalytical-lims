@@ -358,6 +358,18 @@ app.http('import-icpms', {
         }
       }
 
+            // ── Activity Log ─────────────────────────────────────────────────────────
+      try {
+        const _now = new Date();
+        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        await createItem('Activity Log', {
+          Title: `${_ld} ICP-MS Import`, Client: 'Import',
+          ActivityType: 'ICP-MS Import', Notes: `Updated: ${updated}, Created: ${created}, Errors: ${errors} | Files: ${filesUsed.join(", ")}`,
+          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+        }).catch(()=>{});
+      } catch(e) {}
+
       return { status: 200, headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log }) };
 
