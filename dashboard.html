@@ -168,7 +168,8 @@
 <script>
 const session = Auth.requireAuth(['wq','client','public','admin','lab']);
 if (!session) throw new Error('Not authenticated');
-if (session.role === 'admin' || session.role === 'lab') location.href='/admin-dashboard.html';
+const _userRoles = (session.role || '').split(',').map(r => r.trim());
+if (_userRoles.some(r => ['admin','lab','office'].includes(r))) location.href='/admin-dashboard.html';
 
 const CLIENT_NAMES = {
   'ward-water':'Critical Plumbing Inc. a/k/a Ward Water','maine-radon':'Maine Radon & Environmental, LLC',
