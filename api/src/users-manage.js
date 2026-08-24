@@ -36,6 +36,20 @@ const mapUser = r => ({
   active:    r.field_9 !== false && r.field_9 !== 'FALSE',
 });
 
+async function logUserActivity(action, email, details, by) {
+  try {
+    const { createItem } = require('../shared/graph');
+    const now     = new Date();
+    const logDate = now.toLocaleDateString('en-US',{ timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+    const logTime = now.toLocaleTimeString('en-US',{ timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+    await createItem('Activity Log', {
+      Title: `${logDate} ${email}`, Client: email,
+      ActivityType: action, Notes: (details || '').slice(0, 3000),
+      By: by || 'Admin', LogDate: logDate, LogTime: logTime, Quantity: 0,
+    });
+  } catch(e) {}
+}
+
 app.http('users-manage', {
   methods: ['GET', 'POST'],
   authLevel: 'anonymous',
@@ -77,6 +91,7 @@ app.http('users-manage', {
           field_7: true,
           field_9: true,
         });
+        await logUserActivity('User Created', email, `New account created in Users list.\nRole: ${role || 'lab'} | Created by: ${createdBy || 'Admin'}`, createdBy);
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -90,6 +105,7 @@ app.http('users-manage', {
           field_3: clientKey || '',
           field_4: regCode   || '',
         });
+        await logUserActivity('User Edited', email, `User account updated in Users list.\nNew email: ${newEmail || email} | Name: ${name || '—'} | Role: ${role || '—'}`, 'Admin');
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -98,6 +114,8 @@ app.http('users-manage', {
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { field_2: role });
+        const { email: srEmail, role: srRole } = body;
+        await logUserActivity('Role Changed', srEmail, `Role updated in Users list.\nNew role: ${srRole || '—'}`, 'Admin');
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
