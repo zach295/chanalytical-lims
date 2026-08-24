@@ -263,11 +263,14 @@ app.http('send-report', {
         const logDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
         const logTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
         const action  = body.saveOnly ? 'Report Saved' : 'Report Emailed';
+        const details = body.saveOnly
+          ? `PDF saved to SharePoint Archive`
+          : `Emailed to: ${toEmail} | COC attached: ${coc ? 'Yes' : 'No'} | Report type: ${reportData?.isRW ? 'RW' : reportData?.isFHA ? 'FHA' : 'Standard'}`;
         await createItem('Activity Log', {
           Title:        `${logDate} ${labId}`,
           Client:       labId,
           ActivityType: action,
-          Notes:        body.saveOnly ? `PDF saved` : `Emailed to ${toEmail}`,
+          Notes:        details,
           By:           body.authorizedBy || 'Lab Staff',
           LogDate:      logDate,
           LogTime:      logTime,
