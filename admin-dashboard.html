@@ -2801,12 +2801,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (rjRes.ok) { const rj = await rjRes.json(); rejTotal = (rj.items || rj || []).length; }
       } catch(e) {}
 
-      const grandTotal = total + rejTotal;
-      const top3  = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
-      const colors = ['var(--teal)','var(--navy)','var(--slate)'];
+      const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]).slice(0,3);
+      const colors  = ['var(--teal)','var(--navy)','var(--slate)'];
       const typesEl = document.getElementById('ov-types');
       const bars = top3.map(([name, count], i) => {
-        const pct = grandTotal > 0 ? Math.round((count/grandTotal)*100) : 0;
+        // Test type % is share of non-rejected samples
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
         return `<div style="margin-bottom:16px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
             <span style="font-size:13px;font-weight:600;">${name}</span>
@@ -2817,7 +2817,9 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         </div>`;
       });
-      const rejPct = grandTotal > 0 ? Math.round((rejTotal/grandTotal)*100) : 0;
+      // Rejection % is share of ALL samples including rejected
+      const grandTotal = total + rejTotal;
+      const rejPct = grandTotal > 0 ? Math.round((rejTotal / grandTotal) * 100) : 0;
       bars.push(`<div style="padding-top:12px;border-top:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
           <span style="font-size:13px;font-weight:600;color:var(--error);">Rejected</span>
