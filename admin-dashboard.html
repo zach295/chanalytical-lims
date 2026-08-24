@@ -2048,6 +2048,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   initSidebar();
+  loadOverview();
 
   function getAdminName() {
     const s = Auth.getSession();
@@ -2703,6 +2704,9 @@ document.addEventListener('DOMContentLoaded', function() {
       function parseDate(r) {
         const raw = r.dateReceived || '';
         if (!raw) return null;
+        // Handle MM/DD/YY (2-digit year) → MM/DD/20YY
+        const short = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+        if (short) return new Date(`${short[1]}/${short[2]}/20${short[3]}`);
         const d = new Date(raw);
         return isNaN(d) ? null : d;
       }
