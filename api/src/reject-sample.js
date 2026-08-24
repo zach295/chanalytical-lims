@@ -212,12 +212,14 @@ app.http('reject-sample', {
       const dateStr = actNow.toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
       const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
       try {
-        // Field names from SP Activity Log list (check exact internal names)
+        const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
+        const fullNotes = [`Reason: ${reason.trim()}`, updateResults && `Updates: ${updateResults}`]
+          .filter(Boolean).join('\n');
         await createItem('Activity Log', {
           Title:        `${dateStr} ${labId}`,
           Client:       labId,
           ActivityType: rejectionType,
-          Notes:        reason.trim(),
+          Notes:        fullNotes.slice(0, 3000),
           By:           rejectedBy || 'Lab Staff',
           LogDate:      dateStr,
           LogTime:      timeStr,
