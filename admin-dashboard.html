@@ -2543,7 +2543,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function doSetRole() {
-    const role = document.getElementById('sr-role').value;
+    // role read via getRolesFromWrap in body below
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST', headers: {'Content-Type':'application/json'},
@@ -2574,7 +2574,7 @@ document.addEventListener('DOMContentLoaded', function() {
   async function doCreateUser() {
     const name  = document.getElementById('cu-name').value.trim();
     const email = document.getElementById('cu-email').value.trim();
-    const role  = document.getElementById('cu-role').value;
+    // role read via getRolesFromWrap in body below
     const code  = document.getElementById('cu-code').value.trim().toUpperCase();
     const errEl = document.getElementById('create-user-err');
     if (!name || !email) { errEl.textContent = 'Name and email are required.'; return; }
@@ -2608,7 +2608,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const origEmail = document.getElementById('edit-orig-email').value;
     const name      = document.getElementById('edit-name').value.trim();
     const newEmail  = document.getElementById('edit-email').value.trim();
-    const role      = document.getElementById('edit-role').value;
     const code      = document.getElementById('edit-code').value.trim().toUpperCase();
     try {
       const res = await fetch('/api/users-manage', {
