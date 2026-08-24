@@ -2813,18 +2813,20 @@ document.addEventListener('DOMContentLoaded', function() {
       _ovRejTotal = rejTotal; // store for filter function
 
       const top3    = Object.entries(typeMap).sort((a,b) => b[1]-a[1]);
-      const colors  = ['var(--teal)','var(--navy)','var(--slate)'];
+      const colors  = ['var(--teal)','var(--navy)','#6b8fa3','#8b6fa3','#6ba38b','#a38b6b','var(--slate)'];
       const typesEl = document.getElementById('ov-types');
       const bars = top3.map(([name, count], i) => {
         // Test type % is share of ALL samples including rejected
-        const pct = grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0;
+        const pct   = grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0;
+        const color = colors[i % colors.length];
+        console.log(`[types] ${name}: count=${count} pct=${pct} grandTotal=${grandTotal} color=${color}`);
         return `<div style="margin-bottom:16px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
             <span style="font-size:13px;font-weight:600;">${name}</span>
-            <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${colors[i]};font-weight:700;">${count}</span></span>
+            <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${color};font-weight:700;">${count}</span></span>
           </div>
           <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
-            <div style="width:${pct}%;background:${colors[i]};height:100%;border-radius:4px;transition:width .4s;"></div>
+            <div style="width:${pct}%;background:${color};height:100%;border-radius:4px;transition:width .4s;"></div>
           </div>
         </div>`;
       });
@@ -2883,20 +2885,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     const total    = Object.values(typeMap).reduce((a,b) => a + b, 0);
     const top3     = Object.entries(typeMap).sort((a,b) => b[1]-a[1]);
-    const colors   = ['var(--teal)','var(--navy)','var(--slate)'];
+    const colors   = ['var(--teal)','var(--navy)','#6b8fa3','#8b6fa3','#6ba38b','#a38b6b','var(--slate)'];
     const typesEl  = document.getElementById('ov-types');
     const rejTotal = (window._ovAllRecs || []).filter(r => (r.status || '').toLowerCase() === 'rejected').length;
     const grandTotal = total + rejTotal;
 
     const bars = top3.map(([name, count], i) => {
-      const pct = grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0;
+      const pct   = grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0;
+      const color = colors[i % colors.length];
       return `<div style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
           <span style="font-size:13px;font-weight:600;">${name}</span>
-          <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${colors[i]};font-weight:700;">${count}</span></span>
+          <span style="font-size:13px;color:var(--slate);">${pct}%&nbsp;&nbsp;<span style="color:${color};font-weight:700;">${count}</span></span>
         </div>
         <div style="background:#f0f0f0;border-radius:4px;height:10px;overflow:hidden;">
-          <div style="width:${pct}%;background:${colors[i]};height:100%;border-radius:4px;transition:width .4s;"></div>
+          <div style="width:${pct}%;background:${color};height:100%;border-radius:4px;transition:width .4s;"></div>
         </div>
       </div>`;
     });
