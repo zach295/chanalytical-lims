@@ -2323,13 +2323,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const northernTotal = northernApproved.length + northernPending.length;
         if (northernEl) northernEl.textContent = northernTotal;
 
-        // Northern Run breakdown
+        // Northern Run breakdown — list each company
         if (northernBreakEl && northernTotal > 0) {
           const lines = [];
-          if (northernApproved.length) lines.push(`✅ ${northernApproved.length} approved`);
-          if (northernPending.length)  lines.push(`⏳ ${northernPending.length} pending`);
+          northernApproved.forEach(a => lines.push(`✅ ${a.customer||a.fullId||'—'}`));
+          northernPending.forEach(s  => lines.push(`⏳ ${s.customer||s.ClientName||'—'}`));
           northernBreakEl.innerHTML = lines.join('<br>');
           northernBreakEl.style.display = 'block';
+        } else if (northernBreakEl) {
+          northernBreakEl.style.display = 'none';
         }
 
         // Recently Approved table — last 5
