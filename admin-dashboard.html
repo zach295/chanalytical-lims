@@ -5203,8 +5203,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Map new format → old format for renderEditableReport
       currentReportData = {
-        labId: data.labId,
-        isRadon: data.isRadon,
+        labId:    data.labId,
+        isRadon:  data.isRadon,
+        _cfRules: data.cfRules || null,
         isArsenicSpec: data.isArsenicSpec,
         needsFHA: data.needsFHA,
         reportType: data.reportType,
@@ -5225,7 +5226,6 @@ document.addEventListener('DOMContentLoaded', function() {
           time:        p.analDT || p.time || '',
           epa:         p.epa    || '',
           rl:          p.rl     || '',
-          templateHex: p.templateHex || null, // from template CF rules
         };
       });
       // Log SharePoint data fetch results for debugging
@@ -5378,18 +5378,10 @@ document.addEventListener('DOMContentLoaded', function() {
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
 
       currentReportData.resultsMap[param].value = val;
-      // When user edits a value, clear the stale templateHex so JS recalculates
-      if (currentReportData.resultsMap[param]) currentReportData.resultsMap[param].templateHex = null;
-      const color = getResultColor(param, val, currentReportData);
-      // Update the separate color box div (previous sibling td)
-      const resultTd   = el.closest('td');
-      const colorTd    = resultTd?.previousElementSibling;
-      const colorDiv   = colorTd?.querySelector('div');
-      const colorHex   = color === 'FF0000' ? '#FF4444'
-                       : color === '0000FF' ? '#0055CC'
-                       : color === '00CC00' || color === '00FF00' ? '#00CC44'
-                       : val ? '#00CC44' : '#e8e8e8';
-      if (colorDiv) colorDiv.style.background = colorHex;
+      // Update color dot using template CF rules
+      const resultTd = el.closest('td');
+      const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
+      if (colorDiv) colorDiv.style.background = getColor(param, val);
     } else if (key.startsWith('qualifier:')) {
       const param = key.replace('qualifier:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
@@ -5424,23 +5416,77 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function getResultColor(paramName, val, reportData) {
-    if (!val && val !== 0) return null;
-    const s = String(val);
-    // <RL values are always green
-    if (s.startsWith('<')) return '00FF00';
-    const param = [...(reportData.activeParams||[]), ...(reportData.fhaParams||[])]
-      .find(p => p.name === paramName);
-    if (!param) return null;
+
+  // ── Single color function — reads Excel template CF rules ──────────────────
+  // cfRules = { epaLimits: { 'Nitrate-Nitrogen, Total': 10 }, colorRules: [...] }
+  // Falls back to sensible defaults if cfRules not loaded yet
+  function getColor(paramName, value) {
+    const cfRules = currentReportData?._cfRules;
+    if (!value && value !== 0) return '#e8e8e8';
+    const s = String(value).trim();
+    if (!s) return '#e8e8e8';
+
+    // Radon: special case
+    if (paramName === 'Radon Water') {
+      const n = parseFloat(s);
+      return (!isNaN(n) && n > 4000) ? '#FF0000' : '#00CC44';
+    }
+
+    // If we have CF rules from the template, use them
+    if (cfRules?.colorRules?.length) {
+      const epa = cfRules.epaLimits?.[paramName];
+      const n   = parseFloat(s);
+      const isNum = !isNaN(n) && !s.startsWith('<');
+
+      // <RL values always pass (green)
+      if (s.startsWith('<')) {
+        const passRule = cfRules.colorRules.find(r =>
+          r.operator === 'lessthanorequal' || r.operator === 'lessthan'
+        );
+        return passRule?.color || '#00CC44';
+      }
+
+      for (const rule of cfRules.colorRules) {
+        const threshold = parseFloat(rule.formula1);
+        const limit     = !isNaN(threshold) ? threshold : parseFloat(epa);
+        if (isNaN(limit) && isNum) continue;
+        let matches = false;
+        if (!isNum) {
+          // Non-numeric result with an EPA limit → notation (blue)
+          if (epa !== undefined && epa !== null) {
+            const blueRule = cfRules.colorRules.find(r =>
+              r.operator !== 'lessthanorequal' && r.operator !== 'greaterthan'
+            );
+            return blueRule?.color || '#0070C0';
+          }
+          return '#e8e8e8';
+        }
+        if      (rule.operator === 'lessthanorequal'    && n <= limit) matches = true;
+        else if (rule.operator === 'lessthan'           && n <  limit) matches = true;
+        else if (rule.operator === 'greaterthan'        && n >  limit) matches = true;
+        else if (rule.operator === 'greaterthanorequal' && n >= limit) matches = true;
+        if (matches) return rule.color;
+      }
+      // Fallback using EPA limit from template
+      if (epa !== undefined && !isNaN(parseFloat(s))) {
+        return parseFloat(s) <= parseFloat(epa) ? '#00CC44' : '#FF0000';
+      }
+      return '#e8e8e8';
+    }
+
+    // No CF rules yet — sensible fallback matching common Excel template colors
+    if (s.startsWith('<')) return '#00CC44';
     if (paramName === 'pH Electrometric') {
       const n = parseFloat(s);
-      return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '00FF00' : 'FF0000';
+      return isNaN(n) ? '#e8e8e8' : (n >= 6.5 && n <= 8.5) ? '#00CC44' : '#FF0000';
     }
-    const epa = param.epa || param.limit || '';
-    if (!epa) return null; // No EPA limit → no color indicator
+    const param = [...(currentReportData?.activeParams||[]), ...(currentReportData?.fhaParams||[])]
+      .find(p => p.name === paramName);
+    const epaFb = param?.epa;
+    if (!epaFb && epaFb !== 0) return '#e8e8e8';
     const n = parseFloat(s);
-    if (isNaN(n)) return '0000FF';
-    return n <= parseFloat(epa) ? '00FF00' : 'FF0000';
+    if (isNaN(n)) return '#0070C0';
+    return n <= parseFloat(epaFb) ? '#00CC44' : '#FF0000';
   }
 
   function buildParamTable(params, resultsMap, reportData) {
@@ -5466,14 +5512,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
       // Use exact color from template CF rules if available, otherwise JS fallback
-      const templateHex = res.templateHex || null;
-      const color  = templateHex ? null : getResultColor(p.name, val, reportData);
-      const boxBg  = templateHex
-                   ? templateHex
-                   : color === 'FF0000' ? '#FF4444'
-                   : color === '0000FF' ? '#0055CC'
-                   : color === '00CC00' || color === '00FF00' ? '#00CC44'
-                   : val ? '#00CC44' : '#e8e8e8';
+      const boxBg = getColor(p.name, val);
       const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       const bac      = isBac(p.name);
@@ -5599,7 +5638,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isRadon) {
       const radonRes    = resultsMap['Radon Water'] || {};
       const rawVal      = parseFloat(radonRes.value) || 0;
-      const bg          = rawVal > 4000 ? '#FF4444' : (rawVal > 0 ? '#00CC44' : 'white');
+      const bg          = rawVal > 0 ? getColor('Radon Water', String(rawVal)) : '#e8e8e8';
       const dispVal     = !radonRes.value ? ''
                         : rawVal < 100 ? '<100'
                         : String(Math.round(rawVal / 100) * 100);
