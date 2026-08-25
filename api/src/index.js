@@ -15,6 +15,7 @@ require('./inventory-write');
 require('./setup-lists');
 require('./scan-folder');
 require('./generate-report');
+require('./prepare-report');
 require('./control-sheet');
 require('./update-sample');
 require('./send-report');
