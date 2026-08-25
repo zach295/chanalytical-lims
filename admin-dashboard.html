@@ -5459,6 +5459,18 @@ document.addEventListener('DOMContentLoaded', function() {
       return (!isNaN(n) && n > 4000) ? '#FF0000' : '#00CC44';
     }
 
+    // Bacteria parameters always use text logic regardless of CF rule order
+    // (numeric rules cover the whole result column and fire before bacteria text rules)
+    if (/coliform|e\.?\s*coli/i.test(paramName)) {
+      if (!s) return '#e8e8e8';
+      if (s.toLowerCase().trim() === 'absent') {
+        const greenRule = cfRules?.colorRules?.find(r => r.operator === 'equal' || r.operator === 'equalto');
+        return greenRule?.color || '#00CC44';
+      }
+      const blueRule = cfRules?.colorRules?.find(r => r.operator === 'notequal' || r.operator === 'notequalto');
+      return blueRule?.color || '#0070C0';
+    }
+
     // If we have CF rules from the template, use them
     if (cfRules?.colorRules?.length) {
       const epa    = cfRules.epaLimits?.[paramName];
