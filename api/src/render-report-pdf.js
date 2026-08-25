@@ -29,21 +29,6 @@ function colLetter(n) {
   while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
   return s;
 }
-// Color logic matching Excel template conditional formatting
-function calcCellColor(paramName, displayVal, epa) {
-  if (!displayVal && displayVal !== 0) return null;
-  const s = String(displayVal);
-  if (s.startsWith('<')) return '#00CC44';
-  if (paramName === 'pH Electrometric') {
-    const n = parseFloat(s);
-    return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '#00CC44' : '#FF0000';
-  }
-  if (!epa && epa !== 0) return null;
-  const n = parseFloat(s);
-  if (isNaN(n)) return '#0070C0';
-  return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
-}
-
 function normalizeCell(v) {
   return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
 }
@@ -106,7 +91,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates = [];
-  const colorUpdates = []; // filled below — explicit fill colors written to color indicator cells
+  const colorUpdates = [];
 
   const addCell = (r, c, val) => cellUpdates.push({
     url:  `${base}/range(address='${colLetter(c)}${r + 1}')`,
@@ -231,11 +216,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (colPrepDT >= 0 && p.prepDT)             addCell(ri, colPrepDT,    p.prepDT);
       if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT,    p.analDT || p.time);
       if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
-      // Write explicit fill color to color indicator cell (col before result)
-      const colorHex = calcCellColor(p.name, p.value, p.epa);
-      if (colorHex && colResult > 0) {
-        colorUpdates.push({ paramName: p.name, hex: colorHex, row: ri, col: colResult - 1 });
-      }
+
     }
   }
 
@@ -270,20 +251,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     }
   }
 
-  // Write explicit fill colors to color indicator cells
-  const fillRequests = colorUpdates.map(cu => ({
-    url:  `${base}/range(address='${colLetter(cu.col)}${cu.row + 1}')/format/fill`,
-    body: { color: cu.hex },
-  }));
-  for (let i = 0; i < fillRequests.length; i += 20) {
-    await graphBatch(fillRequests.slice(i, i + 20), token, sid);
-  }
-  context.log(`[pdf] Wrote ${fillRequests.length} cell fill colors`);
-
-  // Return color map to caller
-  const returnedColors = {};
-  colorUpdates.forEach(cu => { returnedColors[cu.paramName] = cu.hex; });
-  return returnedColors;
 }
 
 app.http('render-report-pdf', {
@@ -308,30 +275,6 @@ app.http('render-report-pdf', {
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
-    // ── exportOnly mode: convert existing temp file to PDF and delete it ──────
-    if (body.exportOnly && body.tempId) {
-      const existingTempId = body.tempId;
-      context.log('[pdf] exportOnly mode — exporting existing temp file:', existingTempId);
-      try {
-        const pr = await fetch(
-          `${GRAPH}/sites/${siteId}/drive/items/${existingTempId}/content?format=pdf`,
-          { headers: { Authorization: `Bearer ${token}` } });
-        if (!pr.ok) throw new Error(`PDF export (${pr.status})`);
-        const pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
-        // Only delete if keepTemp is NOT set — allow reuse for further edits
-        if (!body.keepTemp) {
-          await gReq('DELETE', `/sites/${siteId}/drive/items/${existingTempId}`, token).catch(() => {});
-          context.log('[pdf] exportOnly: temp file deleted');
-        } else {
-          context.log('[pdf] exportOnly: temp file kept for further edits');
-        }
-        const rptFileName = body.isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
-        return { status: 200, jsonBody: { success: true, pdfBase64, fileName: rptFileName, tempId: body.keepTemp ? existingTempId : null } };
-      } catch(e) {
-        return { status: 500, jsonBody: { error: 'exportOnly failed: ' + e.message } };
-      }
-    }
-
     // ── Step 1: Download template ───────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
       '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
@@ -354,8 +297,7 @@ app.http('render-report-pdf', {
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
     // ── Step 2: Upload as temp copy ─────────────────────────────────────────
-    const reportFileName = isRadon ? `${labId} RW Report.xlsx` : `${labId} Report.xlsx`;
-    const tempName = reportFileName; // use final report name — no timestamp
+    const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
     let tempId;
     try {
       const upR = await fetch(
@@ -465,14 +407,12 @@ app.http('render-report-pdf', {
     }
   };
 
-    let cellColors = {}; // accumulate colors from all fillSheet calls
-
     if (isRadon && radonSheet) {
       // Radon template: Lab ID=I7, Date=I8, Time=J8, DateRec=I9, TimeRec=J9, DateRep=I10
       await writeHeaders(radonSheet.id, [
         ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
       ]);
-      Object.assign(cellColors, await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', ''));
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', '');
 
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
@@ -493,7 +433,7 @@ app.http('render-report-pdf', {
       }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
-      Object.assign(cellColors, await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24'));
+      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24');
       await fitOnePage(specSheet.id);
       // Hide Lab Report and FHA sheets
       if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
@@ -508,7 +448,7 @@ app.http('render-report-pdf', {
       await writeHeaders(labSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      Object.assign(cellColors, await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48'));
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
 
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
@@ -526,7 +466,7 @@ app.http('render-report-pdf', {
       await writeHeaders(fhaSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      Object.assign(cellColors, await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27'));
+      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27');
       // Write authorized by and review date
       const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
       const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
