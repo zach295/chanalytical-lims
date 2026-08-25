@@ -5395,6 +5395,12 @@ document.addEventListener('DOMContentLoaded', function() {
       const param = key.replace('result:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
       currentReportData.resultsMap[param].value = val;
+      // ALSO update activeParams/fhaParams — render-report-pdf reads from these
+      const apIdx = (currentReportData.activeParams || []).findIndex(p => p.name === param);
+      if (apIdx >= 0) currentReportData.activeParams[apIdx].value = val;
+      const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
+      if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
+      currentReportData.resultsMap[param].value = val;
       const color = getResultColor(param, val, currentReportData);
       // Update the separate color box div (previous sibling td)
       const resultTd   = el.closest('td');
@@ -5409,15 +5415,27 @@ document.addEventListener('DOMContentLoaded', function() {
       const param = key.replace('qualifier:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
       currentReportData.resultsMap[param].qualifier = val;
+      const apIdx = (currentReportData.activeParams || []).findIndex(p => p.name === param);
+      if (apIdx >= 0) currentReportData.activeParams[apIdx].qualifier = val;
+      const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
+      if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].qualifier = val;
     } else if (key.startsWith('prepDT:')) {
       const param = key.replace('prepDT:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
       currentReportData.resultsMap[param].prepDT = val;
+      const apIdx = (currentReportData.activeParams || []).findIndex(p => p.name === param);
+      if (apIdx >= 0) currentReportData.activeParams[apIdx].prepDT = val;
+      const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
+      if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].prepDT = val;
     } else if (key.startsWith('analDT:')) {
       const param = key.replace('analDT:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
       currentReportData.resultsMap[param].analDT = val;
       currentReportData.resultsMap[param].time   = val;
+      const apIdx = (currentReportData.activeParams || []).findIndex(p => p.name === param);
+      if (apIdx >= 0) { currentReportData.activeParams[apIdx].analDT = val; currentReportData.activeParams[apIdx].time = val; }
+      const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
+      if (fpIdx >= 0) { currentReportData.fhaParams[fpIdx].analDT = val; currentReportData.fhaParams[fpIdx].time = val; }
     } else if (key.startsWith('meta:')) {
       const field = key.replace('meta:', '');
       currentReportData.meta[field] = val;
