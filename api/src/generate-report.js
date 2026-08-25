@@ -157,19 +157,6 @@ function formatResult(rawVal, rl, decimals) {
   return parseFloat(n.toFixed(6)).toString();
 }
 
-function resultColor(paramName, displayVal, epa) {
-  if (!displayVal && displayVal !== 0) return 'none';
-  const s = String(displayVal);
-  if (s.startsWith('<')) return 'green';
-  if (paramName === 'pH Electrometric') {
-    const n = parseFloat(s);
-    return isNaN(n) ? 'none' : (n >= 6.5 && n <= 8.5) ? 'green' : 'red';
-  }
-  if (epa === null || epa === undefined || epa === '') return 'none'; // no EPA limit = no color indicator
-  const n = parseFloat(s);
-  if (isNaN(n)) return 'blue';
-  return n <= parseFloat(epa) ? 'green' : 'red';
-}
 
 function combineDT(dateStr, timeStr) {
   if (!dateStr) return '';
@@ -340,6 +327,74 @@ function applyTemplateCF(value, paramName, cfData) {
 }
 
 
+// ── Read conditional formatting rules + EPA limits from Excel template ─────────
+async function readTemplateCFRules(token) {
+  try {
+    const siteId   = process.env.SP_SITE_ID;
+    const tmplPath = process.env.SP_REPORT_TEMPLATE ||
+      '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
+    const marker   = 'Shared Documents/';
+    const mi       = tmplPath.indexOf(marker);
+    const dp       = (mi >= 0 ? tmplPath.slice(mi + marker.length) : tmplPath.replace(/^\/+/, ''))
+      .split('/').map(s => encodeURIComponent(s)).join('/');
+    const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } });
+    if (!metaR.ok) return null;
+    const { id: tmplId } = await metaR.json();
+    const sr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook/createSession`,
+      { method:'POST', headers:{ Authorization:`Bearer ${token}`,'Content-Type':'application/json' },
+        body: JSON.stringify({ persistChanges: false }) });
+    if (!sr.ok) return null;
+    const sid    = (await sr.json()).id;
+    const wbHdr  = { Authorization:`Bearer ${token}`, 'workbook-session-id': sid };
+    const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook`;
+    const sheetsR = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
+    const sheets  = sheetsR.ok ? (await sheetsR.json()).value || [] : [];
+    const labSheet = sheets.find(s => /^lab report/i.test(s.name));
+    let epaLimits = {}, colorRules = [];
+    if (labSheet) {
+      const wsBase  = `${wbBase}/worksheets/${labSheet.id}`;
+      const rangeR  = await fetch(`${wsBase}/usedRange?$select=values`, { headers: wbHdr });
+      if (rangeR.ok) {
+        const rows = (await rangeR.json()).values || [];
+        let hdrRow=-1, colResult=-1, colEPA=-1, colParam=0;
+        for (let r=0; r<rows.length; r++) {
+          const rl = (rows[r]||[]).map(c=>String(c||'').toLowerCase().trim());
+          if (rl.some(c=>c.includes('your result')||c==='result')) {
+            hdrRow=r;
+            rl.forEach((c,i)=>{
+              if (c.includes('your result')||c==='result') colResult=i;
+              if (c.includes('epa')||c.includes('mcl')||c.includes('limit')) colEPA=i;
+              if (c.includes('parameter')||c.includes('analyte')) colParam=i;
+            });
+            break;
+          }
+        }
+        if (hdrRow>=0 && colEPA>=0) {
+          for (let r=hdrRow+1; r<rows.length; r++) {
+            const name = String((rows[r]||[])[colParam]||'').trim();
+            const epa  = (rows[r]||[])[colEPA];
+            if (name && epa!==''&&epa!==null&&epa!==undefined) epaLimits[name]=epa;
+          }
+        }
+        const cfR = await fetch(`${wsBase}/conditionalFormats`, { headers: wbHdr });
+        if (cfR.ok) {
+          const cfs = (await cfR.json()).value||[];
+          for (const cf of cfs) {
+            if (cf.type==='cellValue'&&cf.cellValue?.rule) {
+              const r2=cf.cellValue.rule, color=cf.cellValue.format?.fill?.color;
+              if (color&&r2.operator) colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', color, priority:cf.priority||99 });
+            }
+          }
+          colorRules.sort((a,b)=>a.priority-b.priority);
+        }
+      }
+    }
+    await fetch(`${wbBase}/closeSession`,{ method:'POST', headers:wbHdr }).catch(()=>{});
+    return { epaLimits, colorRules };
+  } catch(e) { console.error('[readTemplateCFRules]',e.message); return null; }
+}
+
 async function getSampleMeta(baseId, token) {
   try {
     // Use listItems() — same as accession-status.js which is proven to work
@@ -457,10 +512,10 @@ app.http('generate-report', {
       const token = await getToken();
 
       // ── Fetch data in parallel ──────────────────────────────────────────────
-      const [metaRaw, cache, cfData] = await Promise.all([
-        getSampleMeta(baseId, token), // always read from Archived Intake for dates/location
+      const [metaRaw, cache, cfRules] = await Promise.all([
+        getSampleMeta(baseId, token),
         getResultsCache(baseId),
-        readTemplateCFRules(token).catch(() => null), // CF rules + EPA limits from template
+        readTemplateCFRules(token).catch(()=>null),
       ]);
 
       // ── Resolve meta ────────────────────────────────────────────────────────
@@ -694,21 +749,18 @@ app.http('generate-report', {
           }
         }
 
-        const display    = formatResult(rawVal, p.rl, p.decimals);
-        const templateHex = applyTemplateCF(display, p.name, cfData);
+        const display = formatResult(rawVal, p.rl, p.decimals);
         return {
-          name:        p.name,
-          value:       display,
-          rl:          p.rl  !== null && p.rl  !== undefined ? String(p.rl)  : '',
-          epa:         p.epa !== null && p.epa !== undefined ? String(p.epa) : '',
-          unit:        p.unit,
-          method:      p.method,
-          prepDT:      ensureColon(prepDT),
-          analDT:      ensureColon(analDT),
-          time:        ensureColon(analDT),
-          color:       resultColor(p.name, display, p.epa),
-          templateHex: templateHex || null, // exact hex from template CF rules
-          source:      p.source,
+          name:   p.name,
+          value:  display,
+          rl:     p.rl  !== null && p.rl  !== undefined ? String(p.rl)  : '',
+          epa:    p.epa !== null && p.epa !== undefined ? String(p.epa) : '',
+          unit:   p.unit,
+          method: p.method,
+          prepDT: ensureColon(prepDT),
+          analDT: ensureColon(analDT),
+          time:   ensureColon(analDT),
+          source: p.source,
         };
       };
 
@@ -744,6 +796,7 @@ app.http('generate-report', {
         jsonBody: {
           success:    true,
           labId:      baseId,
+          cfRules:    cfRules || null,
           isRadon,
         isArsenicSpec,
           needsFHA,
