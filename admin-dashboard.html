@@ -737,12 +737,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
       <!-- Action bar above report -->
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <div style="font-size:13px;color:var(--slate);flex:1;">Click any result, name, or comment to edit it directly on the report.</div>
+        <div style="font-size:13px;color:var(--slate);flex:1;">PDF Preview shows the actual report. Switch to Edit Fields to modify values — PDF regenerates automatically on Save/Send.</div>
         <button class="action-btn" onclick="resetReportEdits()" style="color:var(--warning);border-color:var(--warning);">↺ Reset Changes</button>
       </div>
 
-      <!-- Report container — styled to match COA template -->
-      <div id="rpt-live-preview" style="background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
+      <!-- Report container — PDF preview (primary) + editable HTML (secondary) -->
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+        <button id="rpt-tab-pdf" onclick="switchPreviewTab('pdf')" style="padding:6px 16px;border-radius:6px;border:1.5px solid var(--teal);background:var(--teal);color:white;cursor:pointer;font-size:13px;font-weight:600;">📄 PDF Preview</button>
+        <button id="rpt-tab-html" onclick="switchPreviewTab('html')" style="padding:6px 16px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;font-size:13px;">✏️ Edit Fields</button>
+        <span id="rpt-pdf-status" style="font-size:12px;color:var(--slate);margin-left:8px;"></span>
+      </div>
+      <div id="rpt-pdf-panel" style="width:100%;max-width:860px;height:900px;border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);">
+        <div id="rpt-pdf-loading" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--slate);font-size:14px;">⏳ Generating PDF preview from template...</div>
+        <iframe id="rpt-pdf-iframe" style="width:100%;height:100%;border:none;display:none;" title="Report PDF Preview"></iframe>
+      </div>
+      <div id="rpt-live-preview" style="display:none;background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
 
       <!-- Authorization bar -->
       <div style="background:white;border:1px solid var(--border);border-radius:10px;padding:20px 36px;margin-top:12px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow);">
@@ -5279,13 +5288,84 @@ document.addEventListener('DOMContentLoaded', function() {
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
       document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
+      statusEl.textContent = `✅ Data loaded — generating PDF preview...`;
       statusEl.style.color = 'var(--success)';
+
+      // Pre-generate PDF from template immediately — accurate colors + ready for send
+      preGenerateReportPdf(currentReportData);
 
     } catch (err) {
       statusEl.textContent = '⚠️ ' + err.message;
       statusEl.style.color = 'var(--error)';
       console.error('Report preview failed:', err);
+    }
+  }
+
+  function switchPreviewTab(tab) {
+    const pdfPanel  = document.getElementById('rpt-pdf-panel');
+    const htmlPanel = document.getElementById('rpt-live-preview');
+    const tabPdf    = document.getElementById('rpt-tab-pdf');
+    const tabHtml   = document.getElementById('rpt-tab-html');
+    if (tab === 'pdf') {
+      pdfPanel.style.display  = 'block';
+      htmlPanel.style.display = 'none';
+      tabPdf.style.background  = 'var(--teal)';  tabPdf.style.color  = 'white';  tabPdf.style.borderColor  = 'var(--teal)';
+      tabHtml.style.background = 'white'; tabHtml.style.color = 'var(--navy)'; tabHtml.style.borderColor = 'var(--border)';
+      // Regenerate PDF if edits were made
+      if (currentReportData?._pdfStale) {
+        preGenerateReportPdf(currentReportData, true);
+      }
+    } else {
+      pdfPanel.style.display  = 'none';
+      htmlPanel.style.display = 'block';
+      tabHtml.style.background = 'var(--teal)';  tabHtml.style.color  = 'white';  tabHtml.style.borderColor  = 'var(--teal)';
+      tabPdf.style.background  = 'white'; tabPdf.style.color  = 'var(--navy)'; tabPdf.style.borderColor  = 'var(--border)';
+    }
+  }
+
+  async function preGenerateReportPdf(reportData, forceRegenerate) {
+    const statusEl    = document.getElementById('rpt-pdf-status');
+    const iframeEl    = document.getElementById('rpt-pdf-iframe');
+    const loadingEl   = document.getElementById('rpt-pdf-loading');
+    const authorizedBy = document.getElementById('rpt-authorized-by')?.value || getAdminName();
+    const reviewDate   = document.getElementById('rpt-review-date')?.value || '';
+
+    if (currentReportData._cachedPdfBase64 && !forceRegenerate) return; // already ready
+
+    if (loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = '⏳ Generating PDF preview from template...'; }
+    if (iframeEl)  iframeEl.style.display = 'none';
+    if (statusEl)  statusEl.textContent = '⏳ Generating PDF...';
+
+    try {
+      const pdfRes = await fetch('/api/render-report-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportData, authorizedBy, reviewDate }),
+      });
+      const pdfData = await pdfRes.json().catch(() => ({}));
+      if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+
+      // Cache on currentReportData
+      currentReportData._cachedPdfBase64 = pdfData.pdfBase64;
+      currentReportData._cachedFileName  = pdfData.fileName;
+      currentReportData._pdfStale        = false;
+
+      // Show in iframe
+      const bytes = Uint8Array.from(atob(pdfData.pdfBase64), c => c.charCodeAt(0));
+      const blob  = new Blob([bytes], { type: 'application/pdf' });
+      const url   = URL.createObjectURL(blob);
+      if (iframeEl)  { iframeEl.src = url; iframeEl.style.display = 'block'; }
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (statusEl)  statusEl.textContent = '✅ PDF ready';
+
+      // Restore status bar
+      const mainStatus = document.getElementById('gr-load-status');
+      if (mainStatus) { mainStatus.style.color = 'var(--success)'; mainStatus.textContent = `✅ Report ready for ${reportData.labId || reportData.meta?.labId}`; }
+
+    } catch(e) {
+      if (loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = `⚠️ PDF preview failed: ${e.message}`; }
+      if (statusEl)  statusEl.textContent = '⚠️ PDF failed — will regenerate on send';
+      console.error('[preGenerateReportPdf]', e);
     }
   }
 
@@ -5304,6 +5384,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function onReportFieldEdit(el) {
     if (!currentReportData) return;
+    // Mark cached PDF stale — it will regenerate on next Send/Save
+    if (currentReportData._cachedPdfBase64) {
+      currentReportData._pdfStale = true;
+      const pdfStatus = document.getElementById('rpt-pdf-status');
+      if (pdfStatus) pdfStatus.textContent = '⚠️ Fields edited — PDF updating...';
+    }
+    // Debounce: regenerate PDF 2s after last edit
+    clearTimeout(window._pdfRegenTimer);
+    window._pdfRegenTimer = setTimeout(() => {
+      if (currentReportData?._pdfStale) preGenerateReportPdf(currentReportData, true);
+    }, 2000);
     const key = el.dataset.key;
     const val = el.textContent.trim();
     if (key.startsWith('result:')) {
@@ -5640,15 +5731,25 @@ document.addEventListener('DOMContentLoaded', function() {
       const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
 
       if (sendEmail) {
-        // ── Step 1: Generate PDF from template ──────────────────────────────
-        statusEl.textContent = '⏳ Generating PDF from template...';
-        const pdfRes = await fetch('/api/render-report-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
-        });
-        const pdfData = await pdfRes.json().catch(() => ({}));
-        if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+        // ── Step 1: Use cached PDF or generate now ──────────────────────────
+        statusEl.textContent = '⏳ Preparing PDF...';
+        let pdfBase64, fileName;
+        if (currentReportData._cachedPdfBase64 && !currentReportData._pdfStale) {
+          pdfBase64 = currentReportData._cachedPdfBase64;
+          fileName  = currentReportData._cachedFileName;
+          statusEl.textContent = '⏳ Using pre-generated PDF...';
+        } else {
+          statusEl.textContent = '⏳ Generating PDF from template...';
+          const pdfRes = await fetch('/api/render-report-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+          });
+          const pdfData = await pdfRes.json().catch(() => ({}));
+          if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+          pdfBase64 = pdfData.pdfBase64;
+          fileName  = pdfData.fileName;
+        }
 
         // ── Step 2: Email the PDF ────────────────────────────────────────────
         statusEl.textContent = '⏳ Sending email...';
@@ -5657,8 +5758,8 @@ document.addEventListener('DOMContentLoaded', function() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             labId,
-            pdfBase64:   pdfData.pdfBase64,
-            fileName:    pdfData.fileName,
+            pdfBase64,
+            fileName,
             reportType:  currentReportData.reportType,
             isRadon:     currentReportData.isRadon || false,
             location:    currentReportData.meta?.location || '',
@@ -5672,29 +5773,38 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
       } else {
-        // ── Save PDF: generate from template and download ─────────────────────
-        statusEl.textContent = '⏳ Generating PDF from template...';
-        const pdfRes2 = await fetch('/api/render-report-pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
-        });
-        const pdfData2 = await pdfRes2.json().catch(() => ({}));
-        if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
-        const bytes2 = Uint8Array.from(atob(pdfData2.pdfBase64), c => c.charCodeAt(0));
+        // ── Save PDF: use cached PDF or generate ─────────────────────────────
+        statusEl.textContent = '⏳ Preparing PDF...';
+        let pdfBase642, fileName2;
+        if (currentReportData._cachedPdfBase64 && !currentReportData._pdfStale) {
+          pdfBase642 = currentReportData._cachedPdfBase64;
+          fileName2  = currentReportData._cachedFileName;
+        } else {
+          statusEl.textContent = '⏳ Generating PDF from template...';
+          const pdfRes2 = await fetch('/api/render-report-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+          });
+          const pdfData2 = await pdfRes2.json().catch(() => ({}));
+          if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
+          pdfBase642 = pdfData2.pdfBase64;
+          fileName2  = pdfData2.fileName;
+        }
+        const bytes2 = Uint8Array.from(atob(pdfBase642), c => c.charCodeAt(0));
         const blob2  = new Blob([bytes2], { type: 'application/pdf' });
         const url2   = URL.createObjectURL(blob2);
         const a2     = document.createElement('a');
-        a2.href = url2; a2.download = pdfData2.fileName || (labId + '_COA.pdf');
+        a2.href = url2; a2.download = fileName2 || (labId + '_COA.pdf');
         document.body.appendChild(a2); a2.click();
         document.body.removeChild(a2); URL.revokeObjectURL(url2);
         statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ PDF downloaded: ${pdfData2.fileName}`;
+        statusEl.textContent = `✅ PDF downloaded: ${fileName2}`;
         // Log to Activity Log
         fetch('/api/send-report', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
-            labId, pdfBase64: pdfData2.pdfBase64, saveOnly: true,
+            labId, pdfBase64: pdfBase642, saveOnly: true,
             authorizedBy, location: currentReportData.meta?.location || '',
             isRadon: currentReportData.isRadon || false, overrideEmail: 'save@nolog',
           }),
