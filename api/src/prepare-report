@@ -170,9 +170,9 @@ function calcFillColor(paramName, displayVal) {
       return null;
 
     case 'Radon Water':
-      // green: <100 (string) OR <4000;  blue: >4000
-      if (rl || (num && n < 4000))  return '#00CC44';
-      if (num && n > 4000)           return '#0070C0';
+      // green: <100 (string) OR <4000;  blue: >=4000
+      if (rl || (num && n < 4000))   return '#00CC44';
+      if (num && n >= 4000)           return '#0070C0';
       return null;
 
     default:
