@@ -650,7 +650,7 @@ app.http('prepare-report', {
 
     return {
       status:   200,
-      jsonBody: { success: true, tempId, fileName, cellColors },
+      jsonBody: { success: true, tempId, fileName, cellColors, _debug: { cfRulesLoaded: !!cfRules, ruleCount: cfRules?.colorRules?.length || 0, epaKeys: Object.keys(cfRules?.epaLimits||{}).slice(0,5) } },
     };
     } catch(fatalErr) {
       context.log('[prepare] FATAL:', fatalErr.message, fatalErr.stack);
