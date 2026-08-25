@@ -5352,6 +5352,18 @@ document.addEventListener('DOMContentLoaded', function() {
       currentReportData._pdfStale        = false;
       currentReportData._tempId          = pdfData.tempId || null; // kept Excel file ID
 
+      // Apply Excel cell colors to preview dots
+      if (pdfData.cellColors && Object.keys(pdfData.cellColors).length) {
+        currentReportData._cellColors = pdfData.cellColors;
+        Object.entries(pdfData.cellColors).forEach(([paramName, hex]) => {
+          const resultTd = [...document.querySelectorAll('#rpt-live-preview span[data-key]')]
+            .find(el => el.dataset.key === 'result:' + paramName)
+            ?.closest('td');
+          const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
+          if (colorDiv) colorDiv.style.background = hex;
+        });
+      }
+
       // Show in iframe
       const bytes = Uint8Array.from(atob(pdfData.pdfBase64), c => c.charCodeAt(0));
       const blob  = new Blob([bytes], { type: 'application/pdf' });
@@ -5374,6 +5386,16 @@ document.addEventListener('DOMContentLoaded', function() {
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
+    // Re-apply Excel colors since renderEditableReport re-generates with JS colors
+    if (currentReportData._cellColors) {
+      Object.entries(currentReportData._cellColors).forEach(([paramName, hex]) => {
+        const resultTd = [...document.querySelectorAll('#rpt-live-preview span[data-key]')]
+          .find(el => el.dataset.key === 'result:' + paramName)
+          ?.closest('td');
+        const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
+        if (colorDiv) colorDiv.style.background = hex;
+      });
+    }
     showToast('Report reset to original data.');
   }
 
@@ -5408,6 +5430,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (apIdx >= 0) currentReportData.activeParams[apIdx].value = val;
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
+      // Clear cached Excel color for this param — it's stale now, use JS until next PDF gen
+      if (currentReportData._cellColors?.[param]) delete currentReportData._cellColors[param];
       // Write edit to the kept Excel file (fire-and-forget, non-blocking)
       if (currentReportData._tempId) {
         fetch('/api/patch-report-cell', { method: 'POST', headers: {'Content-Type':'application/json'},
@@ -5501,8 +5525,12 @@ document.addEventListener('DOMContentLoaded', function() {
     params.forEach(p => {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
-      const color  = getResultColor(p.name, val, reportData);
-      const boxBg  = color === 'FF0000' ? '#FF4444'
+      // Use Excel colors if available — fall back to JS calculation
+      const excelHex = reportData._cellColors?.[p.name];
+      const color  = excelHex ? null : getResultColor(p.name, val, reportData);
+      const boxBg  = excelHex
+                   ? excelHex
+                   : color === 'FF0000' ? '#FF4444'
                    : color === '0000FF' ? '#0055CC'
                    : color === '00CC00' || color === '00FF00' ? '#00CC44'
                    : val ? '#00CC44' : '#e8e8e8';
