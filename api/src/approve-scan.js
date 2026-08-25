@@ -725,7 +725,9 @@ app.http('approve-scan', {
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|real estate)\b/i;
       const nameIsBusinessLike = BWORDS.test(formalName) || formalName.includes('/') || formalName.includes('&');
       const usePublic = (isPublicOverride || isPublicClient) && !nameIsBusinessLike;
-      const abbrev    = usePublic ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
+      // If the client was found in the Clients list and has an abbreviation, always use it
+      // (overrides PUBLIC — a listed client is a known business, not a residential public)
+      const abbrev    = clientInfo.abbrev || (usePublic ? 'PUBLIC' : getAbbrev(formalName));
 
       // ── Write Accession Log ──────────────────────────────────────────────────
       // Field mapping (Excel-imported): Title=timestamp, field_1=baseId,
@@ -908,14 +910,23 @@ app.http('approve-scan', {
       }
 
       // ── Delete from Review Queue ─────────────────────────────────────────────
-      if (reviewQueueRow) {
-        // Mark Approved first — so even if delete fails, get-scan-queue filters it out on refresh
-        await updateItem(LISTS.REVIEW_QUEUE, reviewQueueRow, { Title: 'Approved' })
-          .catch(e => context.log('[ReviewQueue] Mark Approved failed:', e.message));
-        await deleteItem(LISTS.REVIEW_QUEUE, reviewQueueRow)
-          .catch(e => context.log('[ReviewQueue] Delete failed:', e.message));
-      } else {
-        context.log('[ReviewQueue] reviewQueueRow is undefined — cannot mark or delete');
+      // Look up the row by FileID — don't trust the client-supplied rowIndex
+      try {
+        const rqItems  = await listItems(LISTS.REVIEW_QUEUE, { top: 500 });
+        const rqRow    = rqItems.find(r => (r.FileID || r.FileId || '') === fileId);
+        const rqId     = rqRow?._id || reviewQueueRow;
+        if (rqId) {
+          // Mark Approved first so get-scan-queue filters it even if delete fails
+          await updateItem(LISTS.REVIEW_QUEUE, rqId, { Title: 'Approved' })
+            .catch(e => context.log('[ReviewQueue] Mark failed:', e.message));
+          await deleteItem(LISTS.REVIEW_QUEUE, rqId)
+            .catch(e => context.log('[ReviewQueue] Delete failed:', e.message));
+          context.log(`[ReviewQueue] Marked Approved + deleted row ${rqId} for fileId ${fileId}`);
+        } else {
+          context.log(`[ReviewQueue] No row found for fileId ${fileId} — nothing to delete`);
+        }
+      } catch(e) {
+        context.log('[ReviewQueue] Lookup error:', e.message);
       }
 
       // ── Move and rename scan file to Archive (organized by Month/Day) ──────────
@@ -1093,11 +1104,9 @@ app.http('approve-scan', {
         jsonBody: {
           success:    true,
           labIds:     allFullIds,
+          testNames:  labItems.map(l => l.coaTest),
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
-
-
-
         },
       };
 
