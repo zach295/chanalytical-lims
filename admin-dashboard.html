@@ -2430,7 +2430,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const labId   = r.fullIds?.[0] || r.baseId || '';
     const tests   = r.tests || [];
     const testStr = tests.join(' | ');
-    return `<div class="scan-card" data-baseid="${r.baseId}">
+    return `<div class="scan-card" id="scan-card-${r.fileId}" data-baseid="${r.baseId}" data-barcode="${r.barcodeId||r.baseId||''}" data-fileid="${r.fileId}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
         <div>
           <div style="font-weight:700;font-size:15px;color:var(--navy);">${name}</div>
@@ -4408,8 +4408,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
 
     // Mark as deleted immediately in localStorage so it survives F5
-    const _cardEl = document.getElementById(`scan-card-${fileId}`);
-    const _barcodeId = _cardEl?.dataset?.barcode || '';
+    const _cardEl   = document.getElementById(`scan-card-${fileId}`);
+    const _barcodeId = _cardEl?.dataset?.barcode || _cardEl?.dataset?.baseid || '';
     console.log('[approve] addDeletedScan:', fileId, 'barcode:', _barcodeId);
     addDeletedScan(fileId);
     if (_barcodeId) addDeletedScan(_barcodeId);
