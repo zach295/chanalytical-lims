@@ -5373,7 +5373,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const safeVal = String(value || '');
     return `<span contenteditable="true" data-key="${key}"
       style="display:inline-block;min-width:60px;border-bottom:1px dashed #aaa;padding:1px 4px;cursor:text;outline:none;${style}"
-      onblur="onReportFieldEdit(this)">${safeVal}</span>`;
+      oninput="onReportFieldEdit(this)" onblur="onReportFieldEdit(this)">${safeVal}</span>`;
   }
 
   function onReportFieldEdit(el) {
@@ -5635,7 +5635,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <strong>Comments:</strong><br>
         <div contenteditable="true" data-key="comments"
           style="min-height:40px;border:1px dashed #aaa;border-radius:4px;padding:6px 8px;margin-top:4px;outline:none;"
-          onblur="onReportFieldEdit(this)">${commentsVal}</div>
+          oninput="onReportFieldEdit(this)" onblur="onReportFieldEdit(this)">${commentsVal}</div>
       </div>`;
 
     if (needsFHA) {
