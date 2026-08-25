@@ -205,7 +205,7 @@ app.http('import-control', {
         const hasChloride = !!(r.field_6  || '').toString().trim();
         const allFilled   = hasPH && hasColiform && hasChloride;
         return importAll || !allFilled;
-      }).slice(0, 30); // process max 30 per run to avoid timeout
+      }); // no cap — process all pending
 
       if (!needsControl.length) {
         return { status: 200, jsonBody: { success: true, message: 'All Results Cache entries already have control data', updated: 0 } };
@@ -251,7 +251,7 @@ app.http('import-control', {
         for (const file of matchingFiles) {
           filesUsed.push(file.name);
           const buffer = await graphDownloadFile(file.id, token);
-          const rows   = parseControlFile(buffer, ids);
+          const rows   = parseControlFile(buffer, new Set()); // read all rows, no filter
           allRows.push(...rows);
           context.log(`[import-control] ${file.name}: ${rows.length} rows`);
         }
