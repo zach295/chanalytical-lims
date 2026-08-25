@@ -195,7 +195,151 @@ function combineDT(dateStr, timeStr) {
   return hhmm ? `${m}/${d}/${y} ${hhmm}` : `${m}/${d}/${y}`;
 }
 
-// ── Get sample metadata from Archived Intake (field_X mapping) ────────────────
+// ── Read conditional formatting rules + EPA limits from template ──────────────
+async function readTemplateCFRules(token) {
+  try {
+    const siteId   = process.env.SP_SITE_ID;
+    const tmplPath = process.env.SP_REPORT_TEMPLATE ||
+      '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
+    const marker   = 'Shared Documents/';
+    const mi       = tmplPath.indexOf(marker);
+    const dp       = (mi >= 0 ? tmplPath.slice(mi + marker.length) : tmplPath.replace(/^\/+/, ''))
+      .split('/').map(s => encodeURIComponent(s)).join('/');
+
+    // Get template file ID
+    const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } });
+    if (!metaR.ok) return null;
+    const { id: tmplId } = await metaR.json();
+
+    // Open read-only session
+    const sr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook/createSession`,
+      { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persistChanges: false }) });
+    if (!sr.ok) return null;
+    const sid   = (await sr.json()).id;
+    const wbHdr = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid };
+    const base  = `${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook`;
+
+    // Find Lab Report sheet
+    const sheetsR = await fetch(`${base}/worksheets`, { headers: wbHdr });
+    const sheets  = sheetsR.ok ? (await sheetsR.json()).value || [] : [];
+    const labSheet = sheets.find(s => /^lab report$/i.test(s.name));
+    if (!labSheet) {
+      await fetch(`${base}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
+      return null;
+    }
+
+    const wsBase = `${base}/worksheets/${labSheet.id}`;
+
+    // Read sheet values to find header row and EPA limit column
+    const rangeR = await fetch(`${wsBase}/usedRange?$select=values`, { headers: wbHdr });
+    const rows   = rangeR.ok ? (await rangeR.json()).values || [] : [];
+
+    // Find header row with "Your Result" and "EPA Limit"
+    let hdrRow = -1, colResult = -1, colEPA = -1, colParam = 0;
+    for (let r = 0; r < rows.length; r++) {
+      const rl = (rows[r] || []).map(c => String(c || '').toLowerCase().trim());
+      if (rl.some(c => c.includes('your result') || c === 'result')) {
+        hdrRow = r;
+        rl.forEach((c, i) => {
+          if (c.includes('your result') || c === 'result') colResult = i;
+          if (c.includes('epa') || c.includes('limit') || c.includes('mcl'))  colEPA    = i;
+          if (c.includes('parameter') || c.includes('analyte'))                colParam  = i;
+        });
+        break;
+      }
+    }
+
+    // Build EPA limits map from template values
+    const epaLimits = {};
+    if (hdrRow >= 0 && colEPA >= 0) {
+      for (let r = hdrRow + 1; r < rows.length; r++) {
+        const paramName = String((rows[r] || [])[colParam] || '').trim();
+        const epaVal    = (rows[r] || [])[colEPA];
+        if (paramName && epaVal !== '' && epaVal !== null && epaVal !== undefined) {
+          epaLimits[paramName] = epaVal;
+        }
+      }
+    }
+
+    // Read conditional formatting rules from the result column range
+    const cfRes = await fetch(`${wsBase}/conditionalFormats`, { headers: wbHdr });
+    const cfs   = cfRes.ok ? (await cfRes.json()).value || [] : [];
+
+    // Extract color rules: operator → fill color
+    const colorRules = [];
+    for (const cf of cfs) {
+      if (cf.type === 'cellValue' && cf.cellValue) {
+        const rule  = cf.cellValue.rule || {};
+        const fill  = cf.cellValue.format?.fill?.color || null;
+        if (fill && rule.operator) {
+          colorRules.push({
+            operator: rule.operator.toLowerCase(), // lessThanOrEqual, greaterThan, equal, etc.
+            formula1: rule.formula1 || '',
+            formula2: rule.formula2 || '',
+            color:    fill,
+            priority: cf.priority || 99,
+          });
+        }
+      } else if (cf.type === 'preset' || cf.type === 'colorScale') {
+        // ignore complex rules
+      }
+    }
+
+    // Sort by priority (lower number = higher priority in Excel)
+    colorRules.sort((a, b) => a.priority - b.priority);
+
+    // Close session
+    await fetch(`${base}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
+
+    return { epaLimits, colorRules };
+  } catch(e) {
+    console.error('[readTemplateCFRules]', e.message);
+    return null;
+  }
+}
+
+// ── Apply template CF rules to a result value ─────────────────────────────────
+function applyTemplateCF(value, paramName, cfData) {
+  if (!cfData || !value && value !== 0) return null;
+  const s  = String(value).trim();
+  if (!s) return null;
+
+  const { epaLimits, colorRules } = cfData;
+  const epa = epaLimits[paramName];
+  const n   = parseFloat(s);
+  const isNum = !isNaN(n) && !s.startsWith('<');
+
+  for (const rule of colorRules) {
+    const threshold = parseFloat(rule.formula1);
+    const thr2      = parseFloat(rule.formula2 || '');
+    const op        = rule.operator;
+
+    let matches = false;
+    if (!isNum) {
+      // Non-numeric: match 'notEqual' or specific text rules
+      matches = op === 'notEqual' || op === 'notcontain' || false;
+    } else {
+      if      (op === 'lessthanorequal'    && n <= (isNaN(threshold) ? parseFloat(epa) : threshold))  matches = true;
+      else if (op === 'lessthan'           && n <  (isNaN(threshold) ? parseFloat(epa) : threshold))  matches = true;
+      else if (op === 'greaterthan'        && n >  (isNaN(threshold) ? parseFloat(epa) : threshold))  matches = true;
+      else if (op === 'greaterthanorequal' && n >= (isNaN(threshold) ? parseFloat(epa) : threshold))  matches = true;
+      else if (op === 'equal'              && n === threshold)                                          matches = true;
+      else if (op === 'between'            && n >= threshold && n <= thr2)                              matches = true;
+    }
+    if (matches) return rule.color; // exact hex from template
+  }
+
+  // Fallback: use EPA limit directly if we have it
+  if (epa !== undefined && isNum) {
+    return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
+  }
+
+  return null;
+}
+
+
 async function getSampleMeta(baseId, token) {
   try {
     // Use listItems() — same as accession-status.js which is proven to work
@@ -313,9 +457,10 @@ app.http('generate-report', {
       const token = await getToken();
 
       // ── Fetch data in parallel ──────────────────────────────────────────────
-      const [metaRaw, cache] = await Promise.all([
+      const [metaRaw, cache, cfData] = await Promise.all([
         getSampleMeta(baseId, token), // always read from Archived Intake for dates/location
         getResultsCache(baseId),
+        readTemplateCFRules(token).catch(() => null), // CF rules + EPA limits from template
       ]);
 
       // ── Resolve meta ────────────────────────────────────────────────────────
@@ -549,19 +694,21 @@ app.http('generate-report', {
           }
         }
 
-        const display = formatResult(rawVal, p.rl, p.decimals);
+        const display    = formatResult(rawVal, p.rl, p.decimals);
+        const templateHex = applyTemplateCF(display, p.name, cfData);
         return {
-          name:     p.name,
-          value:    display,
-          rl:       p.rl  !== null && p.rl  !== undefined ? String(p.rl)  : '',
-          epa:      p.epa !== null && p.epa !== undefined ? String(p.epa) : '',
-          unit:     p.unit,
-          method:   p.method,
-          prepDT:   ensureColon(prepDT),
-          analDT:   ensureColon(analDT),
-          time:     ensureColon(analDT),
-          color:    resultColor(p.name, display, p.epa),
-          source:   p.source,
+          name:        p.name,
+          value:       display,
+          rl:          p.rl  !== null && p.rl  !== undefined ? String(p.rl)  : '',
+          epa:         p.epa !== null && p.epa !== undefined ? String(p.epa) : '',
+          unit:        p.unit,
+          method:      p.method,
+          prepDT:      ensureColon(prepDT),
+          analDT:      ensureColon(analDT),
+          time:        ensureColon(analDT),
+          color:       resultColor(p.name, display, p.epa),
+          templateHex: templateHex || null, // exact hex from template CF rules
+          source:      p.source,
         };
       };
 
