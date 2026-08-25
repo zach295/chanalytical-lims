@@ -48,11 +48,148 @@ function findLabel(rows, label) {
   return null;
 }
 
-// Compute explicit fill color for a result value
-function calcFillColor(paramName, displayVal, epa) {
+// Read CF rules from template once and cache them
+let _cfRulesCache = null;
+async function getTemplateCFRules(siteId, token) {
+  if (_cfRulesCache) return _cfRulesCache;
+  try {
+    const tmplPath = process.env.SP_REPORT_TEMPLATE ||
+      '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
+    const marker   = 'Shared Documents/';
+    const mi       = tmplPath.indexOf(marker);
+    const dp       = (mi >= 0 ? tmplPath.slice(mi + marker.length) : tmplPath.replace(/^\/+/, ''))
+      .split('/').map(s => encodeURIComponent(s)).join('/');
+    const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+      { headers: { Authorization: `Bearer ${token}` } });
+    if (!metaR.ok) return null;
+    const { id: tmplId } = await metaR.json();
+    const sr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook/createSession`,
+      { method:'POST', headers:{ Authorization:`Bearer ${token}`,'Content-Type':'application/json' },
+        body: JSON.stringify({ persistChanges: false }) });
+    if (!sr.ok) return null;
+    const sid    = (await sr.json()).id;
+    const wbHdr  = { Authorization:`Bearer ${token}`, 'workbook-session-id': sid };
+    const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook`;
+    const sheetsR = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
+    const sheets  = sheetsR.ok ? (await sheetsR.json()).value || [] : [];
+    const labSheet = sheets.find(s => /^lab report/i.test(s.name));
+    let epaLimits = {}, colorRules = [];
+    if (labSheet) {
+      const wsBase  = `${wbBase}/worksheets/${labSheet.id}`;
+      const rangeR  = await fetch(`${wsBase}/usedRange?$select=values`, { headers: wbHdr });
+      if (rangeR.ok) {
+        const rows = (await rangeR.json()).values || [];
+        let hdrRow=-1, colResult=-1, colEPA=-1, colParam=0;
+        for (let r=0; r<rows.length; r++) {
+          const rl = (rows[r]||[]).map(c=>String(c||'').toLowerCase().trim());
+          if (rl.some(c=>c.includes('your result')||c==='result')) {
+            hdrRow=r;
+            rl.forEach((c,i)=>{
+              if (c.includes('your result')||c==='result') colResult=i;
+              if (c.includes('epa')||c.includes('mcl')||c.includes('limit')) colEPA=i;
+              if (c.includes('parameter')||c.includes('analyte')) colParam=i;
+            });
+            break;
+          }
+        }
+        if (hdrRow>=0 && colEPA>=0) {
+          for (let r=hdrRow+1; r<rows.length; r++) {
+            const name = String((rows[r]||[])[colParam]||'').trim();
+            const epa  = (rows[r]||[])[colEPA];
+            if (name && epa!==''&&epa!==null&&epa!==undefined) epaLimits[name]=epa;
+          }
+        }
+        const cfR = await fetch(`${wsBase}/conditionalFormats`, { headers: wbHdr });
+        if (cfR.ok) {
+          const cfs = (await cfR.json()).value||[];
+          for (const cf of cfs) {
+            if (cf.type==='cellValue'&&cf.cellValue?.rule) {
+              const r2=cf.cellValue.rule, color=cf.cellValue.format?.fill?.color;
+              if (color&&r2.operator) {
+                // Get range for this rule
+                let appliedRows = null;
+                try {
+                  const rngR = await fetch(`${wsBase}/conditionalFormats/${cf.id}/range`, { headers: wbHdr });
+                  if (rngR.ok) {
+                    const addr = ((await rngR.json()).address||'').replace(/^.*!/,'');
+                    const nums = addr.match(/\d+/g);
+                    if (nums) appliedRows = { start:parseInt(nums[0]), end:parseInt(nums[nums.length-1]) };
+                  }
+                } catch(e){}
+                colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', formula2:r2.formula2||'', color, priority:cf.priority||99, appliedRows });
+              }
+            }
+          }
+          colorRules.sort((a,b)=>a.priority-b.priority);
+        }
+        // Store param row numbers
+        if (hdrRow>=0) {
+          for (let r=hdrRow+1; r<rows.length; r++) {
+            const name = String((rows[r]||[])[colParam]||'').trim();
+            if (name) epaLimits[`__row__${name}`] = r+1;
+          }
+        }
+      }
+    }
+    await fetch(`${wbBase}/closeSession`,{method:'POST',headers:wbHdr}).catch(()=>{});
+    _cfRulesCache = { epaLimits, colorRules };
+    return _cfRulesCache;
+  } catch(e) { return null; }
+}
+
+// Evaluate CF rules exactly as Excel would for a given parameter + value
+function calcFillColor(paramName, displayVal, epa, cfRules) {
   if (!displayVal && displayVal !== 0) return null;
   const s = String(displayVal).trim();
   if (!s) return null;
+
+  // If CF rules available, use them
+  if (cfRules?.colorRules?.length) {
+    const paramRow = cfRules.epaLimits?.[`__row__${paramName}`] || null;
+    const epaLimit = cfRules.epaLimits?.[paramName];
+    const n        = parseFloat(s);
+    const isNum    = !isNaN(n) && !s.startsWith('<');
+
+    if (s.startsWith('<')) {
+      const rule = cfRules.colorRules.find(r =>
+        (!r.appliedRows || !paramRow || (paramRow >= r.appliedRows.start && paramRow <= r.appliedRows.end)) &&
+        (r.operator === 'lessthanorequal' || r.operator === 'lessthan')
+      );
+      return rule?.color || '#00CC44';
+    }
+
+    for (const rule of cfRules.colorRules) {
+      // Filter by row range
+      if (rule.appliedRows && paramRow) {
+        if (paramRow < rule.appliedRows.start || paramRow > rule.appliedRows.end) continue;
+      }
+      const formula    = String(rule.formula1||'').replace(/^["']|["']$/g,'');
+      const threshold  = parseFloat(formula);
+      const isTextRule = isNaN(threshold);
+      let matches      = false;
+      if (isTextRule) {
+        const cellLow = s.toLowerCase().trim(), fLow = formula.toLowerCase().trim();
+        if      (rule.operator==='equal'||rule.operator==='equalto')       matches = cellLow===fLow;
+        else if (rule.operator==='notequal'||rule.operator==='notequalto') matches = cellLow!==fLow;
+      } else if (isNum) {
+        const limit = threshold;
+        if      (rule.operator==='lessthanorequal'    && n<=limit) matches=true;
+        else if (rule.operator==='lessthan'           && n<limit)  matches=true;
+        else if (rule.operator==='greaterthan'        && n>limit)  matches=true;
+        else if (rule.operator==='greaterthanorequal' && n>=limit) matches=true;
+        else if (rule.operator==='equal'              && n===limit) matches=true;
+        else if (rule.operator==='between') {
+          const thr2=parseFloat(String(rule.formula2||'').replace(/^["']|["']$/g,''));
+          if (!isNaN(thr2)) matches = n>=limit && n<=thr2;
+        }
+      }
+      if (matches) return rule.color;
+    }
+    if (epaLimit!==undefined && isNum) return n<=parseFloat(epaLimit) ? '#00CC44' : '#FF0000';
+    return null;
+  }
+
+  // Fallback if no CF rules
   if (s.startsWith('<')) return '#00CC44';
   if (paramName === 'pH Electrometric') {
     const n = parseFloat(s);
@@ -92,7 +229,7 @@ async function graphBatch(reqs, token, sid) {
 
 // ── Fill one sheet ─────────────────────────────────────────────────────────────
 // Returns { paramName: hexColor } for all params written to this sheet
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell) {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell, cfRules) {
   const base         = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates  = [];
   const colorUpdates = [];
@@ -191,7 +328,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
       // Write explicit fill color to color indicator cell (col before result)
       if (colResult > 0) {
-        const hex = calcFillColor(p.name, p.value, p.epa);
+        const hex = calcFillColor(p.name, p.value, p.epa, cfRules);
         if (hex) {
           colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
           cellColors[p.name] = hex;
@@ -257,6 +394,10 @@ app.http('prepare-report', {
     let token;
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
+
+    // Load CF rules from template in parallel with template download
+    const cfRules = await getTemplateCFRules(siteId, token).catch(() => null);
+    context.log('[prepare] CF rules loaded:', cfRules ? `${cfRules.colorRules.length} rules` : 'none');
 
     // ── Step 1: Download template ─────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
@@ -378,11 +519,11 @@ app.http('prepare-report', {
 
     if (isRadon && radonSheet) {
       await writeHeaders(radonSheet.id, [['I7','labId'],['I8','dc'],['J8','tc'],['I9','dr'],['J9','tr'],['I10','today']]);
-      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '');
+      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '', cfRules);
       Object.assign(cellColors, c);
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
     } else if (isArsenicSpec && specSheet) {
-      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24');
+      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24', cfRules);
       Object.assign(cellColors, c);
     } else if (labSheet) {
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
@@ -393,13 +534,13 @@ app.http('prepare-report', {
       for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
         if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, { method:'PATCH', headers:wbHdrLab, body:JSON.stringify({ values:[[val]] }) }).catch(()=>{});
       }
-      const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48');
+      const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48', cfRules);
       Object.assign(cellColors, c);
     }
 
     if (fhaSheet && needsFHA && fhaParams.length) {
       await writeHeaders(fhaSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
-      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27');
+      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27', cfRules);
       Object.assign(cellColors, c);
     }
 
