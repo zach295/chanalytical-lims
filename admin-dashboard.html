@@ -768,6 +768,9 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn-ok" style="padding:12px 28px;" onclick="saveAndSendReport(true)">
           📧 Save PDF &amp; Email to Client
         </button>
+        <button class="action-btn" style="padding:12px 20px;color:var(--warning);border-color:var(--warning);" onclick="doResendReport()" title="Resend to a different email — use if report was sent to wrong address">
+          🔁 Resend
+        </button>
         <div id="rpt-send-status" style="font-size:13px;color:var(--slate);padding:12px 0;"></div>
       </div>
     </div>
@@ -5346,6 +5349,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function doResendReport() {
+    if (!currentReportData) { showToast('Load a report first.'); return; }
+    const emailInput = document.getElementById('rpt-send-email-input');
+    const currentEmail = (emailInput?.value || '').trim();
+    const newEmail = prompt(
+      `Resend report ${currentReportData.labId} to a different email.\n\nCurrent address: ${currentEmail || '(none)'}\n\nEnter the correct email address:`,
+      currentEmail
+    );
+    if (!newEmail) return;
+    if (!newEmail.includes('@')) { showToast('⚠️ Invalid email address.'); return; }
+    if (emailInput) {
+      emailInput.value = newEmail.trim();
+      emailInput.style.borderColor = 'var(--teal)';
+    }
+    showToast(`✅ Email updated to ${newEmail.trim()} — click "Save PDF & Email to Client" to send.`);
+  }
+
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
@@ -5441,11 +5461,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // If we have CF rules from the template, use them
     if (cfRules?.colorRules?.length) {
-      const epa = cfRules.epaLimits?.[paramName];
-      const n   = parseFloat(s);
-      const isNum = !isNaN(n) && !s.startsWith('<');
+      const epa    = cfRules.epaLimits?.[paramName];
+      const n      = parseFloat(s);
+      const isNum  = !isNaN(n) && !s.startsWith('<');
 
-      // <RL values always pass (green)
+      // <RL values always pass — find the passing (green) rule
       if (s.startsWith('<')) {
         const passRule = cfRules.colorRules.find(r =>
           r.operator === 'lessthanorequal' || r.operator === 'lessthan'
@@ -5454,29 +5474,41 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       for (const rule of cfRules.colorRules) {
-        const threshold = parseFloat(rule.formula1);
-        const limit     = !isNaN(threshold) ? threshold : parseFloat(epa);
-        if (isNaN(limit) && isNum) continue;
-        let matches = false;
-        if (!isNum) {
-          // Non-numeric result with an EPA limit → notation (blue)
-          if (epa !== undefined && epa !== null) {
-            const blueRule = cfRules.colorRules.find(r =>
-              r.operator !== 'lessthanorequal' && r.operator !== 'greaterthan'
-            );
-            return blueRule?.color || '#0070C0';
+        // Strip Excel string quotes from formula e.g. ""Absent"" → "Absent"
+        const formula    = String(rule.formula1 || '').replace(/^["']|["']$/g, '');
+        const threshold  = parseFloat(formula);
+        const isTextRule = isNaN(threshold); // formula is text like "Absent"
+        let matches      = false;
+
+        if (isTextRule) {
+          // Text comparison — bacteria: equal "Absent" → green, notEqual "Absent" → blue
+          const cellLow    = s.toLowerCase().trim();
+          const formulaLow = formula.toLowerCase().trim();
+          if      (rule.operator === 'equal'       || rule.operator === 'equalto')    matches = cellLow === formulaLow;
+          else if (rule.operator === 'notequal'    || rule.operator === 'notequalto') matches = cellLow !== formulaLow;
+          else if (rule.operator === 'containstext')    matches = cellLow.includes(formulaLow);
+          else if (rule.operator === 'notcontainstext') matches = !cellLow.includes(formulaLow);
+        } else if (isNum) {
+          // Numeric comparison
+          const limit = threshold;
+          if      (rule.operator === 'lessthanorequal'    && n <= limit) matches = true;
+          else if (rule.operator === 'lessthan'           && n <  limit) matches = true;
+          else if (rule.operator === 'greaterthan'        && n >  limit) matches = true;
+          else if (rule.operator === 'greaterthanorequal' && n >= limit) matches = true;
+          else if (rule.operator === 'equal'              && n === limit) matches = true;
+          else if (rule.operator === 'between') {
+            const thr2 = parseFloat(String(rule.formula2||'').replace(/^["']|["']$/g,''));
+            if (!isNaN(thr2)) matches = n >= limit && n <= thr2;
           }
-          return '#e8e8e8';
         }
-        if      (rule.operator === 'lessthanorequal'    && n <= limit) matches = true;
-        else if (rule.operator === 'lessthan'           && n <  limit) matches = true;
-        else if (rule.operator === 'greaterthan'        && n >  limit) matches = true;
-        else if (rule.operator === 'greaterthanorequal' && n >= limit) matches = true;
+        // Note: non-numeric value with numeric rule = no match, continue to next rule
+
         if (matches) return rule.color;
       }
-      // Fallback using EPA limit from template
-      if (epa !== undefined && !isNaN(parseFloat(s))) {
-        return parseFloat(s) <= parseFloat(epa) ? '#00CC44' : '#FF0000';
+
+      // Nothing matched — if numeric and we have EPA limit, apply numeric fallback
+      if (epa !== undefined && isNum) {
+        return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
       }
       return '#e8e8e8';
     }
