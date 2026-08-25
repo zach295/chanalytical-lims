@@ -123,9 +123,8 @@ function calcFillColor(paramName, displayVal) {
       return null;
 
     case 'Sodium, Total':
-      // blue: >=20  (no green defined in template)
+      // blue: >=20 only — no color defined below 20 in template
       if (num && n >= 20)  return '#0070C0';
-      if (num && n < 20)   return '#00CC44';
       return null;
 
     case 'Antimony, Total':
