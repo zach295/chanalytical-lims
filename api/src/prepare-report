@@ -374,9 +374,79 @@ app.http('prepare-report', {
       Object.assign(cellColors, c);
     }
 
-    // ── Step 7: Close session (keep file alive) ───────────────────────────
+    // ── Step 7: Close write session ─────────────────────────────────────
     if (sid) {
       await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}, sid).catch(()=>{});
+    }
+
+    // ── Step 8: Re-open read-only session and read actual cell fill colors ──
+    // Excel applies conditional formatting when the file is opened. Reading the
+    // fill colors after our writes gives us the CF-computed colors, not our guesses.
+    try {
+      await new Promise(r => setTimeout(r, 2000)); // brief wait for CF to settle
+
+      const roSr = await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
+        token, { persistChanges: false });
+      if (roSr.ok) {
+        const roSid   = (await roSr.json()).id;
+        const roHdr   = { Authorization: `Bearer ${token}`, 'workbook-session-id': roSid };
+
+        // Read from each filled sheet
+        const sheetsToRead = [labSheet, fhaSheet, radonSheet, specSheet].filter(Boolean);
+        for (const sheet of sheetsToRead) {
+          const wsBase = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`;
+
+          // Get used range to find header row and result/color columns
+          const rr2 = await fetch(`${wsBase}/usedRange?$select=values,columnCount`, { headers: roHdr });
+          if (!rr2.ok) continue;
+          const { values: rows2 } = await rr2.json();
+
+          // Find header row
+          let hdrRow2 = -1, colResult2 = -1;
+          for (let r = 0; r < rows2.length; r++) {
+            const rl = (rows2[r] || []).map(c => normalizeCell(c));
+            if (rl.some(c => c.includes('your result') || c === 'result')) {
+              hdrRow2   = r;
+              colResult2 = rl.findIndex(c => c.includes('your result') || c === 'result');
+              break;
+            }
+          }
+          if (hdrRow2 < 0 || colResult2 < 1) continue;
+          const colorCol2 = colResult2 - 1; // color indicator is one col before result
+
+          // For each param row, read the actual fill color from the color indicator cell
+          for (let r = hdrRow2 + 1; r < rows2.length; r++) {
+            const paramName = String((rows2[r] || [])[0] || '').trim();
+            if (!paramName) continue;
+
+            // Match to one of our params
+            const matchedParam = [...params, ...fhaParams].find(p => {
+              const pn = normalizeCell(p.name);
+              const rn = normalizeCell(paramName);
+              return pn === rn || pn.startsWith(rn) || rn.startsWith(pn);
+            });
+            if (!matchedParam) continue;
+
+            const addr    = `${colLetter(colorCol2)}${r + 1}`;
+            const fillRes = await fetch(`${wsBase}/range(address='${addr}')/format/fill`, { headers: roHdr });
+            if (fillRes.ok) {
+              const fillData = await fillRes.json();
+              const color    = fillData.color;
+              if (color && color !== 'transparent' && color !== '#FFFFFF' && color !== '#ffffff') {
+                // Normalize to 6-digit hex
+                const hex = color.startsWith('#') ? color : `#${color}`;
+                cellColors[matchedParam.name] = hex;
+              }
+            }
+          }
+        }
+
+        await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
+          { method: 'POST', headers: roHdr }).catch(() => {});
+        context.log(`[prepare] Read ${Object.keys(cellColors).length} actual cell colors from Excel`);
+      }
+    } catch(e) {
+      context.log('[prepare] Color read-back failed (non-fatal), using calculated colors:', e.message);
     }
 
     context.log(`[prepare] Done — tempId: ${tempId}, colors returned: ${Object.keys(cellColors).length}`);
