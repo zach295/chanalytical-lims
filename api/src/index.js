@@ -16,6 +16,7 @@ require('./setup-lists');
 require('./scan-folder');
 require('./generate-report');
 require('./prepare-report');
+require('./export-pdf');
 require('./control-sheet');
 require('./update-sample');
 require('./send-report');
