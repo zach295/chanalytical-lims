@@ -646,10 +646,8 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           }
 
           if (!ocr.customer && !ocr.location && !ocr.dateDrawn && !ocr.tests?.length) {
-            context.log(`[scan] OCR returned empty for ${file.name} — moving back to INCOMING for retry`);
-            await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
-            results.push({ fileName: file.name, error: 'OCR empty — moved back to INCOMING for retry' });
-            continue;
+            context.log(`[scan] OCR returned empty for ${file.name} — writing to Review Queue for manual entry`);
+            ocr.confidence = 0;
           }
 
           // ── Normalize and clean ───────────────────────────────────────────────
