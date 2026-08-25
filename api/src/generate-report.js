@@ -60,6 +60,7 @@ const PARAM_CONFIG = [
   { name:'Tannins',                      rl:null,    epa:null,      unit:'',     method:'Hach Method 8193', source:'gallery', cacheField:'field_18', cacheDT:'field_19' },
   { name:'Total Dissolved Solids (TDS)', rl:null,    epa:null,      unit:'ppm',  method:'SM4500CI E',        source:'gallery', cacheField:'field_20', cacheDT:'field_21' },
   { name:'Bromide',                      rl:null,    epa:null,      unit:'mg/L', method:'HI 93716',         source:'gallery', cacheField:'field_22', cacheDT:'field_23' , decimals:1},
+  { name:'Turbidity',                    rl:null,    epa:null,      unit:'NTU',  method:'SM 2130 B',        source:'gallery', cacheField:'field_24', cacheDT:'field_25' },
   { name:'Total Coliform',               rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_2' , decimals:1},
   { name:'E. Coli',                      rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_3' , decimals:1},
 ];
@@ -105,12 +106,14 @@ const PACKAGE_COVERAGE_FALLBACK = {
   'Arsenic, Speciation':             ['Arsenic, III', 'Arsenic, V', 'Arsenic, Total'],
   'Bacteria':                        ['Total Coliform','E. Coli'],
   'Radon Water':                     [],
+  'AIO FHA':                         ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli','Turbidity'],
+  'AIO Portability':                 ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
 };
 
 
 
 const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'];
-const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive'];
+const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','AIO FHA'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,7 +242,7 @@ async function getSampleMeta(baseId, token) {
 // ── Get Results Cache row for this base ID ────────────────────────────────────
 async function getResultsCache(baseId) {
   try {
-    const items = await listItems('Results Cache', { top: 500 });
+    const items = await listItems(LISTS.RESULTS_CACHE || 'Results Cache', { top: 500 });
     return items.find(r => {
       const stored = String(r.LabID || '').split(' ')[0].trim();
       return stored === baseId;
@@ -310,13 +313,9 @@ app.http('generate-report', {
       const token = await getToken();
 
       // ── Fetch data in parallel ──────────────────────────────────────────────
-      const [metaRaw, cache, clientRaw] = await Promise.all([
+      const [metaRaw, cache] = await Promise.all([
         getSampleMeta(baseId, token), // always read from Archived Intake for dates/location
         getResultsCache(baseId),
-        getToken().then(t => getClientInfo(
-          formatCustomerName(frontendMeta?.customer || ''),
-          t
-        )).catch(() => empty),
       ]);
 
       // ── Resolve meta ────────────────────────────────────────────────────────
