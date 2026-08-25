@@ -5366,6 +5366,76 @@ document.addEventListener('DOMContentLoaded', function() {
     showToast(`✅ Email updated to ${newEmail.trim()} — click "Save PDF & Email to Client" to send.`);
   }
 
+  // ── Color override popup ──────────────────────────────────────────────────
+  function openColorOverride(dotEl, paramName) {
+    // Remove any existing popup
+    document.getElementById('color-override-popup')?.remove();
+
+    const colors = [
+      { hex: '#00CC44', label: 'Green — Meets Limit' },
+      { hex: '#0070C0', label: 'Blue — See Notation' },
+      { hex: '#FF0000', label: 'Red — Exceeds Limit' },
+      { hex: '#e8e8e8', label: 'Gray — No Result' },
+    ];
+
+    const popup = document.createElement('div');
+    popup.id    = 'color-override-popup';
+    popup.style.cssText = 'position:fixed;z-index:9999;background:white;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;box-shadow:0 4px 16px rgba(0,0,0,0.15);font-size:13px;min-width:190px;';
+
+    // Position near the dot
+    const rect = dotEl.getBoundingClientRect();
+    popup.style.left = `${Math.min(rect.left, window.innerWidth - 210)}px`;
+    popup.style.top  = `${rect.bottom + 6}px`;
+
+    popup.innerHTML = `<div style="font-weight:700;margin-bottom:8px;color:var(--navy);">Override Color</div>
+      ${colors.map(c => `
+        <div onclick="applyColorOverride('${paramName}','${c.hex}',this.closest('#color-override-popup'))"
+          style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;hover:background:var(--off-white);"
+          onmouseover="this.style.background='var(--off-white)'" onmouseout="this.style.background=''">
+          <div style="width:16px;height:16px;background:${c.hex};border-radius:3px;border:1px solid #ccc;flex-shrink:0;"></div>
+          <span>${c.label}</span>
+        </div>`).join('')}
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+        <div onclick="applyColorOverride('${paramName}',null,this.closest('#color-override-popup'))"
+          style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;color:var(--slate);font-size:12px;"
+          onmouseover="this.style.background='var(--off-white)'" onmouseout="this.style.background=''">
+          ↺ Reset to calculated color
+        </div>
+      </div>`;
+
+    document.body.appendChild(popup);
+
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', function closePopup(e) {
+        if (!popup.contains(e.target) && e.target !== dotEl) {
+          popup.remove();
+          document.removeEventListener('click', closePopup);
+        }
+      });
+    }, 0);
+  }
+
+  function applyColorOverride(paramName, hex, popup) {
+    popup?.remove();
+    if (!currentReportData) return;
+    if (!currentReportData._colorOverrides) currentReportData._colorOverrides = {};
+
+    if (hex) {
+      currentReportData._colorOverrides[paramName] = hex;
+    } else {
+      delete currentReportData._colorOverrides[paramName];
+    }
+
+    // Update the dot in the preview
+    const span = document.querySelector(`#rpt-live-preview span[data-key="result:${paramName}"]`);
+    const dot  = span?.closest('td')?.previousElementSibling?.querySelector('.color-dot');
+    if (dot) dot.style.background = hex || getColor(paramName, currentReportData.resultsMap[paramName]?.value || '');
+
+    // Mark PDF stale so it regenerates with new color on next save
+    if (currentReportData._cachedPdfBase64) currentReportData._pdfStale = true;
+  }
+
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
@@ -5404,7 +5474,33 @@ document.addEventListener('DOMContentLoaded', function() {
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
 
-      currentReportData.resultsMap[param].value = val;
+      // Recalculate hardness when Ca or Mg are edited
+      // Formula: Hardness (mg/L as CaCO₃) = (Ca × 2.497) + (Mg × 4.118)
+      if (param === 'Calcium, Total' || param === 'Magnesium, Total') {
+        const ca = parseFloat(currentReportData.resultsMap['Calcium, Total']?.value  || '');
+        const mg = parseFloat(currentReportData.resultsMap['Magnesium, Total']?.value || '');
+        if (!isNaN(ca) && !isNaN(mg)) {
+          const hardness      = Math.round((ca * 2.497 + mg * 4.118) * 100) / 100;
+          const hardnessStr   = String(hardness);
+          const HARDNESS_PARAM = 'Hardness by calculation';
+          // Update resultsMap
+          if (!currentReportData.resultsMap[HARDNESS_PARAM]) currentReportData.resultsMap[HARDNESS_PARAM] = {};
+          currentReportData.resultsMap[HARDNESS_PARAM].value = hardnessStr;
+          // Update activeParams
+          const hIdx = (currentReportData.activeParams || []).findIndex(p => p.name === HARDNESS_PARAM);
+          if (hIdx >= 0) currentReportData.activeParams[hIdx].value = hardnessStr;
+          // Update the hardness span in the preview
+          const hardnessSpan = document.querySelector(`#rpt-live-preview span[data-key="result:${HARDNESS_PARAM}"]`);
+          if (hardnessSpan) {
+            hardnessSpan.textContent = hardnessStr;
+            // Update its color dot
+            const hResultTd = hardnessSpan.closest('td');
+            const hColorDiv = hResultTd?.previousElementSibling?.querySelector('div');
+            if (hColorDiv) hColorDiv.style.background = getColor(HARDNESS_PARAM, hardnessStr);
+          }
+        }
+      }
+
       // Update color dot using template CF rules
       const resultTd = el.closest('td');
       const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
@@ -5444,100 +5540,145 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
 
-  // ── Single color function — reads Excel template CF rules ──────────────────
-  // cfRules = { epaLimits: { 'Nitrate-Nitrogen, Total': 10 }, colorRules: [...] }
-  // Falls back to sensible defaults if cfRules not loaded yet
+  // ── Color rules — exact conditional formatting from the Excel template ─────────
+  // ── Color rules — exact conditional formatting from the Excel template ─────────
+  // Each parameter's rules match the template formulas exactly.
+  // Green = meets limits, Blue = see notation / advisory, Red = exceeds limit
+  function _calcColor(paramName, displayVal) {
+    if (!displayVal && displayVal !== 0) return null;
+    const s   = String(displayVal).trim();
+    if (!s) return null;
+    const n   = parseFloat(s);
+    const num = !isNaN(n);   // true when value is a real number
+    const rl  = s.startsWith('<'); // <RL / below detection
+  
+    switch (paramName) {
+      case 'Chloride, Total':
+        // green: <2 (string) OR <250;  blue: >=250
+        if (rl || (num && n < 250))  return '#00CC44';
+        if (num && n >= 250)          return '#0070C0';
+        return null;
+  
+      case 'Fluoride, Total':
+        // green: <0.2 (string) OR <1.9;  blue: 1.9–3.9;  red: >=4
+        if (rl || (num && n < 1.9))            return '#00CC44';
+        if (num && n >= 1.9 && n <= 3.9)       return '#0070C0';
+        if (num && n >= 4)                      return '#FF0000';
+        return null;
+  
+      case 'Nitrite-Nitrogen, Total':
+        // green: <0.2 (string) OR <1;  red: >=1
+        if (rl || (num && n < 1))   return '#00CC44';
+        if (num && n >= 1)           return '#FF0000';
+        return null;
+  
+      case 'Nitrate-Nitrogen, Total':
+        // green: <1 (string) OR <10;  red: >=10
+        if (rl || (num && n < 10))  return '#00CC44';
+        if (num && n >= 10)          return '#FF0000';
+        return null;
+  
+      case 'Arsenic, Total':
+        // green: <1 (string) OR <10;  red: >=10
+        if (rl || (num && n < 10))  return '#00CC44';
+        if (num && n >= 10)          return '#FF0000';
+        return null;
+  
+      case 'Lead, Total':
+        // green: <1 (string) OR <15;  red: >=15
+        if (rl || (num && n < 15))  return '#00CC44';
+        if (num && n >= 15)          return '#FF0000';
+        return null;
+  
+      case 'Uranium, Total':
+        // green: <1 (string) OR <30;  red: >=30
+        if (rl || (num && n < 30))  return '#00CC44';
+        if (num && n >= 30)          return '#FF0000';
+        return null;
+  
+      case 'Copper, Total':
+        // green: <0.001 (string) OR <0.9;  blue: 0.9–1.29;  red: >=1.3
+        if (rl || (num && n < 0.9))            return '#00CC44';
+        if (num && n >= 0.9 && n <= 1.29)      return '#0070C0';
+        if (num && n >= 1.3)                    return '#FF0000';
+        return null;
+  
+      case 'Iron, Total':
+        // green: <0.05 (string) OR <0.3;  blue: >=0.3
+        if (rl || (num && n < 0.3))  return '#00CC44';
+        if (num && n >= 0.3)          return '#0070C0';
+        return null;
+  
+      case 'Manganese, Total':
+        // green: <0.001 (string) OR <0.05;  blue: >=0.05
+        if (rl || (num && n < 0.05))  return '#00CC44';
+        if (num && n >= 0.05)          return '#0070C0';
+        return null;
+  
+      case 'Sodium, Total':
+        // blue: >=20  (no green defined in template)
+        if (num && n >= 20)  return '#0070C0';
+        if (num && n < 20)   return '#00CC44';
+        return null;
+  
+      case 'Antimony, Total':
+        // green: <0.0005 (string) OR <0.006;  red: >=0.006
+        if (rl || (num && n < 0.006))  return '#00CC44';
+        if (num && n >= 0.006)          return '#FF0000';
+        return null;
+  
+      case 'Cadmium, Total':
+        // green: <0.002 (string) OR <0.005;  red: >=0.005
+        if (rl || (num && n < 0.005))  return '#00CC44';
+        if (num && n >= 0.005)          return '#FF0000';
+        return null;
+  
+      case 'Chromium, Total':
+        // green: <0.002 (string) OR <0.1;  red: >=0.1
+        if (rl || (num && n < 0.1))  return '#00CC44';
+        if (num && n >= 0.1)          return '#FF0000';
+        return null;
+  
+      case 'pH Electrometric':
+        // green: 6.5–8.5;  blue: outside range
+        if (num && n >= 6.5 && n <= 8.5)  return '#00CC44';
+        if (num && (n < 6.5 || n > 8.5))  return '#0070C0';
+        return null;
+  
+      case 'Sulfate':
+        // green: <40 (string) OR <250;  red: >=250
+        if (rl || (num && n < 250))  return '#00CC44';
+        if (num && n >= 250)          return '#FF0000';
+        return null;
+  
+      case 'Total Coliform':
+        // green: <1 strings OR <1;  blue: >=1
+        if (rl || (num && n < 1))  return '#00CC44';
+        if (num && n >= 1)          return '#0070C0';
+        return null;
+  
+      case 'E. Coli':
+        // green: <1 strings OR <1;  red: >=1  (E.coli is RED, not blue)
+        if (rl || (num && n < 1))  return '#00CC44';
+        if (num && n >= 1)          return '#FF0000';
+        return null;
+  
+      case 'Radon Water':
+        // green: <100 (string) OR <4000;  blue: >4000
+        if (rl || (num && n < 4000))  return '#00CC44';
+        if (num && n > 4000)           return '#0070C0';
+        return null;
+  
+      default:
+        return null;
+    }
+  }
+
   function getColor(paramName, value) {
-    const cfRules = currentReportData?._cfRules;
     if (!value && value !== 0) return '#e8e8e8';
-    const s = String(value).trim();
-    if (!s) return '#e8e8e8';
-
-    // Radon: special case
-    if (paramName === 'Radon Water') {
-      const n = parseFloat(s);
-      return (!isNaN(n) && n > 4000) ? '#FF0000' : '#00CC44';
-    }
-
-    // Bacteria parameters always use text logic regardless of CF rule order
-    // (numeric rules cover the whole result column and fire before bacteria text rules)
-    if (/coliform|e\.?\s*coli/i.test(paramName)) {
-      if (!s) return '#e8e8e8';
-      if (s.toLowerCase().trim() === 'absent') {
-        const greenRule = cfRules?.colorRules?.find(r => r.operator === 'equal' || r.operator === 'equalto');
-        return greenRule?.color || '#00CC44';
-      }
-      const blueRule = cfRules?.colorRules?.find(r => r.operator === 'notequal' || r.operator === 'notequalto');
-      return blueRule?.color || '#0070C0';
-    }
-
-    // If we have CF rules from the template, use them
-    if (cfRules?.colorRules?.length) {
-      const epa    = cfRules.epaLimits?.[paramName];
-      const n      = parseFloat(s);
-      const isNum  = !isNaN(n) && !s.startsWith('<');
-
-      // <RL values always pass — find the passing (green) rule
-      if (s.startsWith('<')) {
-        const passRule = cfRules.colorRules.find(r =>
-          r.operator === 'lessthanorequal' || r.operator === 'lessthan'
-        );
-        return passRule?.color || '#00CC44';
-      }
-
-      for (const rule of cfRules.colorRules) {
-        // Strip Excel string quotes from formula e.g. ""Absent"" → "Absent"
-        const formula    = String(rule.formula1 || '').replace(/^["']|["']$/g, '');
-        const threshold  = parseFloat(formula);
-        const isTextRule = isNaN(threshold); // formula is text like "Absent"
-        let matches      = false;
-
-        if (isTextRule) {
-          // Text comparison — bacteria: equal "Absent" → green, notEqual "Absent" → blue
-          const cellLow    = s.toLowerCase().trim();
-          const formulaLow = formula.toLowerCase().trim();
-          if      (rule.operator === 'equal'       || rule.operator === 'equalto')    matches = cellLow === formulaLow;
-          else if (rule.operator === 'notequal'    || rule.operator === 'notequalto') matches = cellLow !== formulaLow;
-          else if (rule.operator === 'containstext')    matches = cellLow.includes(formulaLow);
-          else if (rule.operator === 'notcontainstext') matches = !cellLow.includes(formulaLow);
-        } else if (isNum) {
-          // Numeric comparison
-          const limit = threshold;
-          if      (rule.operator === 'lessthanorequal'    && n <= limit) matches = true;
-          else if (rule.operator === 'lessthan'           && n <  limit) matches = true;
-          else if (rule.operator === 'greaterthan'        && n >  limit) matches = true;
-          else if (rule.operator === 'greaterthanorequal' && n >= limit) matches = true;
-          else if (rule.operator === 'equal'              && n === limit) matches = true;
-          else if (rule.operator === 'between') {
-            const thr2 = parseFloat(String(rule.formula2||'').replace(/^["']|["']$/g,''));
-            if (!isNaN(thr2)) matches = n >= limit && n <= thr2;
-          }
-        }
-        // Note: non-numeric value with numeric rule = no match, continue to next rule
-
-        if (matches) return rule.color;
-      }
-
-      // Nothing matched — if numeric and we have EPA limit, apply numeric fallback
-      if (epa !== undefined && isNum) {
-        return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
-      }
-      return '#e8e8e8';
-    }
-
-    // No CF rules yet — sensible fallback matching common Excel template colors
-    if (s.startsWith('<')) return '#00CC44';
-    if (paramName === 'pH Electrometric') {
-      const n = parseFloat(s);
-      return isNaN(n) ? '#e8e8e8' : (n >= 6.5 && n <= 8.5) ? '#00CC44' : '#FF0000';
-    }
-    const param = [...(currentReportData?.activeParams||[]), ...(currentReportData?.fhaParams||[])]
-      .find(p => p.name === paramName);
-    const epaFb = param?.epa;
-    if (!epaFb && epaFb !== 0) return '#e8e8e8';
-    const n = parseFloat(s);
-    if (isNaN(n)) return '#0070C0';
-    return n <= parseFloat(epaFb) ? '#00CC44' : '#FF0000';
+    // Check manual override first
+    if (currentReportData?._colorOverrides?.[paramName]) return currentReportData._colorOverrides[paramName];
+    return _calcColor(paramName, String(value).trim()) || '#e8e8e8';
   }
 
   function buildParamTable(params, resultsMap, reportData) {
@@ -5575,7 +5716,9 @@ document.addEventListener('DOMContentLoaded', function() {
       rows += `<tr>
         <td style="${cStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
-          <div style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;"></div>
+          <div class="color-dot" data-param="${p.name}"
+            style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;cursor:pointer;title:'Click to override color'"
+            onclick="openColorOverride(this, '${p.name}')"></div>
         </td>
         <td style="${cStyle};text-align:center;">${editable(val, 'result:' + p.name, 'text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${p.limit || p.epa || ''}</td>
