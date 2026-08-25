@@ -5218,13 +5218,14 @@ document.addEventListener('DOMContentLoaded', function() {
       // Build resultsMap from paramRows (includes prepDT, analDT from SharePoint)
       [...(data.paramRows||[]), ...(data.fhaRows||[])].forEach(p => {
         currentReportData.resultsMap[p.name] = {
-          value:  p.value,
-          unit:   p.unit,
-          prepDT: p.prepDT || '',
-          analDT: p.analDT || p.time || '',
-          time:   p.analDT || p.time || '',
-          epa:    p.epa    || '',
-          rl:     p.rl     || '',
+          value:       p.value,
+          unit:        p.unit,
+          prepDT:      p.prepDT || '',
+          analDT:      p.analDT || p.time || '',
+          time:        p.analDT || p.time || '',
+          epa:         p.epa    || '',
+          rl:          p.rl     || '',
+          templateHex: p.templateHex || null, // from template CF rules
         };
       });
       // Log SharePoint data fetch results for debugging
@@ -5377,6 +5378,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
 
       currentReportData.resultsMap[param].value = val;
+      // When user edits a value, clear the stale templateHex so JS recalculates
+      if (currentReportData.resultsMap[param]) currentReportData.resultsMap[param].templateHex = null;
       const color = getResultColor(param, val, currentReportData);
       // Update the separate color box div (previous sibling td)
       const resultTd   = el.closest('td');
@@ -5462,8 +5465,12 @@ document.addEventListener('DOMContentLoaded', function() {
     params.forEach(p => {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
-      const color  = getResultColor(p.name, val, reportData);
-      const boxBg  = color === 'FF0000' ? '#FF4444'
+      // Use exact color from template CF rules if available, otherwise JS fallback
+      const templateHex = res.templateHex || null;
+      const color  = templateHex ? null : getResultColor(p.name, val, reportData);
+      const boxBg  = templateHex
+                   ? templateHex
+                   : color === 'FF0000' ? '#FF4444'
                    : color === '0000FF' ? '#0055CC'
                    : color === '00CC00' || color === '00FF00' ? '#00CC44'
                    : val ? '#00CC44' : '#e8e8e8';
