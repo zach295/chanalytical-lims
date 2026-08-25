@@ -141,46 +141,35 @@ app.http('send-report', {
       const siteId = process.env.SP_SITE_ID;
       const token  = await getToken();
 
-      // Get client email from Clients list if not overridden
-      let toEmail    = resolvedEmail || '';
-      let clientName = overrideName  || '';
-      if (!toEmail) {
-        // Look up customer from Archived Intake, then find email in Clients list
-        const baseId = String(labId).match(/(\d{6}-\d{3})/)?.[1] || labId;
-        try {
-          const aiRes = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/Archived Intake/items?$expand=fields($select=field_1,field_3)&$top=500`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (aiRes.ok) {
-            const aiData    = await aiRes.json();
-            const aiRow     = (aiData.value || []).find(i => String(i.fields?.field_1 || '').startsWith(baseId));
-            const customer  = aiRow?.fields?.field_3 || '';
-            if (customer) {
-              const clientsRes = await fetch(
-                `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,Aliases,Email,Title)&$top=500`,
-                { headers: { Authorization: `Bearer ${token}` } }
-              );
-              if (clientsRes.ok) {
-                const { value } = await clientsRes.json();
-                const custLow   = customer.toLowerCase().replace(/^public-/i,'').trim();
-                const match     = (value || []).find(i => {
-                  const cn = (i.fields?.ClientName || i.fields?.Title || '').toLowerCase().trim();
-                  return cn === custLow || custLow.includes(cn) || cn.includes(custLow);
-                });
-                if (match) {
-                  toEmail    = match.fields?.Aliases || match.fields?.Email || '';
-                  clientName = match.fields?.ClientName || match.fields?.Title || customer;
-                }
-              }
-            }
-          }
-        } catch(e) { context.log('[send-report] Email lookup error:', e.message); }
-      }
+      // The email comes directly from the Send To box in the dashboard.
+      // We NEVER override or second-guess it with a server-side lookup.
+      const toEmail    = resolvedEmail;
+      let   clientName = overrideName || '';
 
       if (!toEmail) return { status: 400, jsonBody: {
-        error: 'No client email address on file. Add an email in Clients & Codes or use the Override Email field.'
+        error: 'No email address provided. Enter one in the Send To field.'
       }};
+      if (!toEmail.includes('@')) return { status: 400, jsonBody: {
+        error: `Invalid email address: "${toEmail}"`
+      }};
+
+      // Look up client name only (never email) — for the email "From" display name
+      if (!clientName) {
+        try {
+          const baseId = String(labId).match(/(\d{6}-\d{3})/)?.[1] || '';
+          if (baseId) {
+            const aiRes = await fetch(
+              `${GRAPH}/sites/${siteId}/lists/Archived Intake/items?$expand=fields($select=field_1,field_3)&$top=500`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (aiRes.ok) {
+              const aiData = await aiRes.json();
+              const aiRow  = (aiData.value || []).find(i => String(i.fields?.field_1 || '').startsWith(baseId));
+              clientName   = aiRow?.fields?.field_3 || '';
+            }
+          }
+        } catch(e) { context.log('[send-report] Name lookup (non-fatal):', e.message); }
+      }
 
       // Build attachments
       const pdfFileName = `${labId} Report.pdf`;
