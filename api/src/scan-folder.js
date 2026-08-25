@@ -476,14 +476,33 @@ app.http('scan-folder', {
 
               context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs, text length: ${azureText.length}`);
 
-              if (azureText.length < 50) {
-                context.log(`[scan] ⚠️ Azure returned almost no text (${azureText.length} chars) — retrying with no back-page filter`);
-                // Retry: use ALL paragraphs with no filtering
-                const allParas = (azureResult.analyzeResult?.paragraphs || []).map(p => p.content || '').filter(Boolean);
-                if (allParas.length > 0) {
-                  azureText = allParas.join('\n');
-                  context.log(`[scan] Retry with all paragraphs: ${azureText.length} chars`);
+              // If paragraphs are thin, fall back to raw analyzeResult.content (always populated)
+              if (azureText.length < 100) {
+                const rawContent = (azureResult.analyzeResult?.content || '')
+                  .replace(/:selected:/g, '[CHECKED]')
+                  .replace(/:unselected:/g, '[unchecked]');
+                if (rawContent.length > azureText.length) {
+                  context.log(`[scan] Paragraphs thin (${azureText.length} chars) — using raw content (${rawContent.length} chars)`);
+                  azureText = rawContent;
                 }
+              }
+
+              // Supplement with explicit selection marks from page (most reliable checkbox detection)
+              const selMarks = azureResult.analyzeResult?.pages?.[0]?.selectionMarks || [];
+              const pageWords = azureResult.analyzeResult?.pages?.[0]?.words || [];
+              if (selMarks.length > 0) {
+                const selText = selMarks.map(mark => {
+                  const state  = mark.state === 'selected' ? '[CHECKED]' : '[unchecked]';
+                  const markX  = mark.polygon?.[0] || 0;
+                  const markY  = mark.polygon?.[1] || 0;
+                  const nearby = pageWords
+                    .filter(w => Math.abs((w.polygon?.[1]||0) - markY) < 12 && (w.polygon?.[0]||0) > markX - 5)
+                    .sort((a,b) => (a.polygon?.[0]||0) - (b.polygon?.[0]||0))
+                    .slice(0, 6).map(w => w.content).join(' ');
+                  return `${state} ${nearby}`;
+                }).join('\n');
+                azureText += '\n\n=== SELECTION MARKS (checkboxes) ===\n' + selText;
+                context.log(`[scan] Added ${selMarks.length} selection marks to azureText`);
               }
 
               // Claude Sonnet structures Azure's text into JSON
@@ -627,8 +646,10 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
           }
 
           if (!ocr.customer && !ocr.location && !ocr.dateDrawn && !ocr.tests?.length) {
-            context.log(`[scan] OCR returned empty for ${file.name} — writing to queue for manual review`);
-            ocr.confidence = 0;
+            context.log(`[scan] OCR returned empty for ${file.name} — moving back to INCOMING for retry`);
+            await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
+            results.push({ fileName: file.name, error: 'OCR empty — moved back to INCOMING for retry' });
+            continue;
           }
 
           // ── Normalize and clean ───────────────────────────────────────────────
