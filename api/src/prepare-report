@@ -291,38 +291,51 @@ app.http('prepare-report', {
 
     // ── Step 3: Open workbook session ─────────────────────────────────────
     let sid = null;
-    const sr = await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`, token, { persistChanges: true });
-    if (sr.ok) sid = (await sr.json()).id || null;
-    context.log('[prepare] Session:', sid ? 'OK' : 'none');
+    try {
+      const sr = await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`, token, { persistChanges: true });
+      if (sr.ok) { sid = (await sr.json()).id || null; context.log('[prepare] Step 3 OK — session:', sid ? 'open' : 'none'); }
+      else { const t = await sr.text(); context.log('[prepare] Step 3 session failed:', sr.status, t.slice(0,200)); }
+    } catch(e) { context.log('[prepare] Step 3 error:', e.message); }
 
     // ── Step 4: Get and clean up sheets ──────────────────────────────────
-    const wr     = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
-    const sheets = wr.ok ? (await wr.json()).value || [] : [];
-    const ws     = name => sheets.find(s => s.name === name);
+    let sheets = [], ws;
+    try {
+      const wr = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+      sheets   = wr.ok ? (await wr.json()).value || [] : [];
+      ws       = name => sheets.find(s => s.name === name);
+      context.log('[prepare] Step 4 OK — sheets:', sheets.map(s=>s.name).join(', '));
+    } catch(e) { context.log('[prepare] Step 4 error:', e.message); ws = () => undefined; }
 
-    const toDelete = [];
-    if (isRadon) {
-      if (ws(TMPL_LAB))   toDelete.push(ws(TMPL_LAB));
-      if (ws(TMPL_FHA))   toDelete.push(ws(TMPL_FHA));
-    } else {
-      if (ws(TMPL_RADON)) toDelete.push(ws(TMPL_RADON));
-      if (!needsFHA || !fhaParams.length) { if (ws(TMPL_FHA)) toDelete.push(ws(TMPL_FHA)); }
-    }
-    for (const sheet of toDelete) {
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, undefined, sid);
-    }
+    try {
+      const toDelete = [];
+      if (isRadon) {
+        if (ws(TMPL_LAB))   toDelete.push(ws(TMPL_LAB));
+        if (ws(TMPL_FHA))   toDelete.push(ws(TMPL_FHA));
+      } else {
+        if (ws(TMPL_RADON)) toDelete.push(ws(TMPL_RADON));
+        if (!needsFHA || !fhaParams.length) { if (ws(TMPL_FHA)) toDelete.push(ws(TMPL_FHA)); }
+      }
+      for (const sheet of toDelete.filter(Boolean)) {
+        await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, undefined, sid);
+      }
+      context.log('[prepare] Step 4b OK — deleted', toDelete.filter(Boolean).length, 'sheets');
+    } catch(e) { context.log('[prepare] Step 4b error:', e.message); }
 
     // ── Step 5: Rename sheets ─────────────────────────────────────────────
-    const remainR   = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
-    const remaining = remainR.ok ? (await remainR.json()).value || [] : [];
-    for (const sheet of remaining) {
-      const newName = sheet.name.replace(/\s*-\s*Template\s*$/i, '').trim();
-      if (newName !== sheet.name) {
-        await gReq('PATCH', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, { name: newName }, sid);
+    try {
+      const remainR   = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+      const remaining = remainR.ok ? (await remainR.json()).value || [] : [];
+      for (const sheet of remaining) {
+        const newName = sheet.name.replace(/\s*-\s*Template\s*$/i, '').trim();
+        if (newName !== sheet.name) {
+          await gReq('PATCH', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, { name: newName }, sid);
+        }
       }
-    }
+      context.log('[prepare] Step 5 OK');
+    } catch(e) { context.log('[prepare] Step 5 error:', e.message); }
 
     // ── Step 6: Fill sheets ───────────────────────────────────────────────
+    context.log('[prepare] Starting Step 6 — fill sheets');
     const finalR    = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
     const finalSheets = finalR.ok ? (await finalR.json()).value || [] : [];
     const labSheet   = finalSheets.find(s => /^lab report/i.test(s.name));
