@@ -5256,21 +5256,28 @@ document.addEventListener('DOMContentLoaded', function() {
         };
       }
 
-      // Populate email field from meta or _clientsData lookup
+      // ── Populate email field — this is the address the report will be sent to ──
       const emailInput = document.getElementById('rpt-send-email-input');
       let reportEmail = data.meta?.reportEmail || data.meta?.email || '';
+
+      // If not in meta, search _clientsData in memory
       if (!reportEmail && data.meta?.customer) {
-        const custLower = data.meta.customer.toLowerCase().trim();
-        // Try _clientsData (already in memory)
+        const custLower = (data.meta.customer || '').toLowerCase().trim()
+          .replace(/^public-/i, '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim();
         const cMatch = _clientsData.find(c => {
-          const n = (c.clientName || '').toLowerCase().trim();
-          const fmt = n.startsWith('public-') ?
-            n.slice('public-'.length).replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim() : n;
-          return n === custLower || fmt === custLower;
+          const cn = (c.clientName || '').toLowerCase().trim()
+            .replace(/^public-/i, '').trim();
+          return cn === custLower || cn.includes(custLower) || custLower.includes(cn);
         });
-        reportEmail = cMatch?.email || '';
+        reportEmail = cMatch?.email || cMatch?.reportEmail || '';
       }
-      if (emailInput && reportEmail) emailInput.value = reportEmail;
+
+      if (emailInput) {
+        emailInput.value = reportEmail;
+        // Highlight if empty so staff notices before sending
+        emailInput.style.borderColor = reportEmail ? '' : 'var(--warning)';
+        emailInput.placeholder = reportEmail ? 'client@example.com' : '⚠️ No email found — enter before sending';
+      }
 
       // Set authorization fields
       document.getElementById('rpt-authorized-by').value = getAdminName();
@@ -5751,12 +5758,25 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     const statusEl     = document.getElementById('rpt-send-status');
-    const emailInput   = document.getElementById('rpt-send-email-input');
-    const overrideEmail = emailInput?.value.trim() || '';
+    const emailInput    = document.getElementById('rpt-send-email-input');
+    const overrideEmail = (emailInput?.value || '').trim();
 
     if (!authorizedBy) { showToast('Enter authorized by name before sending.'); return; }
-    if (sendEmail && !overrideEmail && !currentReportData.meta?.email) {
-      showToast('No client email found. Enter one in the Send To field.'); return;
+    if (sendEmail) {
+      if (!overrideEmail) {
+        showToast('⚠️ You must enter an email address in the Send To field before sending.');
+        emailInput?.focus();
+        emailInput?.style && (emailInput.style.borderColor = 'var(--error)');
+        return;
+      }
+      if (!overrideEmail.includes('@')) {
+        showToast('⚠️ The email address in the Send To field is not valid.');
+        emailInput?.focus();
+        emailInput?.style && (emailInput.style.borderColor = 'var(--error)');
+        return;
+      }
+      // Reset border
+      if (emailInput?.style) emailInput.style.borderColor = '';
     }
 
     statusEl.textContent = '⏳ Preparing report...';
