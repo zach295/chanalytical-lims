@@ -383,7 +383,7 @@ async function readTemplateCFRules(token) {
           for (const cf of cfs) {
             if (cf.type==='cellValue'&&cf.cellValue?.rule) {
               const r2=cf.cellValue.rule, color=cf.cellValue.format?.fill?.color;
-              if (color&&r2.operator) colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', color, priority:cf.priority||99 });
+              if (color && r2.operator) colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', formula2:r2.formula2||'', color, priority:cf.priority||99 });
             }
           }
           colorRules.sort((a,b)=>a.priority-b.priority);
