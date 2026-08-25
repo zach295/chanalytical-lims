@@ -239,6 +239,7 @@ app.http('prepare-report', {
   methods:   ['POST'],
   authLevel: 'anonymous',
   handler:   async (request, context) => {
+    try {
     const siteId = process.env.SP_SITE_ID;
     const body   = await request.json().catch(() => null);
     if (!body?.reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
@@ -495,5 +496,9 @@ app.http('prepare-report', {
       status:   200,
       jsonBody: { success: true, tempId, fileName, cellColors },
     };
+    } catch(fatalErr) {
+      context.log('[prepare] FATAL:', fatalErr.message, fatalErr.stack);
+      return { status: 500, jsonBody: { error: fatalErr.message, stack: fatalErr.stack?.slice(0,500) } };
+    }
   },
 });
