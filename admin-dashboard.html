@@ -5543,16 +5543,27 @@ document.addEventListener('DOMContentLoaded', function() {
       const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
       if (colorDiv) colorDiv.style.background = getColor(param, val);
 
-      // Write edit to kept Excel file — use confirmed Excel color for dot
+      // Queue patch to Excel — debounced so simultaneous edits don't race
       if (currentReportData._tempId) {
-        const _tId   = currentReportData._tempId;
+        if (!window._patchQueue) window._patchQueue = {};
         const _sheet = (currentReportData.fhaParams||[]).find(p => p.name === param) ? 'fha' : 'lab';
-        fetch('/api/patch-report-cell', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tempId: _tId, paramName: param, field: 'value', value: val, sheetType: _sheet }),
-        }).then(r => r.json()).then(d => {
-          if (d.success && d.newHex && colorDiv) colorDiv.style.background = d.newHex;
-        }).catch(() => {});
+        window._patchQueue[param] = { field: 'value', value: val, sheetType: _sheet, colorDiv };
+        clearTimeout(window._patchDebounce);
+        window._patchDebounce = setTimeout(async () => {
+          if (!currentReportData._tempId) return;
+          const queue = window._patchQueue;
+          window._patchQueue = {};
+          for (const [pName, patch] of Object.entries(queue)) {
+            try {
+              const r = await fetch('/api/patch-report-cell', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType }),
+              });
+              const d = await r.json();
+              if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
+            } catch(e) { console.warn('[patch] failed for', pName, e); }
+          }
+        }, 800);
       }
     } else if (key.startsWith('qualifier:')) {
       const param = key.replace('qualifier:', '');
