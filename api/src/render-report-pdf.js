@@ -106,7 +106,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates = [];
-  const colorUpdates = []; // kept for logging only — no colors written
+  const colorUpdates = []; // filled below — explicit fill colors written to color indicator cells
 
   const addCell = (r, c, val) => cellUpdates.push({
     url:  `${base}/range(address='${colLetter(c)}${r + 1}')`,
@@ -465,12 +465,14 @@ app.http('render-report-pdf', {
     }
   };
 
+    let cellColors = {}; // accumulate colors from all fillSheet calls
+
     if (isRadon && radonSheet) {
       // Radon template: Lab ID=I7, Date=I8, Time=J8, DateRec=I9, TimeRec=J9, DateRep=I10
       await writeHeaders(radonSheet.id, [
         ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
       ]);
-      const _colors_tmp = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', '');
+      Object.assign(cellColors, await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', ''));
 
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
@@ -491,7 +493,7 @@ app.http('render-report-pdf', {
       }
     } else if (isArsenicSpec && specSheet) {
       // Arsenic Speciation: use the Arsenic Spec Report sheet
-      const _colors_tmp = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24');
+      Object.assign(cellColors, await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24'));
       await fitOnePage(specSheet.id);
       // Hide Lab Report and FHA sheets
       if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
@@ -506,7 +508,7 @@ app.http('render-report-pdf', {
       await writeHeaders(labSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      const _colors_tmp = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
+      Object.assign(cellColors, await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48'));
 
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
@@ -524,7 +526,7 @@ app.http('render-report-pdf', {
       await writeHeaders(fhaSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      const _colors_tmp = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27');
+      Object.assign(cellColors, await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27'));
       // Write authorized by and review date
       const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
       const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
@@ -535,10 +537,6 @@ app.http('render-report-pdf', {
       }
       await fitOnePage(fhaSheet.id);
     }
-
-    // Gather all cell colors returned from fillSheet calls
-    const cellColors = {};
-    [typeof _colors_tmp !== 'undefined' ? _colors_tmp : {}].forEach(m => Object.assign(cellColors, m));
 
     // ── Step 8: Close session + wait ────────────────────────────────────────
     if (sid) {
