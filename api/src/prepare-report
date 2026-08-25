@@ -277,10 +277,25 @@ app.http('prepare-report', {
       context.log('[prepare] Template downloaded:', tmplBuffer.length, 'bytes');
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
-    // ── Step 2: Upload as named copy ──────────────────────────────────────
+    // ── Step 2: Upload as named copy (delete existing first to avoid lock) ──
     const fileName = isRadon ? `${labId} RW Report.xlsx` : `${labId} Report.xlsx`;
     let tempId;
     try {
+      // Delete any existing file with this name to avoid 423 Locked errors
+      const existCheck = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}/${encodeURIComponent(fileName)}?$select=id`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (existCheck.ok) {
+        const existData = await existCheck.json();
+        if (existData.id) {
+          await fetch(`${GRAPH}/sites/${siteId}/drive/items/${existData.id}`,
+            { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+          context.log('[prepare] Deleted existing file:', fileName);
+          await new Promise(r => setTimeout(r, 500)); // brief wait after delete
+        }
+      }
+
       const upR = await fetch(
         `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}/${encodeURIComponent(fileName)}:/content`,
         { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: tmplBuffer }
