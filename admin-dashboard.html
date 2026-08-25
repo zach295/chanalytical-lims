@@ -742,9 +742,6 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
 
       <!-- Report container — editable fields -->
-      <span id="rpt-pdf-status" style="font-size:12px;color:var(--slate);display:none;"></span>
-      <div id="rpt-pdf-panel" style="display:none;"></div>
-      <iframe id="rpt-pdf-iframe" style="display:none;" title="Report PDF"></iframe>
       <div id="rpt-live-preview" style="background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
 
       <!-- Authorization bar -->
@@ -5325,17 +5322,10 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function preGenerateReportPdf(reportData, forceRegenerate) {
-    const statusEl    = document.getElementById('rpt-pdf-status');
-    const iframeEl    = document.getElementById('rpt-pdf-iframe');
-    const loadingEl   = document.getElementById('rpt-pdf-loading');
     const authorizedBy = document.getElementById('rpt-authorized-by')?.value || getAdminName();
     const reviewDate   = document.getElementById('rpt-review-date')?.value || '';
 
     if (currentReportData._cachedPdfBase64 && !forceRegenerate) return; // already ready
-
-    if (loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = '⏳ Generating PDF preview from template...'; }
-    if (iframeEl)  iframeEl.style.display = 'none';
-    if (statusEl)  statusEl.textContent = '⏳ Generating PDF...';
 
     try {
       const pdfRes = await fetch('/api/render-report-pdf', {
@@ -5350,9 +5340,9 @@ document.addEventListener('DOMContentLoaded', function() {
       currentReportData._cachedPdfBase64 = pdfData.pdfBase64;
       currentReportData._cachedFileName  = pdfData.fileName;
       currentReportData._pdfStale        = false;
-      currentReportData._tempId          = pdfData.tempId || null; // kept Excel file ID
+      currentReportData._tempId          = pdfData.tempId || null;
 
-      // Apply Excel cell colors to preview dots
+      // Apply Excel cell colors directly to the editable preview dots
       if (pdfData.cellColors && Object.keys(pdfData.cellColors).length) {
         currentReportData._cellColors = pdfData.cellColors;
         Object.entries(pdfData.cellColors).forEach(([paramName, hex]) => {
@@ -5364,21 +5354,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       }
 
-      // Show in iframe
-      const bytes = Uint8Array.from(atob(pdfData.pdfBase64), c => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: 'application/pdf' });
-      const url   = URL.createObjectURL(blob);
-      if (iframeEl)  { iframeEl.src = url; iframeEl.style.display = 'block'; }
-      if (loadingEl) loadingEl.style.display = 'none';
-      if (statusEl)  statusEl.textContent = '✅ PDF ready';
-
-      // Restore status bar
-      const mainStatus = document.getElementById('gr-load-status');
-      if (mainStatus) { mainStatus.style.color = 'var(--success)'; mainStatus.textContent = `✅ Report ready for ${reportData.labId || reportData.meta?.labId}`; }
-
     } catch(e) {
-      if (loadingEl) { loadingEl.style.display = 'flex'; loadingEl.textContent = `⚠️ PDF preview failed: ${e.message}`; }
-      if (statusEl)  statusEl.textContent = '⚠️ PDF failed — will regenerate on send';
       console.error('[preGenerateReportPdf]', e);
     }
   }
