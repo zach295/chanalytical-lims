@@ -24,6 +24,17 @@ app.http('export-pdf', {
       const { tempId, labId, isRadon, keepTemp = false } = body;
 
       if (!tempId) return { status: 400, jsonBody: { error: 'tempId required' } };
+
+      // cleanupOnly: just delete the temp file, no PDF conversion
+      if (body.cleanupOnly) {
+        const siteId2 = process.env.SP_SITE_ID;
+        const token2  = await getToken();
+        await fetch(`${GRAPH}/sites/${siteId2}/drive/items/${tempId}`,
+          { method: 'DELETE', headers: { Authorization: `Bearer ${token2}` } }).catch(() => {});
+        context.log('[export-pdf] Cleanup only — deleted tempId:', tempId);
+        return { status: 200, jsonBody: { success: true, deleted: true } };
+      }
+
       if (!labId)  return { status: 400, jsonBody: { error: 'labId required'  } };
 
       const siteId = process.env.SP_SITE_ID;
