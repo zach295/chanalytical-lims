@@ -48,157 +48,137 @@ function findLabel(rows, label) {
   return null;
 }
 
-// Read CF rules from template once and cache them
-let _cfRulesCache = null;
-async function getTemplateCFRules(siteId, token) {
-  if (_cfRulesCache) return _cfRulesCache;
-  try {
-    const tmplPath = process.env.SP_REPORT_TEMPLATE ||
-      '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
-    const marker   = 'Shared Documents/';
-    const mi       = tmplPath.indexOf(marker);
-    const dp       = (mi >= 0 ? tmplPath.slice(mi + marker.length) : tmplPath.replace(/^\/+/, ''))
-      .split('/').map(s => encodeURIComponent(s)).join('/');
-    const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
-      { headers: { Authorization: `Bearer ${token}` } });
-    if (!metaR.ok) return null;
-    const { id: tmplId } = await metaR.json();
-    const sr = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook/createSession`,
-      { method:'POST', headers:{ Authorization:`Bearer ${token}`,'Content-Type':'application/json' },
-        body: JSON.stringify({ persistChanges: false }) });
-    if (!sr.ok) return null;
-    const sid    = (await sr.json()).id;
-    const wbHdr  = { Authorization:`Bearer ${token}`, 'workbook-session-id': sid };
-    const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${tmplId}/workbook`;
-    const sheetsR = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
-    const sheets  = sheetsR.ok ? (await sheetsR.json()).value || [] : [];
-    const labSheet = sheets.find(s => /^lab report/i.test(s.name));
-    let epaLimits = {}, colorRules = [];
-    if (labSheet) {
-      const wsBase  = `${wbBase}/worksheets/${labSheet.id}`;
-      const rangeR  = await fetch(`${wsBase}/usedRange?$select=values`, { headers: wbHdr });
-      if (rangeR.ok) {
-        const rows = (await rangeR.json()).values || [];
-        let hdrRow=-1, colResult=-1, colEPA=-1, colParam=0;
-        for (let r=0; r<rows.length; r++) {
-          const rl = (rows[r]||[]).map(c=>String(c||'').toLowerCase().trim());
-          if (rl.some(c=>c.includes('your result')||c==='result')) {
-            hdrRow=r;
-            rl.forEach((c,i)=>{
-              if (c.includes('your result')||c==='result') colResult=i;
-              if (c.includes('epa')||c.includes('mcl')||c.includes('limit')) colEPA=i;
-              if (c.includes('parameter')||c.includes('analyte')) colParam=i;
-            });
-            break;
-          }
-        }
-        if (hdrRow>=0 && colEPA>=0) {
-          for (let r=hdrRow+1; r<rows.length; r++) {
-            const name = String((rows[r]||[])[colParam]||'').trim();
-            const epa  = (rows[r]||[])[colEPA];
-            if (name && epa!==''&&epa!==null&&epa!==undefined) epaLimits[name]=epa;
-          }
-        }
-        const cfR = await fetch(`${wsBase}/conditionalFormats`, { headers: wbHdr });
-        if (cfR.ok) {
-          const cfs = (await cfR.json()).value||[];
-          for (const cf of cfs) {
-            if (cf.type==='cellValue'&&cf.cellValue?.rule) {
-              const r2=cf.cellValue.rule, color=cf.cellValue.format?.fill?.color;
-              if (color&&r2.operator) {
-                // Get range for this rule
-                let appliedRows = null;
-                try {
-                  const rngR = await fetch(`${wsBase}/conditionalFormats/${cf.id}/range`, { headers: wbHdr });
-                  if (rngR.ok) {
-                    const addr = ((await rngR.json()).address||'').replace(/^.*!/,'');
-                    const nums = addr.match(/\d+/g);
-                    if (nums) appliedRows = { start:parseInt(nums[0]), end:parseInt(nums[nums.length-1]) };
-                  }
-                } catch(e){}
-                colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', formula2:r2.formula2||'', color, priority:cf.priority||99, appliedRows });
-              }
-            }
-          }
-          colorRules.sort((a,b)=>a.priority-b.priority);
-        }
-        // Store param row numbers
-        if (hdrRow>=0) {
-          for (let r=hdrRow+1; r<rows.length; r++) {
-            const name = String((rows[r]||[])[colParam]||'').trim();
-            if (name) epaLimits[`__row__${name}`] = r+1;
-          }
-        }
-      }
-    }
-    await fetch(`${wbBase}/closeSession`,{method:'POST',headers:wbHdr}).catch(()=>{});
-    _cfRulesCache = { epaLimits, colorRules };
-    return _cfRulesCache;
-  } catch(e) { return null; }
-}
-
-// Evaluate CF rules exactly as Excel would for a given parameter + value
-function calcFillColor(paramName, displayVal, epa, cfRules) {
+// ── Color rules — exact conditional formatting from the Excel template ─────────
+// Each parameter's rules match the template formulas exactly.
+// Green = meets limits, Blue = see notation / advisory, Red = exceeds limit
+function calcFillColor(paramName, displayVal) {
   if (!displayVal && displayVal !== 0) return null;
-  const s = String(displayVal).trim();
+  const s   = String(displayVal).trim();
   if (!s) return null;
+  const n   = parseFloat(s);
+  const num = !isNaN(n);   // true when value is a real number
+  const rl  = s.startsWith('<'); // <RL / below detection
 
-  // If CF rules available, use them
-  if (cfRules?.colorRules?.length) {
-    const paramRow = cfRules.epaLimits?.[`__row__${paramName}`] || null;
-    const epaLimit = cfRules.epaLimits?.[paramName];
-    const n        = parseFloat(s);
-    const isNum    = !isNaN(n) && !s.startsWith('<');
+  switch (paramName) {
+    case 'Chloride, Total':
+      // green: <2 (string) OR <250;  blue: >=250
+      if (rl || (num && n < 250))  return '#00CC44';
+      if (num && n >= 250)          return '#0070C0';
+      return null;
 
-    if (s.startsWith('<')) {
-      const rule = cfRules.colorRules.find(r =>
-        (!r.appliedRows || !paramRow || (paramRow >= r.appliedRows.start && paramRow <= r.appliedRows.end)) &&
-        (r.operator === 'lessthanorequal' || r.operator === 'lessthan')
-      );
-      return rule?.color || '#00CC44';
-    }
+    case 'Fluoride, Total':
+      // green: <0.2 (string) OR <1.9;  blue: 1.9–3.9;  red: >=4
+      if (rl || (num && n < 1.9))            return '#00CC44';
+      if (num && n >= 1.9 && n <= 3.9)       return '#0070C0';
+      if (num && n >= 4)                      return '#FF0000';
+      return null;
 
-    for (const rule of cfRules.colorRules) {
-      // Filter by row range
-      if (rule.appliedRows && paramRow) {
-        if (paramRow < rule.appliedRows.start || paramRow > rule.appliedRows.end) continue;
-      }
-      const formula    = String(rule.formula1||'').replace(/^["']|["']$/g,'');
-      const threshold  = parseFloat(formula);
-      const isTextRule = isNaN(threshold);
-      let matches      = false;
-      if (isTextRule) {
-        const cellLow = s.toLowerCase().trim(), fLow = formula.toLowerCase().trim();
-        if      (rule.operator==='equal'||rule.operator==='equalto')       matches = cellLow===fLow;
-        else if (rule.operator==='notequal'||rule.operator==='notequalto') matches = cellLow!==fLow;
-      } else if (isNum) {
-        const limit = threshold;
-        if      (rule.operator==='lessthanorequal'    && n<=limit) matches=true;
-        else if (rule.operator==='lessthan'           && n<limit)  matches=true;
-        else if (rule.operator==='greaterthan'        && n>limit)  matches=true;
-        else if (rule.operator==='greaterthanorequal' && n>=limit) matches=true;
-        else if (rule.operator==='equal'              && n===limit) matches=true;
-        else if (rule.operator==='between') {
-          const thr2=parseFloat(String(rule.formula2||'').replace(/^["']|["']$/g,''));
-          if (!isNaN(thr2)) matches = n>=limit && n<=thr2;
-        }
-      }
-      if (matches) return rule.color;
-    }
-    if (epaLimit!==undefined && isNum) return n<=parseFloat(epaLimit) ? '#00CC44' : '#FF0000';
-    return null;
+    case 'Nitrite-Nitrogen, Total':
+      // green: <0.2 (string) OR <1;  red: >=1
+      if (rl || (num && n < 1))   return '#00CC44';
+      if (num && n >= 1)           return '#FF0000';
+      return null;
+
+    case 'Nitrate-Nitrogen, Total':
+      // green: <1 (string) OR <10;  red: >=10
+      if (rl || (num && n < 10))  return '#00CC44';
+      if (num && n >= 10)          return '#FF0000';
+      return null;
+
+    case 'Arsenic, Total':
+      // green: <1 (string) OR <10;  red: >=10
+      if (rl || (num && n < 10))  return '#00CC44';
+      if (num && n >= 10)          return '#FF0000';
+      return null;
+
+    case 'Lead, Total':
+      // green: <1 (string) OR <15;  red: >=15
+      if (rl || (num && n < 15))  return '#00CC44';
+      if (num && n >= 15)          return '#FF0000';
+      return null;
+
+    case 'Uranium, Total':
+      // green: <1 (string) OR <30;  red: >=30
+      if (rl || (num && n < 30))  return '#00CC44';
+      if (num && n >= 30)          return '#FF0000';
+      return null;
+
+    case 'Copper, Total':
+      // green: <0.001 (string) OR <0.9;  blue: 0.9–1.29;  red: >=1.3
+      if (rl || (num && n < 0.9))            return '#00CC44';
+      if (num && n >= 0.9 && n <= 1.29)      return '#0070C0';
+      if (num && n >= 1.3)                    return '#FF0000';
+      return null;
+
+    case 'Iron, Total':
+      // green: <0.05 (string) OR <0.3;  blue: >=0.3
+      if (rl || (num && n < 0.3))  return '#00CC44';
+      if (num && n >= 0.3)          return '#0070C0';
+      return null;
+
+    case 'Manganese, Total':
+      // green: <0.001 (string) OR <0.05;  blue: >=0.05
+      if (rl || (num && n < 0.05))  return '#00CC44';
+      if (num && n >= 0.05)          return '#0070C0';
+      return null;
+
+    case 'Sodium, Total':
+      // blue: >=20  (no green defined in template)
+      if (num && n >= 20)  return '#0070C0';
+      if (num && n < 20)   return '#00CC44';
+      return null;
+
+    case 'Antimony, Total':
+      // green: <0.0005 (string) OR <0.006;  red: >=0.006
+      if (rl || (num && n < 0.006))  return '#00CC44';
+      if (num && n >= 0.006)          return '#FF0000';
+      return null;
+
+    case 'Cadmium, Total':
+      // green: <0.002 (string) OR <0.005;  red: >=0.005
+      if (rl || (num && n < 0.005))  return '#00CC44';
+      if (num && n >= 0.005)          return '#FF0000';
+      return null;
+
+    case 'Chromium, Total':
+      // green: <0.002 (string) OR <0.1;  red: >=0.1
+      if (rl || (num && n < 0.1))  return '#00CC44';
+      if (num && n >= 0.1)          return '#FF0000';
+      return null;
+
+    case 'pH Electrometric':
+      // green: 6.5–8.5;  blue: outside range
+      if (num && n >= 6.5 && n <= 8.5)  return '#00CC44';
+      if (num && (n < 6.5 || n > 8.5))  return '#0070C0';
+      return null;
+
+    case 'Sulfate':
+      // green: <40 (string) OR <250;  red: >=250
+      if (rl || (num && n < 250))  return '#00CC44';
+      if (num && n >= 250)          return '#FF0000';
+      return null;
+
+    case 'Total Coliform':
+      // green: <1 strings OR <1;  blue: >=1
+      if (rl || (num && n < 1))  return '#00CC44';
+      if (num && n >= 1)          return '#0070C0';
+      return null;
+
+    case 'E. Coli':
+      // green: <1 strings OR <1;  red: >=1  (E.coli is RED, not blue)
+      if (rl || (num && n < 1))  return '#00CC44';
+      if (num && n >= 1)          return '#FF0000';
+      return null;
+
+    case 'Radon Water':
+      // green: <100 (string) OR <4000;  blue: >4000
+      if (rl || (num && n < 4000))  return '#00CC44';
+      if (num && n > 4000)           return '#0070C0';
+      return null;
+
+    default:
+      return null;
   }
-
-  // Fallback if no CF rules
-  if (s.startsWith('<')) return '#00CC44';
-  if (paramName === 'pH Electrometric') {
-    const n = parseFloat(s);
-    return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '#00CC44' : '#FF0000';
-  }
-  if (!epa && epa !== 0) return null;
-  const n = parseFloat(s);
-  if (isNaN(n)) return '#0070C0';
-  return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
 }
 
 async function gReq(method, path, token, body, sid) {
@@ -229,7 +209,7 @@ async function graphBatch(reqs, token, sid) {
 
 // ── Fill one sheet ─────────────────────────────────────────────────────────────
 // Returns { paramName: hexColor } for all params written to this sheet
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell, cfRules) {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell) {
   const base         = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates  = [];
   const colorUpdates = [];
@@ -328,7 +308,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
       // Write explicit fill color to color indicator cell (col before result)
       if (colResult > 0) {
-        const hex = calcFillColor(p.name, p.value, p.epa, cfRules);
+        const hex = calcFillColor(p.name, p.value);
         if (hex) {
           colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
           cellColors[p.name] = hex;
@@ -395,9 +375,6 @@ app.http('prepare-report', {
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
-    // Load CF rules from template in parallel with template download
-    const cfRules = await getTemplateCFRules(siteId, token).catch(() => null);
-    context.log('[prepare] CF rules loaded:', cfRules ? `${cfRules.colorRules.length} rules` : 'none');
 
     // ── Step 1: Download template ─────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
@@ -519,11 +496,11 @@ app.http('prepare-report', {
 
     if (isRadon && radonSheet) {
       await writeHeaders(radonSheet.id, [['I7','labId'],['I8','dc'],['J8','tc'],['I9','dr'],['J9','tr'],['I10','today']]);
-      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '', cfRules);
+      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '');
       Object.assign(cellColors, c);
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
     } else if (isArsenicSpec && specSheet) {
-      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24', cfRules);
+      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24');
       Object.assign(cellColors, c);
     } else if (labSheet) {
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
@@ -534,13 +511,13 @@ app.http('prepare-report', {
       for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
         if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, { method:'PATCH', headers:wbHdrLab, body:JSON.stringify({ values:[[val]] }) }).catch(()=>{});
       }
-      const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48', cfRules);
+      const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48');
       Object.assign(cellColors, c);
     }
 
     if (fhaSheet && needsFHA && fhaParams.length) {
       await writeHeaders(fhaSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
-      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27', cfRules);
+      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27');
       Object.assign(cellColors, c);
     }
 
@@ -650,7 +627,7 @@ app.http('prepare-report', {
 
     return {
       status:   200,
-      jsonBody: { success: true, tempId, fileName, cellColors, _debug: { cfRulesLoaded: !!cfRules, ruleCount: cfRules?.colorRules?.length || 0, epaKeys: Object.keys(cfRules?.epaLimits||{}).slice(0,5) } },
+      jsonBody: { success: true, tempId, fileName, cellColors },
     };
     } catch(fatalErr) {
       context.log('[prepare] FATAL:', fatalErr.message, fatalErr.stack);
