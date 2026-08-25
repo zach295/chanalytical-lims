@@ -2819,7 +2819,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Test type % is share of ALL samples including rejected
         const pct   = grandTotal > 0 ? Math.round((count / grandTotal) * 100) : 0;
         const color = colors[i % colors.length];
-        console.log(`[types] ${name}: count=${count} pct=${pct} grandTotal=${grandTotal} color=${color}`);
         return `<div style="margin-bottom:16px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
             <span style="font-size:13px;font-weight:600;">${name}</span>
@@ -4288,14 +4287,19 @@ document.addEventListener('DOMContentLoaded', function() {
       showToast(`✅ ${labIdStr} written to sheets`);
 
       // Add to in-memory recently approved cache so it shows in Recently Approved table
-      recentlyApprovedCache.unshift({
-        fullId:      (data.labIds || [])[0] || '',
-        customer:    data.formalName || g('customer'),
-        coaTest:     tests[0] || '',
-        approvedBy:  getAdminName(),
-        timestamp:   new Date().toISOString(),
+      // Add ALL approved lab IDs (one per test when multiple selected)
+      const _approvedIds   = data.labIds   || [(data.labIds||[])[0] || ''];
+      const _approvedTests = data.testNames|| tests;
+      _approvedIds.forEach((fullId, idx) => {
+        recentlyApprovedCache.unshift({
+          fullId,
+          customer:   data.formalName || g('customer'),
+          coaTest:    _approvedTests[idx] || _approvedTests[0] || '',
+          approvedBy: getAdminName(),
+          timestamp:  new Date().toISOString(),
+        });
       });
-      if (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
+      while (recentlyApprovedCache.length > 20) recentlyApprovedCache.pop();
 
       // Rebuild recently approved table from cache (shows all approvals this session)
       const approvedBodyEl = document.getElementById('rq-approved-body');
