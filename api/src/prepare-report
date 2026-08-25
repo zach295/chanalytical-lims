@@ -380,62 +380,89 @@ app.http('prepare-report', {
     }
 
     // ── Step 8: Re-open read-only session and read actual cell fill colors ──
-    // Excel applies conditional formatting when the file is opened. Reading the
-    // fill colors after our writes gives us the CF-computed colors, not our guesses.
+    // Single range read per sheet — no per-cell API calls to avoid timeout
     try {
-      await new Promise(r => setTimeout(r, 2000)); // brief wait for CF to settle
+      await new Promise(r => setTimeout(r, 1500));
 
       const roSr = await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
         token, { persistChanges: false });
       if (roSr.ok) {
-        const roSid   = (await roSr.json()).id;
-        const roHdr   = { Authorization: `Bearer ${token}`, 'workbook-session-id': roSid };
+        const roSid = (await roSr.json()).id;
+        const roHdr = { Authorization: `Bearer ${token}`, 'workbook-session-id': roSid };
 
-        // Read from each filled sheet
         const sheetsToRead = [labSheet, fhaSheet, radonSheet, specSheet].filter(Boolean);
         for (const sheet of sheetsToRead) {
           const wsBase = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`;
 
-          // Get used range to find header row and result/color columns
+          // Read values + entire used range in one call
           const rr2 = await fetch(`${wsBase}/usedRange?$select=values,columnCount`, { headers: roHdr });
           if (!rr2.ok) continue;
-          const { values: rows2 } = await rr2.json();
+          const { values: rows2, columnCount: nc2 } = await rr2.json();
 
-          // Find header row
           let hdrRow2 = -1, colResult2 = -1;
           for (let r = 0; r < rows2.length; r++) {
             const rl = (rows2[r] || []).map(c => normalizeCell(c));
             if (rl.some(c => c.includes('your result') || c === 'result')) {
-              hdrRow2   = r;
+              hdrRow2    = r;
               colResult2 = rl.findIndex(c => c.includes('your result') || c === 'result');
               break;
             }
           }
           if (hdrRow2 < 0 || colResult2 < 1) continue;
-          const colorCol2 = colResult2 - 1; // color indicator is one col before result
+          const colorCol2 = colResult2 - 1;
 
-          // For each param row, read the actual fill color from the color indicator cell
-          for (let r = hdrRow2 + 1; r < rows2.length; r++) {
-            const paramName = String((rows2[r] || [])[0] || '').trim();
-            if (!paramName) continue;
+          // Read ALL cells in the color indicator column in one range call
+          const lastRow   = rows2.length;
+          const rangeAddr = `${colLetter(colorCol2)}${hdrRow2 + 2}:${colLetter(colorCol2)}${lastRow}`;
+          const fillRes   = await fetch(`${wsBase}/range(address='${rangeAddr}')/format/fill`, { headers: roHdr });
+          if (!fillRes.ok) continue;
 
-            // Match to one of our params
-            const matchedParam = [...params, ...fhaParams].find(p => {
-              const pn = normalizeCell(p.name);
-              const rn = normalizeCell(paramName);
-              return pn === rn || pn.startsWith(rn) || rn.startsWith(pn);
-            });
-            if (!matchedParam) continue;
+          // Graph returns one fill object for a range only if all cells share the same fill.
+          // If not uniform, we need cell-by-cell reads — but try the range first.
+          const fillData  = await fillRes.json();
+          const rangeColor = fillData.color;
 
-            const addr    = `${colLetter(colorCol2)}${r + 1}`;
-            const fillRes = await fetch(`${wsBase}/range(address='${addr}')/format/fill`, { headers: roHdr });
-            if (fillRes.ok) {
-              const fillData = await fillRes.json();
-              const color    = fillData.color;
-              if (color && color !== 'transparent' && color !== '#FFFFFF' && color !== '#ffffff') {
-                // Normalize to 6-digit hex
-                const hex = color.startsWith('#') ? color : `#${color}`;
-                cellColors[matchedParam.name] = hex;
+          if (rangeColor && rangeColor !== '#FFFFFF' && rangeColor !== '#ffffff') {
+            // All cells same color — apply to all matched params
+            for (let r = hdrRow2 + 1; r < rows2.length; r++) {
+              const paramName    = String((rows2[r] || [])[0] || '').trim();
+              const matchedParam = [...params, ...fhaParams].find(p => {
+                const pn = normalizeCell(p.name), rn = normalizeCell(paramName);
+                return pn === rn || pn.startsWith(rn) || rn.startsWith(pn);
+              });
+              if (matchedParam) cellColors[matchedParam.name] = rangeColor.startsWith('#') ? rangeColor : `#${rangeColor}`;
+            }
+          } else {
+            // Mixed colors — read each param cell individually via batch
+            const batchReqs = [];
+            const batchMap  = [];
+            for (let r = hdrRow2 + 1; r < rows2.length; r++) {
+              const paramName    = String((rows2[r] || [])[0] || '').trim();
+              const matchedParam = [...params, ...fhaParams].find(p => {
+                const pn = normalizeCell(p.name), rn = normalizeCell(paramName);
+                return pn === rn || pn.startsWith(rn) || rn.startsWith(pn);
+              });
+              if (!matchedParam) continue;
+              const addr = `${colLetter(colorCol2)}${r + 1}`;
+              batchReqs.push({ method: 'GET', url: `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/range(address='${addr}')/format/fill` });
+              batchMap.push(matchedParam.name);
+            }
+            // Batch GET — Graph batch supports GET requests
+            if (batchReqs.length) {
+              const batchRes = await fetch(`${GRAPH}/$batch`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requests: batchReqs.map((r, i) => ({ id: String(i+1), method: r.method, url: r.url, headers: { 'workbook-session-id': roSid } })) }),
+              });
+              if (batchRes.ok) {
+                const batchData = await batchRes.json();
+                (batchData.responses || []).forEach(resp => {
+                  const idx   = parseInt(resp.id) - 1;
+                  const color = resp.body?.color;
+                  if (color && color !== '#FFFFFF' && color !== '#ffffff' && batchMap[idx]) {
+                    cellColors[batchMap[idx]] = color.startsWith('#') ? color : `#${color}`;
+                  }
+                });
               }
             }
           }
@@ -446,7 +473,7 @@ app.http('prepare-report', {
         context.log(`[prepare] Read ${Object.keys(cellColors).length} actual cell colors from Excel`);
       }
     } catch(e) {
-      context.log('[prepare] Color read-back failed (non-fatal), using calculated colors:', e.message);
+      context.log('[prepare] Color read-back failed (non-fatal):', e.message);
     }
 
     context.log(`[prepare] Done — tempId: ${tempId}, colors returned: ${Object.keys(cellColors).length}`);
