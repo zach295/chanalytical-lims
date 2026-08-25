@@ -5392,8 +5392,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     // Debounce: regenerate PDF 2s after last edit
     clearTimeout(window._pdfRegenTimer);
-    window._pdfRegenTimer = setTimeout(() => {
-      if (currentReportData?._pdfStale) preGenerateReportPdf(currentReportData, true);
+    window._pdfRegenTimer = setTimeout(async () => {
+      if (!currentReportData?._pdfStale) return;
+      if (currentReportData._tempId) {
+        // Reuse existing Excel file — just export it to PDF (no refilling)
+        try {
+          const pdfRes = await fetch('/api/render-report-pdf', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              labId: currentReportData.labId, exportOnly: true,
+              tempId: currentReportData._tempId,
+              isRadon: currentReportData.isRadon, keepTemp: true,
+            }),
+          });
+          const pdfData = await pdfRes.json().catch(() => ({}));
+          if (pdfData.success) {
+            currentReportData._cachedPdfBase64 = pdfData.pdfBase64;
+            currentReportData._cachedFileName  = pdfData.fileName;
+            currentReportData._pdfStale        = false;
+          }
+        } catch(e) { console.error('[debounce]', e); }
+      } else {
+        preGenerateReportPdf(currentReportData, true);
+      }
     }, 2000);
     const key = el.dataset.key;
     const val = el.textContent.trim();
@@ -5804,6 +5825,13 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
+        // Delete the temp Excel file — report is sent, we're done with it
+        if (currentReportData._tempId) {
+          fetch('/api/render-report-pdf', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ labId, exportOnly:true, tempId: currentReportData._tempId, keepTemp:false, isRadon: currentReportData.isRadon })
+          }).catch(()=>{});
+          currentReportData._tempId = null;
+        }
       } else {
         // ── Save PDF: use cached PDF or generate ─────────────────────────────
         statusEl.textContent = '⏳ Preparing PDF...';
@@ -5812,18 +5840,18 @@ document.addEventListener('DOMContentLoaded', function() {
           pdfBase642 = currentReportData._cachedPdfBase64;
           fileName2  = currentReportData._cachedFileName;
         } else if (currentReportData._tempId && currentReportData._pdfStale) {
-          // Export PDF from the kept, already-edited Excel file
+          // Export PDF from the kept, already-edited Excel file — keep file for further edits
           statusEl.textContent = '⏳ Exporting PDF from template...';
           const pdfRes2 = await fetch('/api/render-report-pdf', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ labId, exportOnly: true, tempId: currentReportData._tempId, isRadon: currentReportData.isRadon, keepTemp: false }),
+            body: JSON.stringify({ labId, exportOnly: true, tempId: currentReportData._tempId, isRadon: currentReportData.isRadon, keepTemp: true }),
           });
           const pdfData2 = await pdfRes2.json().catch(() => ({}));
           if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF export failed');
           pdfBase642 = pdfData2.pdfBase64;
           fileName2  = pdfData2.fileName;
-          currentReportData._tempId = null; // file was deleted by exportOnly
+          currentReportData._pdfStale = false; // fresh — keep tempId alive
         } else {
           statusEl.textContent = '⏳ Generating PDF from template...';
           const pdfRes2 = await fetch('/api/render-report-pdf', {
