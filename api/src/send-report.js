@@ -101,21 +101,28 @@ async function findCOCScan(siteId, labId, token) {
     const mi         = SCAN_ARCHIVE.indexOf(marker);
     const folderPath = mi >= 0 ? SCAN_ARCHIVE.slice(mi + marker.length) : SCAN_ARCHIVE.replace(/^\/+/, '');
 
-    // Search inside the archive folder tree for this lab ID
-    const searchRes = await fetch(
-      `${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(folderPath)}:/search(q='${encodeURIComponent(labId)}')?$select=id,name,parentReference&$top=20`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!searchRes.ok) return null;
-    const { value } = await searchRes.json();
-    // Find the COC scan PDF (not the report PDF, not temp files)
-    return (value || []).find(f =>
-      f.name?.toLowerCase().includes(labId.toLowerCase()) &&
+    const isCOC = f =>
       f.name?.toLowerCase().endsWith('.pdf') &&
       !f.name?.toLowerCase().includes('report') &&
-      !f.name?.toLowerCase().includes('rw report') &&
-      !f.name?.toLowerCase().includes('temp_')
-    ) || null;
+      !f.name?.toLowerCase().includes('temp_');
+
+    // Try search terms in order: full labId, then base ID without suffix
+    const baseId     = labId.split(' ')[0].trim();
+    const searchTerms = [labId, baseId].filter((v, i, a) => a.indexOf(v) === i);
+
+    for (const term of searchTerms) {
+      const searchRes = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(folderPath)}:/search(q='${encodeURIComponent(term)}')?$select=id,name,parentReference&$top=20`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!searchRes.ok) continue;
+      const { value } = await searchRes.json();
+      const match = (value || []).find(f =>
+        f.name?.toLowerCase().includes(term.toLowerCase()) && isCOC(f)
+      );
+      if (match) return match;
+    }
+    return null;
   } catch (e) { return null; }
 }
 
