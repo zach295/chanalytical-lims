@@ -276,6 +276,24 @@ app.http('render-report-pdf', {
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
+    // ── exportOnly mode: convert existing temp file to PDF and delete it ──────
+    if (body.exportOnly && body.tempId) {
+      const existingTempId = body.tempId;
+      context.log('[pdf] exportOnly mode — exporting existing temp file:', existingTempId);
+      try {
+        const pr = await fetch(
+          `${GRAPH}/sites/${siteId}/drive/items/${existingTempId}/content?format=pdf`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        if (!pr.ok) throw new Error(`PDF export (${pr.status})`);
+        const pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
+        await gReq('DELETE', `/sites/${siteId}/drive/items/${existingTempId}`, token).catch(() => {});
+        const reportFileName = body.isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
+        return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
+      } catch(e) {
+        return { status: 500, jsonBody: { error: 'exportOnly failed: ' + e.message } };
+      }
+    }
+
     // ── Step 1: Download template ───────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
       '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
@@ -501,11 +519,22 @@ app.http('render-report-pdf', {
       return { status: 500, jsonBody: { error: e.message } };
     }
 
-    // ── Step 10: Delete temp file ───────────────────────────────────────────
-    await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
-    context.log('[pdf] Temp file deleted');
-
+    // ── Step 10: If exportOnly mode, delete temp after export; otherwise keep it ──
     const reportFileName = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
+
+    if (body.exportOnly && body.tempId) {
+      // exportOnly: we were given an existing temp file — just delete it now
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${body.tempId}`, token).catch(() => {});
+      context.log('[pdf] exportOnly: temp file deleted');
+    } else if (body.keepTemp) {
+      // keepTemp: caller wants to reuse this file — return tempId, don't delete
+      context.log('[pdf] keepTemp: retaining temp file', tempId);
+    } else {
+      // Default: delete after export
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      context.log('[pdf] Temp file deleted');
+    }
+
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName, tempId } };
   }
 });
