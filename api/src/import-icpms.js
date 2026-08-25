@@ -274,22 +274,47 @@ app.http('import-icpms', {
 
       context.log(`[import-icpms] Dates to process: ${Object.keys(byDate).join(', ')}`);
 
-      // Step 2: List all files in ICPMS folder
-      const allFiles = await listFolder(folder);
-      const xlsxFiles = allFiles.filter(f => /\.xlsx?$/i.test(f.name));
-
-      // Step 3: For each date group, find matching files and parse
+      // Step 2: For each date group, look in month subfolder then flat folder
+      const MONTHS_LIST = ['January','February','March','April','May','June',
+                           'July','August','September','October','November','December'];
       const allRows = [];
       const filesUsed = [];
 
       for (const [datePart, ids] of Object.entries(byDate)) {
-        // Match files containing the date portion (e.g., M_072826-01.xlsx, M_072826-02.xlsx)
-        const matchingFiles = xlsxFiles.filter(f => f.name.includes(datePart));
+        // Build month subfolder: MMDDYY → "August 2026"
+        const mm        = datePart.slice(0, 2);
+        const yy        = datePart.slice(4, 6);
+        const year      = `20${yy}`;
+        const monthName = MONTHS_LIST[parseInt(mm, 10) - 1] || '';
+        // Also try 3-letter abbreviation (Aug, Sep, etc.)
+        const monthAbbr = monthName.slice(0, 3);
+
+        // Try month subfolder first, then flat root folder
+        let matchingFiles = [];
+        for (const tryFolder of [
+          `${folder}/${monthName} ${year}`,
+          `${folder}/${monthAbbr} ${year}`,
+          folder,
+        ]) {
+          try {
+            const folderFiles = await listFolder(tryFolder);
+            const found = folderFiles.filter(f =>
+              /\.xlsx?$/i.test(f.name) && f.name.replace(/[_\-\s]/g,'').toLowerCase().includes(datePart.replace(/[_\-\s]/g,'').toLowerCase())
+            );
+            if (found.length) {
+              matchingFiles = found;
+              context.log(`[import-icpms] Found ${found.length} file(s) in ${tryFolder}`);
+              break;
+            }
+          } catch(e) {
+            context.log(`[import-icpms] Folder ${tryFolder} not accessible: ${e.message}`);
+          }
+        }
+
         if (!matchingFiles.length) {
-          context.log(`[import-icpms] No files found for date ${datePart}`);
+          context.log(`[import-icpms] No files found for date ${datePart} in any subfolder`);
           continue;
         }
-        context.log(`[import-icpms] Found ${matchingFiles.length} file(s) for ${datePart}: ${matchingFiles.map(f=>f.name).join(', ')}`);
 
         for (const file of matchingFiles) {
           filesUsed.push(file.name);
