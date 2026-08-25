@@ -99,18 +99,9 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   });
 
   // ── Clear all conditional formatting so our fills show correctly ──────────
-  const cfRes = await gReq('GET',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/conditionalFormats`,
-    token, undefined, sid);
-  if (cfRes.ok) {
-    const cfs = (await cfRes.json()).value || [];
-    for (const cf of cfs) {
-      await gReq('DELETE',
-        `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/conditionalFormats/${cf.id}`,
-        token, undefined, sid).catch(() => {});
-    }
-    context.log(`[pdf] Cleared ${cfs.length} conditional formats`);
-  }
+  // NOTE: We do NOT clear conditional formatting — the template's built-in
+  // conditional rules color cells correctly when values are written.
+  // Clearing them caused colors to disappear entirely.
 
   // ── Right-side header fields (Lab ID, dates) ─────────────────────────────
   // Template has: label | (merge gap) | value | (time cell for date fields)
