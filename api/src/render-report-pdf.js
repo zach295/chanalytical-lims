@@ -318,9 +318,15 @@ app.http('render-report-pdf', {
           { headers: { Authorization: `Bearer ${token}` } });
         if (!pr.ok) throw new Error(`PDF export (${pr.status})`);
         const pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
-        await gReq('DELETE', `/sites/${siteId}/drive/items/${existingTempId}`, token).catch(() => {});
-        const reportFileName = body.isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
-        return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
+        // Only delete if keepTemp is NOT set — allow reuse for further edits
+        if (!body.keepTemp) {
+          await gReq('DELETE', `/sites/${siteId}/drive/items/${existingTempId}`, token).catch(() => {});
+          context.log('[pdf] exportOnly: temp file deleted');
+        } else {
+          context.log('[pdf] exportOnly: temp file kept for further edits');
+        }
+        const rptFileName = body.isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
+        return { status: 200, jsonBody: { success: true, pdfBase64, fileName: rptFileName, tempId: body.keepTemp ? existingTempId : null } };
       } catch(e) {
         return { status: 500, jsonBody: { error: 'exportOnly failed: ' + e.message } };
       }
@@ -348,7 +354,8 @@ app.http('render-report-pdf', {
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
     // ── Step 2: Upload as temp copy ─────────────────────────────────────────
-    const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
+    const reportFileName = isRadon ? `${labId} RW Report.xlsx` : `${labId} Report.xlsx`;
+    const tempName = reportFileName; // use final report name — no timestamp
     let tempId;
     try {
       const upR = await fetch(
@@ -556,8 +563,6 @@ app.http('render-report-pdf', {
     }
 
     // ── Step 10: If exportOnly mode, delete temp after export; otherwise keep it ──
-    const reportFileName = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
-
     if (body.exportOnly && body.tempId) {
       // exportOnly: we were given an existing temp file — just delete it now
       await gReq('DELETE', `/sites/${siteId}/drive/items/${body.tempId}`, token).catch(() => {});
