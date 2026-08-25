@@ -77,32 +77,35 @@ app.http('patch-report-cell', {
       if (!sr.ok) return { status: 500, jsonBody: { error: 'Session failed' } };
       const sid = (await sr.json()).id;
 
-      // Find sheet
+      // Get all sheets — write to EVERY sheet where the parameter appears
       const sheetsR = await gReq('GET', '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/worksheets', token, undefined, sid);
       const sheets  = sheetsR.ok ? (await sheetsR.json()).value || [] : [];
-      let sheet = null;
-      if (sheetType === 'fha')   sheet = sheets.find(function(s) { return /^fha/i.test(s.name); });
-      if (sheetType === 'radon') sheet = sheets.find(function(s) { return /^radon/i.test(s.name); });
-      if (!sheet)                sheet = sheets.find(function(s) { return /^lab report/i.test(s.name); }) || sheets[0];
-      if (!sheet) {
-        await gReq('POST', '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/closeSession', token, {}, sid).catch(function(){});
-        return { status: 404, jsonBody: { error: 'Sheet not found' } };
+      // For radon, only target the radon sheet. Otherwise target lab + fha sheets.
+      var targetSheets;
+      if (sheetType === 'radon') {
+        targetSheets = sheets.filter(function(s) { return /^radon/i.test(s.name); });
+      } else {
+        targetSheets = sheets.filter(function(s) { return /^lab report/i.test(s.name) || /^fha/i.test(s.name); });
       }
+      if (!targetSheets.length) targetSheets = sheets.slice(0, 1);
 
-      const wsPath = '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/worksheets/' + sheet.id;
+      // Collect all patch requests across all sheets
+      var allPatchReqs = [];
+      var newHex = null;
+      var hardnessUpdate = null;
 
-      // Read sheet
-      const rr = await gReq('GET', wsPath + '/usedRange?$select=values,columnCount', token, undefined, sid);
-      if (!rr.ok) {
-        await gReq('POST', '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/closeSession', token, {}, sid).catch(function(){});
-        return { status: 500, jsonBody: { error: 'Cannot read sheet' } };
-      }
-      const sheetData = await rr.json();
-      const rows = sheetData.values || [];
+      for (var si = 0; si < targetSheets.length; si++) {
+        var sheet = targetSheets[si];
+        var wsPath = '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/worksheets/' + sheet.id;
 
-      // Find header row
-      var hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1, colQualifier = -1;
-      for (var r = 0; r < rows.length; r++) {
+        var rr = await gReq('GET', wsPath + '/usedRange?$select=values,columnCount', token, undefined, sid);
+        if (!rr.ok) continue;
+        var sheetData = await rr.json();
+        var rows = sheetData.values || [];
+
+        // Find header row for this sheet
+        var hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1, colQualifier = -1;
+        for (var r = 0; r < rows.length; r++) {
         var rl = (rows[r] || []).map(function(c) { return normalizeCell(c); });
         if (rl.some(function(c) { return c.includes('your result') || c === 'result'; })) {
           hdrRow = r;
@@ -128,19 +131,18 @@ app.http('patch-report-cell', {
         }
       }
 
-      if (targetRow < 0) {
-        await gReq('POST', '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/closeSession', token, {}, sid).catch(function(){});
-        return { status: 404, jsonBody: { error: 'Parameter not found: ' + paramName } };
-      }
 
-      // Build writes
-      var patchReqs = [];
-      var addr = function(col) { return colLetter(col) + (targetRow + 1); };
 
-      if (field === 'value'     && colResult    >= 0) patchReqs.push({ url: wsPath + '/range(address=\'' + addr(colResult)    + '\')', body: { values: [[String(value || '')]] } });
-      if (field === 'qualifier' && colQualifier >= 0) patchReqs.push({ url: wsPath + '/range(address=\'' + addr(colQualifier) + '\')', body: { values: [[String(value || '')]] } });
-      if (field === 'prepDT'    && colPrepDT    >= 0) patchReqs.push({ url: wsPath + '/range(address=\'' + addr(colPrepDT)    + '\')', body: { values: [[String(value || '')]] } });
-      if (field === 'analDT'    && colAnalDT    >= 0) patchReqs.push({ url: wsPath + '/range(address=\'' + addr(colAnalDT)    + '\')', body: { values: [[String(value || '')]] } });
+        if (targetRow < 0) continue; // param not in this sheet, skip
+
+        // Build writes for this sheet
+        var sheetPatchReqs = [];
+        var addr = function(col) { return colLetter(col) + (targetRow + 1); };
+
+        if (field === 'value'     && colResult    >= 0) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + addr(colResult)    + '\')', body: { values: [[String(value || '')]] } });
+        if (field === 'qualifier' && colQualifier >= 0) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + addr(colQualifier) + '\')', body: { values: [[String(value || '')]] } });
+        if (field === 'prepDT'    && colPrepDT    >= 0) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + addr(colPrepDT)    + '\')', body: { values: [[String(value || '')]] } });
+        if (field === 'analDT'    && colAnalDT    >= 0) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + addr(colAnalDT)    + '\')', body: { values: [[String(value || '')]] } });
 
       // Color indicator
       var newHex = null;
@@ -149,9 +151,7 @@ app.http('patch-report-cell', {
         if (newHex) patchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult - 1) + (targetRow + 1) + '\')/format/fill', body: { color: newHex } });
       }
 
-      // Hardness recalculation
-      var hardnessUpdate = null;
-      if (field === 'value' && (paramName === 'Calcium, Total' || paramName === 'Magnesium, Total')) {
+        if (field === 'value' && (paramName === 'Calcium, Total' || paramName === 'Magnesium, Total')) {
         var caVal = NaN, mgVal = NaN;
         var otherParam = paramName === 'Calcium, Total' ? 'Magnesium, Total' : 'Calcium, Total';
         var otherLow   = normalizeCell(otherParam);
@@ -173,7 +173,7 @@ app.http('patch-report-cell', {
           for (var r4 = hdrRow + 1; r4 < rows.length; r4++) {
             var hn = normalizeCell((rows[r4] || [])[0]) || normalizeCell((rows[r4] || [])[1]);
             if (hn === hardnessLow || hn.startsWith('hardness')) {
-              if (colResult >= 0) patchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult) + (r4 + 1) + '\')', body: { values: [[hardnessStr]] } });
+              if (colResult >= 0) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult) + (r4 + 1) + '\')', body: { values: [[hardnessStr]] } });
               hardnessUpdate = { paramName: 'Hardness by calculation', value: hardnessStr };
               break;
             }
@@ -181,13 +181,17 @@ app.http('patch-report-cell', {
         }
       }
 
-      // Send batch
-      if (patchReqs.length) {
+        // Collect this sheet's requests
+        allPatchReqs = allPatchReqs.concat(sheetPatchReqs);
+      } // end per-sheet loop
+
+      // Send all collected requests as one batch
+      if (allPatchReqs.length) {
         await fetch(GRAPH + '/$batch', {
           method:  'POST',
           headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            requests: patchReqs.map(function(r, i) {
+            requests: allPatchReqs.map(function(r, i) {
               return { id: String(i + 1), method: 'PATCH', url: r.url, headers: { 'Content-Type': 'application/json', 'workbook-session-id': sid }, body: r.body };
             }),
           }),
