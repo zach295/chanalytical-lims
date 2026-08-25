@@ -5191,6 +5191,13 @@ document.addEventListener('DOMContentLoaded', function() {
     statusEl.style.color = 'var(--slate)';
     statusEl.textContent = '⏳ Loading report data...';
     document.getElementById('rpt-preview-wrapper').style.display = 'none';
+    // Clean up any previously kept Excel temp file
+    if (currentReportData?._tempId) {
+      fetch('/api/render-report-pdf', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ labId:'cleanup', exportOnly:true, tempId: currentReportData._tempId, keepTemp:false, isRadon:false })
+      }).catch(()=>{});
+      currentReportData._tempId = null;
+    }
 
     try {
       // ── Step 1: Fast call — Sheets metadata only (should complete in <5s) ──
@@ -5334,7 +5341,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const pdfRes = await fetch('/api/render-report-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportData, authorizedBy, reviewDate }),
+        body: JSON.stringify({ reportData, authorizedBy, reviewDate, keepTemp: true }),
       });
       const pdfData = await pdfRes.json().catch(() => ({}));
       if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
@@ -5343,6 +5350,7 @@ document.addEventListener('DOMContentLoaded', function() {
       currentReportData._cachedPdfBase64 = pdfData.pdfBase64;
       currentReportData._cachedFileName  = pdfData.fileName;
       currentReportData._pdfStale        = false;
+      currentReportData._tempId          = pdfData.tempId || null; // kept Excel file ID
 
       // Show in iframe
       const bytes = Uint8Array.from(atob(pdfData.pdfBase64), c => c.charCodeAt(0));
@@ -5400,6 +5408,12 @@ document.addEventListener('DOMContentLoaded', function() {
       if (apIdx >= 0) currentReportData.activeParams[apIdx].value = val;
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].value = val;
+      // Write edit to the kept Excel file (fire-and-forget, non-blocking)
+      if (currentReportData._tempId) {
+        fetch('/api/patch-report-cell', { method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ tempId: currentReportData._tempId, paramName: param, field: 'value', value: val }) 
+        }).catch(() => {});
+      }
       currentReportData.resultsMap[param].value = val;
       const color = getResultColor(param, val, currentReportData);
       // Update the separate color box div (previous sibling td)
@@ -5419,6 +5433,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (apIdx >= 0) currentReportData.activeParams[apIdx].qualifier = val;
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].qualifier = val;
+      if (currentReportData._tempId) fetch('/api/patch-report-cell', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ tempId: currentReportData._tempId, paramName: param, field: 'qualifier', value: val }) }).catch(()=>{});
     } else if (key.startsWith('prepDT:')) {
       const param = key.replace('prepDT:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
@@ -5791,6 +5807,19 @@ document.addEventListener('DOMContentLoaded', function() {
         if (currentReportData._cachedPdfBase64 && !currentReportData._pdfStale) {
           pdfBase642 = currentReportData._cachedPdfBase64;
           fileName2  = currentReportData._cachedFileName;
+        } else if (currentReportData._tempId && currentReportData._pdfStale) {
+          // Export PDF from the kept, already-edited Excel file
+          statusEl.textContent = '⏳ Exporting PDF from template...';
+          const pdfRes2 = await fetch('/api/render-report-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labId, exportOnly: true, tempId: currentReportData._tempId, isRadon: currentReportData.isRadon, keepTemp: false }),
+          });
+          const pdfData2 = await pdfRes2.json().catch(() => ({}));
+          if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF export failed');
+          pdfBase642 = pdfData2.pdfBase64;
+          fileName2  = pdfData2.fileName;
+          currentReportData._tempId = null; // file was deleted by exportOnly
         } else {
           statusEl.textContent = '⏳ Generating PDF from template...';
           const pdfRes2 = await fetch('/api/render-report-pdf', {
