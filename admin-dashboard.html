@@ -5284,14 +5284,19 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('rpt-authorized-by').value = getAdminName();
       document.getElementById('rpt-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
+      // Cleanup any previous temp file before creating a new one
+      if (currentReportData._tempId) cleanupTempFile(currentReportData._tempId);
+
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
       document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      statusEl.textContent = `✅ Data loaded — generating PDF preview...`;
+      statusEl.textContent = '✅ Report loaded — preparing Excel file...';
       statusEl.style.color = 'var(--success)';
 
-      // Pre-generate PDF from template immediately — accurate colors + ready for send
-      preGenerateReportPdf(currentReportData);
+      // Prepare Excel in background — fills template, returns colors for preview
+      prepareReportExcel(currentReportData).then(() => {
+        statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
+      });
 
     } catch (err) {
       statusEl.textContent = '⚠️ ' + err.message;
@@ -5434,6 +5439,40 @@ document.addEventListener('DOMContentLoaded', function() {
     if (currentReportData._cachedPdfBase64) currentReportData._pdfStale = true;
   }
 
+  // ── Phase 5: Prepare Excel and sync colors to preview ──────────────────────
+  async function prepareReportExcel(reportData) {
+    if (!reportData) return;
+    const authorizedBy = document.getElementById('rpt-authorized-by')?.value || getAdminName();
+    const reviewDate   = document.getElementById('rpt-review-date')?.value || '';
+    try {
+      const res  = await fetch('/api/prepare-report', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportData, authorizedBy, reviewDate }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) { console.warn('[prepare] failed:', data.error); return; }
+
+      reportData._tempId = data.tempId;
+      console.log('[prepare] tempId:', data.tempId, '| colors:', Object.keys(data.cellColors || {}).length);
+
+      // Apply Excel-generated colors to preview dots
+      Object.entries(data.cellColors || {}).forEach(([paramName, hex]) => {
+        const span = document.querySelector(`#rpt-live-preview span[data-key="result:${paramName}"]`);
+        const dot  = span?.closest('td')?.previousElementSibling?.querySelector('.color-dot');
+        if (dot) dot.style.background = hex;
+      });
+    } catch(e) { console.error('[prepare] error:', e); }
+  }
+
+  // Delete a kept temp file (fire and forget)
+  function cleanupTempFile(tempId) {
+    if (!tempId) return;
+    fetch('/api/export-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempId, cleanupOnly: true }),
+    }).catch(() => {});
+  }
+
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
@@ -5503,6 +5542,18 @@ document.addEventListener('DOMContentLoaded', function() {
       const resultTd = el.closest('td');
       const colorDiv = resultTd?.previousElementSibling?.querySelector('div');
       if (colorDiv) colorDiv.style.background = getColor(param, val);
+
+      // Write edit to kept Excel file — use confirmed Excel color for dot
+      if (currentReportData._tempId) {
+        const _tId   = currentReportData._tempId;
+        const _sheet = (currentReportData.fhaParams||[]).find(p => p.name === param) ? 'fha' : 'lab';
+        fetch('/api/patch-report-cell', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tempId: _tId, paramName: param, field: 'value', value: val, sheetType: _sheet }),
+        }).then(r => r.json()).then(d => {
+          if (d.success && d.newHex && colorDiv) colorDiv.style.background = d.newHex;
+        }).catch(() => {});
+      }
     } else if (key.startsWith('qualifier:')) {
       const param = key.replace('qualifier:', '');
       if (!currentReportData.resultsMap[param]) currentReportData.resultsMap[param] = {};
@@ -5973,15 +6024,23 @@ document.addEventListener('DOMContentLoaded', function() {
         // ── Step 1: Use cached PDF or generate now ──────────────────────────
         statusEl.textContent = '⏳ Preparing PDF...';
         let pdfBase64, fileName;
-        if (currentReportData._cachedPdfBase64 && !currentReportData._pdfStale) {
-          pdfBase64 = currentReportData._cachedPdfBase64;
-          fileName  = currentReportData._cachedFileName;
-          statusEl.textContent = '⏳ Using pre-generated PDF...';
+        if (currentReportData._tempId) {
+          // Use kept Excel file and delete it after send
+          statusEl.textContent = '⏳ Generating PDF...';
+          const pdfRes = await fetch('/api/export-pdf', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tempId: currentReportData._tempId, labId, isRadon: currentReportData.isRadon, keepTemp: false }),
+          });
+          const pdfData = await pdfRes.json().catch(() => ({}));
+          if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF export failed');
+          pdfBase64 = pdfData.pdfBase64;
+          fileName  = pdfData.fileName;
+          currentReportData._tempId = null; // file deleted by export-pdf
         } else {
+          // Fallback
           statusEl.textContent = '⏳ Generating PDF from template...';
           const pdfRes = await fetch('/api/render-report-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
           });
           const pdfData = await pdfRes.json().catch(() => ({}));
@@ -6013,17 +6072,24 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
 
       } else {
-        // ── Save PDF: use cached PDF or generate ─────────────────────────────
-        statusEl.textContent = '⏳ Preparing PDF...';
+        // ── Save PDF ─────────────────────────────────────────────────────────
+        statusEl.textContent = '⏳ Generating PDF...';
         let pdfBase642, fileName2;
-        if (currentReportData._cachedPdfBase64 && !currentReportData._pdfStale) {
-          pdfBase642 = currentReportData._cachedPdfBase64;
-          fileName2  = currentReportData._cachedFileName;
+        if (currentReportData._tempId) {
+          // Use kept Excel file — fast, accurate
+          const pdfRes2 = await fetch('/api/export-pdf', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tempId: currentReportData._tempId, labId, isRadon: currentReportData.isRadon, keepTemp: true }),
+          });
+          const pdfData2 = await pdfRes2.json().catch(() => ({}));
+          if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF export failed');
+          pdfBase642 = pdfData2.pdfBase64;
+          fileName2  = pdfData2.fileName;
         } else {
+          // Fallback — no kept Excel file, generate from scratch
           statusEl.textContent = '⏳ Generating PDF from template...';
           const pdfRes2 = await fetch('/api/render-report-pdf', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
           });
           const pdfData2 = await pdfRes2.json().catch(() => ({}));
