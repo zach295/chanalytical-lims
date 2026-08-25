@@ -1,0 +1,389 @@
+/**
+ * prepare-report.js — Phase 2
+ * Creates a filled copy of the Excel report template and keeps it alive.
+ * Does NOT convert to PDF. Returns tempId (the kept file) and cellColors
+ * (exact fill colors written to the color indicator cells).
+ *
+ * Called by the dashboard when a report is loaded.
+ * The kept file is later used by export-pdf.js (Phase 3) for PDF generation
+ * and patch-report-cell.js (Phase 4) for live edits.
+ */
+
+const { app }      = require('@azure/functions');
+const { getToken } = require('../shared/graph');
+const GRAPH        = 'https://graph.microsoft.com/v1.0';
+
+const TMPL_LAB   = 'Lab Report - Template';
+const TMPL_FHA   = 'FHA Lab Report - Template';
+const TMPL_RADON = 'Radon Lab Report - Template';
+const TMPL_SPEC  = 'Arsenic Spec Report - Template';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function toDrivePath(p) {
+  const m = 'Shared Documents/';
+  const i = p.indexOf(m);
+  const r = i >= 0 ? p.slice(i + m.length) : p.replace(/^\/+/, '');
+  return r.split('/').map(s => encodeURIComponent(s)).join('/');
+}
+
+function colLetter(n) {
+  let s = '';
+  while (n >= 0) { s = String.fromCharCode((n % 26) + 65) + s; n = Math.floor(n / 26) - 1; }
+  return s;
+}
+
+function normalizeCell(v) {
+  return String(v || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').toLowerCase().trim();
+}
+
+function findLabel(rows, label) {
+  const l = normalizeCell(label);
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < (rows[r] || []).length; c++) {
+      const v = normalizeCell(rows[r][c]);
+      if (v === l || v.startsWith(l)) return { r, c };
+    }
+  }
+  return null;
+}
+
+// Compute explicit fill color for a result value
+function calcFillColor(paramName, displayVal, epa) {
+  if (!displayVal && displayVal !== 0) return null;
+  const s = String(displayVal).trim();
+  if (!s) return null;
+  if (s.startsWith('<')) return '#00CC44';
+  if (paramName === 'pH Electrometric') {
+    const n = parseFloat(s);
+    return isNaN(n) ? null : (n >= 6.5 && n <= 8.5) ? '#00CC44' : '#FF0000';
+  }
+  if (!epa && epa !== 0) return null;
+  const n = parseFloat(s);
+  if (isNaN(n)) return '#0070C0';
+  return n <= parseFloat(epa) ? '#00CC44' : '#FF0000';
+}
+
+async function gReq(method, path, token, body, sid) {
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (sid) h['workbook-session-id'] = sid;
+  const o = { method, headers: h };
+  if (body !== undefined) o.body = JSON.stringify(body);
+  return fetch(`${GRAPH}${path}`, o);
+}
+
+async function graphBatch(reqs, token, sid) {
+  const r = await fetch(`${GRAPH}/$batch`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: reqs.map((r, i) => ({
+        id:      String(i + 1),
+        method:  r.method || 'PATCH',
+        url:     r.url,
+        headers: { 'Content-Type': 'application/json', ...(sid ? { 'workbook-session-id': sid } : {}) },
+        body:    r.body,
+      })),
+    }),
+  });
+  if (!r.ok) return [];
+  return (await r.json()).responses || [];
+}
+
+// ── Fill one sheet ─────────────────────────────────────────────────────────────
+// Returns { paramName: hexColor } for all params written to this sheet
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell) {
+  const base         = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
+  const cellUpdates  = [];
+  const colorUpdates = [];
+  const cellColors   = {}; // return value: paramName → hex
+
+  const rr = await gReq('GET', `${base}/usedRange?$select=values,columnCount`, token, undefined, sid);
+  if (!rr.ok) { context.log('[prepare] usedRange failed:', rr.status); return cellColors; }
+  const { values: rows, columnCount: nc } = await rr.json();
+  if (!rows?.length) return cellColors;
+
+  const addCell = (r, c, val) => cellUpdates.push({
+    url:  `${base}/range(address='${colLetter(c)}${r + 1}')`,
+    body: { values: [[String(val || '')]] },
+  });
+
+  // ── Attention block ───────────────────────────────────────────────────────
+  const attLbl = findLabel(rows, 'attention');
+  if (attLbl) {
+    const m            = meta || {};
+    const attCol       = attLbl.c + 1;
+    const cityStateZip = [m.city, m.state, m.zip].filter(Boolean).join(', ');
+    const attAddress   = m.billingAddress || [m.location, cityStateZip].filter(Boolean).join(', ') || '';
+    const rawName      = (m.clientName || m.customer || '').replace(/^Public-/i, '').trim();
+    const cleanName    = rawName.includes(', ') ? rawName.split(', ').reverse().join(' ') : rawName;
+    addCell(attLbl.r,     attCol, cleanName);
+    if (attAddress)  addCell(attLbl.r + 1, attCol, attAddress);
+    const emailLine = m.reportEmail || m.email || '';
+    if (emailLine)   addCell(attLbl.r + 2, attCol, emailLine);
+  }
+
+  // ── Location block ────────────────────────────────────────────────────────
+  const lf = findLabel(rows, 'location:');
+  if (lf) {
+    let locValCol = lf.c + 1;
+    for (let dc = 1; dc <= 6; dc++) {
+      if (!normalizeCell((rows[lf.r] || [])[lf.c + dc])) { locValCol = lf.c + dc; break; }
+    }
+    const cityLine = [meta.city, meta.state, meta.zip].filter(Boolean).join(', ');
+    addCell(lf.r,     locValCol, meta.location || '');
+    addCell(lf.r + 1, locValCol, cityLine);
+  }
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  if (comments && commentsCell) {
+    const cm = commentsCell.match(/^([A-Z]+)(\d+)$/i);
+    if (cm) {
+      const cc = cm[1].toUpperCase().split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+      const cr = parseInt(cm[2], 10) - 1;
+      addCell(cr, cc, comments);
+    }
+  }
+
+  // ── Find parameter table header ───────────────────────────────────────────
+  let hdrRow = -1, colResult = -1, colPrepDT = -1, colAnalDT = -1, colQualifier = 5;
+  for (let r = 0; r < rows.length; r++) {
+    const rl = (rows[r] || []).map(c => normalizeCell(c));
+    if (rl.some(c => c.includes('your result') || c === 'result')) {
+      hdrRow = r;
+      rl.forEach((c, i) => {
+        if (c.includes('your result') || c === 'result')           colResult    = i;
+        else if (c.includes('preparation') || c.includes('prep'))  colPrepDT    = i;
+        else if (c.includes('analysis')    || c.includes('anal'))  colAnalDT    = i;
+        else if (c.includes('qualifier')   || c.includes('qual'))  colQualifier = i;
+      });
+      break;
+    }
+  }
+
+  // ── Map parameter names to rows ───────────────────────────────────────────
+  const pMap = {};
+  if (hdrRow >= 0) {
+    let emptyStreak = 0;
+    for (let r = hdrRow + 1; r < rows.length; r++) {
+      const name = normalizeCell((rows[r] || [])[0]) || normalizeCell((rows[r] || [])[1]);
+      if (name && (name.startsWith('notation') || name.startsWith('comment') || name.startsWith('authorized'))) break;
+      if (!name) { if (++emptyStreak >= 5) break; continue; }
+      emptyStreak = 0;
+      pMap[name] = r;
+    }
+  }
+
+  const toHide = [];
+
+  for (const [nameLow, ri] of Object.entries(pMap)) {
+    const p = params.find(x => {
+      const pn = normalizeCell(x.name);
+      return pn === nameLow || pn.startsWith(nameLow) || nameLow.startsWith(pn);
+    });
+    if (!p) {
+      toHide.push(ri + 1);
+    } else {
+      if (colResult >= 0 && p.value)               addCell(ri, colResult,    p.value);
+      if (colPrepDT >= 0 && p.prepDT)              addCell(ri, colPrepDT,    p.prepDT);
+      if (colAnalDT >= 0 && (p.analDT || p.time))  addCell(ri, colAnalDT,    p.analDT || p.time);
+      if (p.qualifier)                              addCell(ri, colQualifier, p.qualifier);
+
+      // Write explicit fill color to color indicator cell (col before result)
+      if (colResult > 0) {
+        const hex = calcFillColor(p.name, p.value, p.epa);
+        if (hex) {
+          colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
+          cellColors[p.name] = hex;
+        }
+      }
+    }
+  }
+
+  context.log(`[prepare] ${cellUpdates.length} cell writes, ${colorUpdates.length} color writes, ${toHide.length} rows to hide`);
+
+  // Batch write values
+  for (let i = 0; i < cellUpdates.length; i += 20) {
+    await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
+  }
+
+  // Batch write fill colors
+  for (let i = 0; i < colorUpdates.length; i += 20) {
+    await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
+  }
+
+  // Hide unused rows
+  if (toHide.length > 0) {
+    const ascending = [...toHide].sort((a, b) => a - b);
+    const ranges = [];
+    let rs = ascending[0], re = ascending[0];
+    for (let i = 1; i < ascending.length; i++) {
+      if (ascending[i] === re + 1) re = ascending[i];
+      else { ranges.push([rs, re]); rs = re = ascending[i]; }
+    }
+    ranges.push([rs, re]);
+    const hideReqs = ranges.map(([s, e]) => ({
+      url:  `${base}/range(address='A${s}:${colLetter((nc || 10) - 1)}${e}')/format`,
+      body: { rowHeight: 0 },
+    }));
+    for (let i = 0; i < hideReqs.length; i += 20) {
+      await graphBatch(hideReqs.slice(i, i + 20), token, sid);
+    }
+  }
+
+  return cellColors;
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+app.http('prepare-report', {
+  methods:   ['POST'],
+  authLevel: 'anonymous',
+  handler:   async (request, context) => {
+    const siteId = process.env.SP_SITE_ID;
+    const body   = await request.json().catch(() => null);
+    if (!body?.reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
+
+    const { reportData, authorizedBy = '', reviewDate = '' } = body;
+    const meta       = reportData.meta     || {};
+    const labId      = reportData.labId    || '';
+    const params     = reportData.activeParams || reportData.paramRows || [];
+    const fhaParams  = reportData.fhaParams   || reportData.fhaRows   || [];
+    const needsFHA   = reportData.needsFHA;
+    const isRadon    = reportData.isRadon;
+    const isArsenicSpec = reportData.isArsenicSpec;
+    const today      = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+
+    let token;
+    try { token = await getToken(); }
+    catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
+
+    // ── Step 1: Download template ─────────────────────────────────────────
+    const tmplPath = process.env.SP_REPORT_TEMPLATE ||
+      '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
+    const dp = toDrivePath(tmplPath);
+
+    let tmplBuffer, folderPath;
+    try {
+      const metaR = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${dp}?$select=id`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      if (!metaR.ok) throw new Error(`Template not found (${metaR.status})`);
+      const { id: tmplId } = await metaR.json();
+      folderPath = dp.replace(/\/[^/]+$/, '');
+      const dlR = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tmplId}/content`,
+        { headers: { Authorization: `Bearer ${token}` } });
+      if (!dlR.ok) throw new Error(`Template download failed (${dlR.status})`);
+      tmplBuffer = Buffer.from(await dlR.arrayBuffer());
+      context.log('[prepare] Template downloaded:', tmplBuffer.length, 'bytes');
+    } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
+
+    // ── Step 2: Upload as named copy ──────────────────────────────────────
+    const fileName = isRadon ? `${labId} RW Report.xlsx` : `${labId} Report.xlsx`;
+    let tempId;
+    try {
+      const upR = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}/${encodeURIComponent(fileName)}:/content`,
+        { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: tmplBuffer }
+      );
+      if (!upR.ok) throw new Error(`Upload failed (${upR.status})`);
+      tempId = (await upR.json()).id;
+      context.log('[prepare] Temp file created:', fileName, tempId);
+    } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
+
+    // ── Step 3: Open workbook session ─────────────────────────────────────
+    let sid = null;
+    const sr = await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`, token, { persistChanges: true });
+    if (sr.ok) sid = (await sr.json()).id || null;
+    context.log('[prepare] Session:', sid ? 'OK' : 'none');
+
+    // ── Step 4: Get and clean up sheets ──────────────────────────────────
+    const wr     = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+    const sheets = wr.ok ? (await wr.json()).value || [] : [];
+    const ws     = name => sheets.find(s => s.name === name);
+
+    const toDelete = [];
+    if (isRadon) {
+      if (ws(TMPL_LAB))   toDelete.push(ws(TMPL_LAB));
+      if (ws(TMPL_FHA))   toDelete.push(ws(TMPL_FHA));
+    } else {
+      if (ws(TMPL_RADON)) toDelete.push(ws(TMPL_RADON));
+      if (!needsFHA || !fhaParams.length) { if (ws(TMPL_FHA)) toDelete.push(ws(TMPL_FHA)); }
+    }
+    for (const sheet of toDelete) {
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, undefined, sid);
+    }
+
+    // ── Step 5: Rename sheets ─────────────────────────────────────────────
+    const remainR   = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+    const remaining = remainR.ok ? (await remainR.json()).value || [] : [];
+    for (const sheet of remaining) {
+      const newName = sheet.name.replace(/\s*-\s*Template\s*$/i, '').trim();
+      if (newName !== sheet.name) {
+        await gReq('PATCH', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}`, token, { name: newName }, sid);
+      }
+    }
+
+    // ── Step 6: Fill sheets ───────────────────────────────────────────────
+    const finalR    = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
+    const finalSheets = finalR.ok ? (await finalR.json()).value || [] : [];
+    const labSheet   = finalSheets.find(s => /^lab report/i.test(s.name));
+    const fhaSheet   = finalSheets.find(s => /^fha/i.test(s.name));
+    const radonSheet = finalSheets.find(s => /^radon/i.test(s.name));
+    const specSheet  = finalSheets.find(s => /arsenic.*spec/i.test(s.name));
+
+    // Header writer helper
+    const writeHeaders = async (wsId, cells) => {
+      const wsBase = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${wsId}`;
+      const hHdr   = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      const splitDT = dt => { if (!dt) return ['','']; const i = dt.indexOf(' '); return i > 0 ? [dt.slice(0,i), dt.slice(i+1)] : [dt,'']; };
+      const [dc, tc] = splitDT(meta.dtCollected || meta.dateDrawn || '');
+      const [dr, tr] = splitDT(meta.dtReceived  || meta.dateReceived || '');
+      const vals = { labId, dc, tc, dr, tr, today: meta.dateReported || today };
+      for (const [addr, key] of cells) {
+        if (vals[key]) await fetch(`${wsBase}/range(address='${addr}')`,
+          { method:'PATCH', headers:hHdr, body:JSON.stringify({ values:[[vals[key]]] }) }).catch(()=>{});
+      }
+    };
+
+    // MODULE-LEVEL cellColors accumulator — no block-scope issues
+    let cellColors = {};
+
+    if (isRadon && radonSheet) {
+      await writeHeaders(radonSheet.id, [['I7','labId'],['I8','dc'],['J8','tc'],['I9','dr'],['J9','tr'],['I10','today']]);
+      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '');
+      Object.assign(cellColors, c);
+      if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+    } else if (isArsenicSpec && specSheet) {
+      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24');
+      Object.assign(cellColors, c);
+    } else if (labSheet) {
+      if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
+      await writeHeaders(labSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
+      // Write authorized by and review date
+      const wbHdrLab = { Authorization:`Bearer ${token}`, 'workbook-session-id':sid, 'Content-Type':'application/json' };
+      const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
+      for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
+        if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, { method:'PATCH', headers:wbHdrLab, body:JSON.stringify({ values:[[val]] }) }).catch(()=>{});
+      }
+      const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48');
+      Object.assign(cellColors, c);
+    }
+
+    if (fhaSheet && needsFHA && fhaParams.length) {
+      await writeHeaders(fhaSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
+      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27');
+      Object.assign(cellColors, c);
+    }
+
+    // ── Step 7: Close session (keep file alive) ───────────────────────────
+    if (sid) {
+      await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}, sid).catch(()=>{});
+    }
+
+    context.log(`[prepare] Done — tempId: ${tempId}, colors returned: ${Object.keys(cellColors).length}`);
+
+    return {
+      status:   200,
+      jsonBody: { success: true, tempId, fileName, cellColors },
+    };
+  },
+});
