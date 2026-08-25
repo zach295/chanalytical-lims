@@ -145,21 +145,37 @@ app.http('send-report', {
       let toEmail    = resolvedEmail || '';
       let clientName = overrideName  || '';
       if (!toEmail) {
-        const clientsRes = await fetch(
-          `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields&$top=500`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (clientsRes.ok) {
-          const { value } = await clientsRes.json();
-          const baseId    = String(labId).match(/(\d{6}-\d{3})/)?.[1] || labId;
-          const match     = (value || []).find(i =>
-            String(i.fields?.LabID || '').split(' ')[0].trim() === baseId
+        // Look up customer from Archived Intake, then find email in Clients list
+        const baseId = String(labId).match(/(\d{6}-\d{3})/)?.[1] || labId;
+        try {
+          const aiRes = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/Archived Intake/items?$expand=fields($select=field_1,field_3)&$top=500`,
+            { headers: { Authorization: `Bearer ${token}` } }
           );
-          if (match) {
-            toEmail    = match.fields?.ReportEmail || match.fields?.Email || '';
-            clientName = match.fields?.ClientName  || match.fields?.Title || '';
+          if (aiRes.ok) {
+            const aiData    = await aiRes.json();
+            const aiRow     = (aiData.value || []).find(i => String(i.fields?.field_1 || '').startsWith(baseId));
+            const customer  = aiRow?.fields?.field_3 || '';
+            if (customer) {
+              const clientsRes = await fetch(
+                `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,Aliases,Email,Title)&$top=500`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (clientsRes.ok) {
+                const { value } = await clientsRes.json();
+                const custLow   = customer.toLowerCase().replace(/^public-/i,'').trim();
+                const match     = (value || []).find(i => {
+                  const cn = (i.fields?.ClientName || i.fields?.Title || '').toLowerCase().trim();
+                  return cn === custLow || custLow.includes(cn) || cn.includes(custLow);
+                });
+                if (match) {
+                  toEmail    = match.fields?.Aliases || match.fields?.Email || '';
+                  clientName = match.fields?.ClientName || match.fields?.Title || customer;
+                }
+              }
+            }
           }
-        }
+        } catch(e) { context.log('[send-report] Email lookup error:', e.message); }
       }
 
       if (!toEmail) return { status: 400, jsonBody: {
@@ -203,7 +219,7 @@ app.http('send-report', {
           Title: `${logDate2} ${labId}`, Client: labId,
           ActivityType: 'Report Saved',
           Notes: 'PDF downloaded by lab staff',
-          By: authorizedBy || 'Lab Staff',
+          By: body.authorizedBy || 'Lab Staff',
           LogDate: logDate2, LogTime: logTime2, Quantity: 0,
         }).catch(() => {});
         return { status: 200, jsonBody: { success: true, logged: true } };
@@ -272,7 +288,7 @@ app.http('send-report', {
         const action  = body.saveOnly ? 'Report Saved' : 'Report Emailed';
         const details = body.saveOnly
           ? `PDF saved to SharePoint Archive`
-          : `Emailed to: ${toEmail} | COC attached: ${coc ? 'Yes' : 'No'} | Report type: ${reportData?.isRW ? 'RW' : reportData?.isFHA ? 'FHA' : 'Standard'}`;
+          : `Emailed to: ${toEmail} | COC attached: ${coc ? 'Yes' : 'No'} | Report type: ${body.isRadon ? 'RW' : 'COA'}`;
         await createItem('Activity Log', {
           Title:        `${logDate} ${labId}`,
           Client:       labId,
