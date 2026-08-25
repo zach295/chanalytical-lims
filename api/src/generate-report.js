@@ -460,17 +460,43 @@ async function getClientInfo(customerName, token) {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) return empty;
-    const data  = await res.json();
-    const name  = customerName.toLowerCase().trim();
-    const formatted = formatCustomerName(customerName).toLowerCase().trim();
-    const match = (data.value || []).find(item => {
-      const f  = item.fields || {};
-      // ClientName is the primary name field in the new client list structure
-      const cn = (f.ClientName || f.Title || '').toLowerCase().trim();
+    const data      = await res.json();
+    const clients   = (data.value || []).map(item => ({ item, f: item.fields || {} }));
+    const name      = customerName.toLowerCase().replace(/[.,]/g,'').trim();
+    const formatted = formatCustomerName(customerName).toLowerCase().replace(/[.,]/g,'').trim();
+
+    const normalize = s => String(s||'').toLowerCase().replace(/[.,]/g,'').trim();
+
+    // 1. Exact match on ClientName or formatted name
+    let match = clients.find(({ f }) => {
+      const cn = normalize(f.ClientName || f.Title);
       return cn === name || cn === formatted;
-    });
+    })?.item;
+
+    // 2. Containment match — one name includes the other (handles LLC, Inc suffix differences)
+    if (!match) {
+      match = clients.find(({ f }) => {
+        const cn = normalize(f.ClientName || f.Title);
+        if (cn.length < 4 || name.length < 4) return false;
+        return cn.includes(name) || name.includes(cn) ||
+               cn.includes(formatted) || formatted.includes(cn);
+      })?.item;
+    }
+
+    // 3. Word-based match — significant words from either name appear in the other
+    if (!match) {
+      const STOP = new Set(['water','home','inspection','inspections','inc','llc','ltd','and','the','of']);
+      const sigWords = name.split(/\s+/).filter(w => w.length >= 4 && !STOP.has(w));
+      if (sigWords.length >= 1) {
+        match = clients.find(({ f }) => {
+          const cn = normalize(f.ClientName || f.Title);
+          return sigWords.every(w => cn.includes(w));
+        })?.item;
+      }
+    }
+
     if (!match) return empty;
-    const f = match.fields || {};
+    const f = match.fields || match.field || {};
     // New Clients list field mapping (internal names differ from display names):
     // Aliases = Report Email, Notes = Billing Email, Active = Phone #,
     // Email = Main Contact (first name), Phone = DBA Name
