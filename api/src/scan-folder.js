@@ -477,8 +477,13 @@ app.http('scan-folder', {
               context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs, text length: ${azureText.length}`);
 
               if (azureText.length < 50) {
-                context.log(`[scan] ⚠️ Azure returned almost no text (${azureText.length} chars) — form may be blank, low quality, or back-page only. Skipping Claude extraction.`);
-                // Don't skip — fall through to Claude with empty text so the card still appears
+                context.log(`[scan] ⚠️ Azure returned almost no text (${azureText.length} chars) — retrying with no back-page filter`);
+                // Retry: use ALL paragraphs with no filtering
+                const allParas = (azureResult.analyzeResult?.paragraphs || []).map(p => p.content || '').filter(Boolean);
+                if (allParas.length > 0) {
+                  azureText = allParas.join('\n');
+                  context.log(`[scan] Retry with all paragraphs: ${azureText.length} chars`);
+                }
               }
 
               // Claude Sonnet structures Azure's text into JSON
@@ -558,7 +563,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               },
               body: JSON.stringify({
                 model:      'claude-sonnet-4-6',
-                max_tokens: 1000,
+                max_tokens: 2000,
                 system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation.',
                 messages: [{ role:'user', content:
 `Extract from this water testing COC form text. Known business clients: ${aliasCtx}
