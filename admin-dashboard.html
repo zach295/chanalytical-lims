@@ -737,21 +737,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
       <!-- Action bar above report -->
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <div style="font-size:13px;color:var(--slate);flex:1;">PDF Preview shows the actual report. Switch to Edit Fields to modify values — PDF regenerates automatically on Save/Send.</div>
+        <div style="font-size:13px;color:var(--slate);flex:1;">Click any result, name, or comment to edit it directly on the report.</div>
         <button class="action-btn" onclick="resetReportEdits()" style="color:var(--warning);border-color:var(--warning);">↺ Reset Changes</button>
       </div>
 
-      <!-- Report container — PDF preview (primary) + editable HTML (secondary) -->
-      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
-        <button id="rpt-tab-pdf" onclick="switchPreviewTab('pdf')" style="padding:6px 16px;border-radius:6px;border:1.5px solid var(--teal);background:var(--teal);color:white;cursor:pointer;font-size:13px;font-weight:600;">📄 PDF Preview</button>
-        <button id="rpt-tab-html" onclick="switchPreviewTab('html')" style="padding:6px 16px;border-radius:6px;border:1.5px solid var(--border);background:white;color:var(--navy);cursor:pointer;font-size:13px;">✏️ Edit Fields</button>
-        <span id="rpt-pdf-status" style="font-size:12px;color:var(--slate);margin-left:8px;"></span>
-      </div>
-      <div id="rpt-pdf-panel" style="width:100%;max-width:860px;height:900px;border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);">
-        <div id="rpt-pdf-loading" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--slate);font-size:14px;">⏳ Generating PDF preview from template...</div>
-        <iframe id="rpt-pdf-iframe" style="width:100%;height:100%;border:none;display:none;" title="Report PDF Preview"></iframe>
-      </div>
-      <div id="rpt-live-preview" style="display:none;background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
+      <!-- Report container — editable fields -->
+      <span id="rpt-pdf-status" style="font-size:12px;color:var(--slate);display:none;"></span>
+      <div id="rpt-pdf-panel" style="display:none;"></div>
+      <iframe id="rpt-pdf-iframe" style="display:none;" title="Report PDF"></iframe>
+      <div id="rpt-live-preview" style="background:white;border:1px solid var(--border);border-radius:10px;padding:32px 36px;box-shadow:var(--shadow);max-width:860px;font-family:Arial,sans-serif;font-size:13px;color:#000;"></div>
 
       <!-- Authorization bar -->
       <div style="background:white;border:1px solid var(--border);border-radius:10px;padding:20px 36px;margin-top:12px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow);">
