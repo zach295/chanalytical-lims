@@ -909,24 +909,48 @@ app.http('approve-scan', {
         } catch(e) { context.log('[AddClient] Failed:', e.message); }
       }
 
-      // ── Delete from Review Queue ─────────────────────────────────────────────
-      // Look up the row by FileID — don't trust the client-supplied rowIndex
+      // ── Delete from Review Queue — direct Graph API, no shared/graph wrapper ──
       try {
-        const rqItems  = await listItems(LISTS.REVIEW_QUEUE, { top: 500 });
-        const rqRow    = rqItems.find(r => (r.FileID || r.FileId || '') === fileId);
-        const rqId     = rqRow?._id || reviewQueueRow;
-        if (rqId) {
-          // Mark Approved first so get-scan-queue filters it even if delete fails
-          await updateItem(LISTS.REVIEW_QUEUE, rqId, { Title: 'Approved' })
-            .catch(e => context.log('[ReviewQueue] Mark failed:', e.message));
-          await deleteItem(LISTS.REVIEW_QUEUE, rqId)
-            .catch(e => context.log('[ReviewQueue] Delete failed:', e.message));
-          context.log(`[ReviewQueue] Marked Approved + deleted row ${rqId} for fileId ${fileId}`);
-        } else {
-          context.log(`[ReviewQueue] No row found for fileId ${fileId} — nothing to delete`);
+        const rqSiteId  = process.env.SP_SITE_ID;
+        const rqAuthHdr = { Authorization: `Bearer ${token}` };
+
+        // Find list ID for Review Queue
+        const listsRes = await fetch(`${GRAPH}/sites/${rqSiteId}/lists?$select=id,displayName`, { headers: rqAuthHdr });
+        const rqListId = ((await listsRes.json()).value || []).find(l => l.displayName === 'Review Queue')?.id;
+
+        if (rqListId) {
+          // Find the row by FileID directly via Graph
+          const rqItemsRes = await fetch(
+            `${GRAPH}/sites/${rqSiteId}/lists/${rqListId}/items?$expand=fields($select=id,Title,FileID,FileId)&$top=500`,
+            { headers: rqAuthHdr }
+          );
+          const rqItems = (await rqItemsRes.json()).value || [];
+          const rqRow   = rqItems.find(i =>
+            (i.fields?.FileID || i.fields?.FileId || '') === fileId ||
+            String(i.id) === String(reviewQueueRow)
+          );
+
+          if (rqRow) {
+            // PATCH Title to 'Approved' — direct Graph call, no updateItem wrapper
+            const markRes = await fetch(
+              `${GRAPH}/sites/${rqSiteId}/lists/${rqListId}/items/${rqRow.id}/fields`,
+              { method: 'PATCH', headers: { ...rqAuthHdr, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ Title: 'Approved' }) }
+            );
+            context.log(`[ReviewQueue] Mark Approved: ${markRes.status} for item ${rqRow.id}`);
+
+            // DELETE the row
+            const delRes = await fetch(
+              `${GRAPH}/sites/${rqSiteId}/lists/${rqListId}/items/${rqRow.id}`,
+              { method: 'DELETE', headers: rqAuthHdr }
+            );
+            context.log(`[ReviewQueue] Delete: ${delRes.status} for item ${rqRow.id}`);
+          } else {
+            context.log(`[ReviewQueue] No row found for fileId=${fileId} reviewQueueRow=${reviewQueueRow}`);
+          }
         }
       } catch(e) {
-        context.log('[ReviewQueue] Lookup error:', e.message);
+        context.log('[ReviewQueue] Error:', e.message);
       }
 
       // ── Move and rename scan file to Archive (organized by Month/Day) ──────────
