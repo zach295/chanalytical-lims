@@ -358,6 +358,15 @@ app.http('prepare-report', {
     try {
     const siteId = process.env.SP_SITE_ID;
     const body   = await request.json().catch(() => null);
+    // Ping mode — just touch file metadata to keep it alive
+    if (body.ping && body.tempId) {
+      try {
+        const pingR = await fetch(`${GRAPH}/sites/${process.env.SP_SITE_ID}/drive/items/${body.tempId}?$select=id,name`,
+          { headers: { Authorization: `Bearer ${await getToken()}` } });
+        return { status: 200, jsonBody: { alive: pingR.ok } };
+      } catch(e) { return { status: 200, jsonBody: { alive: false } }; }
+    }
+
     if (!body?.reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
 
     const { reportData, authorizedBy = '', reviewDate = '' } = body;
@@ -406,10 +415,16 @@ app.http('prepare-report', {
       if (existCheck.ok) {
         const existData = await existCheck.json();
         if (existData.id) {
-          await fetch(`${GRAPH}/sites/${siteId}/drive/items/${existData.id}`,
-            { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+          // Retry delete up to 3 times — file may be briefly locked
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const delR = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${existData.id}`,
+              { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            if (delR.ok || delR.status === 404) break;
+            context.log(`[prepare] Delete attempt ${attempt + 1} failed (${delR.status}), retrying...`);
+            await new Promise(r => setTimeout(r, 1500));
+          }
           context.log('[prepare] Deleted existing file:', fileName);
-          await new Promise(r => setTimeout(r, 500)); // brief wait after delete
+          await new Promise(r => setTimeout(r, 1000)); // wait for deletion to propagate
         }
       }
 
