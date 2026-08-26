@@ -5284,8 +5284,9 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('rpt-authorized-by').value = getAdminName();
       document.getElementById('rpt-review-date').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
-      // Cleanup any previous temp file before creating a new one
-      if (currentReportData._tempId) cleanupTempFile(currentReportData._tempId);
+      // Cleanup any previous session
+      cleanupSession();
+      await cleanupOrphanFiles();
 
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
@@ -5453,14 +5454,10 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!res.ok || !data.success) { console.warn('[prepare] failed:', data.error); return; }
 
       reportData._tempId = data.tempId;
-      console.log('[prepare] tempId:', data.tempId, '| colors:', Object.keys(data.cellColors || {}).length);
-
-      // Apply Excel-generated colors to preview dots
-      Object.entries(data.cellColors || {}).forEach(([paramName, hex]) => {
-        const span = document.querySelector(`#rpt-live-preview span[data-key="result:${paramName}"]`);
-        const dot  = span?.closest('td')?.previousElementSibling?.querySelector('.color-dot');
-        if (dot) dot.style.background = hex;
-      });
+      console.log('[prepare] tempId:', data.tempId);
+      // Save tempId to sessionStorage so orphan cleanup can find it on next load
+      sessionStorage.setItem('_prevTempId', data.tempId);
+      startKeepalive(data.tempId);
     } catch(e) { console.error('[prepare] error:', e); }
   }
 
@@ -5490,6 +5487,57 @@ document.addEventListener('DOMContentLoaded', function() {
         if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
       } catch(e) { console.warn('[flush] patch failed for', pName, e); }
     }
+  }
+
+  // ── Phase 6: Session keepalive + cleanup ────────────────────────────────────
+
+  // Ping the temp file every 4 minutes to keep it alive
+  function startKeepalive(tempId) {
+    stopKeepalive();
+    window._keepaliveTimer = setInterval(async () => {
+      if (!currentReportData?._tempId) { stopKeepalive(); return; }
+      try {
+        await fetch('/api/export-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tempId, cleanupOnly: false, labId: 'keepalive', isRadon: false, keepTemp: true }),
+        });
+      } catch(e) {}
+    }, 4 * 60 * 1000); // every 4 minutes
+  }
+
+  function stopKeepalive() {
+    if (window._keepaliveTimer) { clearInterval(window._keepaliveTimer); window._keepaliveTimer = null; }
+  }
+
+  // Delete temp file and stop keepalive
+  function cleanupSession() {
+    stopKeepalive();
+    const tid = currentReportData?._tempId;
+    if (!tid) return;
+    currentReportData._tempId = null;
+    // Use sendBeacon so it fires even during page unload
+    const payload = JSON.stringify({ tempId: tid, cleanupOnly: true });
+    const sent = navigator.sendBeacon('/api/export-pdf', new Blob([payload], { type: 'application/json' }));
+    if (!sent) fetch('/api/export-pdf', { method:'POST', headers:{'Content-Type':'application/json'}, body: payload, keepalive: true }).catch(()=>{});
+  }
+
+  // Clean up when tab closes or navigates away
+  window.addEventListener('beforeunload', () => cleanupSession());
+
+  // Orphan cleanup — delete any leftover Report.xlsx files older than 2hrs
+  async function cleanupOrphanFiles() {
+    try {
+      const siteId = window._spSiteId; // not available client-side, handled server-side
+      // Just clean up known _tempId from previous session stored in sessionStorage
+      const prevTempId = sessionStorage.getItem('_prevTempId');
+      if (prevTempId) {
+        fetch('/api/export-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tempId: prevTempId, cleanupOnly: true }),
+        }).catch(() => {});
+        sessionStorage.removeItem('_prevTempId');
+      }
+    } catch(e) {}
   }
 
   function resetReportEdits() {
