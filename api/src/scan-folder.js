@@ -487,7 +487,8 @@ app.http('scan-folder', {
               context.log(`[scan] STEP 4 — azureText preview: ${azureText.slice(0, 200)}`);
 
               // If paragraphs are thin, fall back to raw analyzeResult.content (always populated)
-              if (azureText.length < 100) {
+              // Use a high threshold (500) to catch cases where only partial content was extracted
+              if (azureText.length < 500) {
                 const rawContent = (azureResult.analyzeResult?.content || '')
                   .replace(/:selected:/g, '[CHECKED]')
                   .replace(/:unselected:/g, '[unchecked]');
