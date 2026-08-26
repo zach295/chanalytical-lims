@@ -422,7 +422,7 @@ app.http('scan-folder', {
               // Poll until complete — scanned image PDFs can take 20-30 seconds
               let azureResult;
               await new Promise(r => setTimeout(r, 2000)); // initial wait
-              for (let i = 0; i < 30; i++) {
+              for (let i = 0; i < 20; i++) {
                 const pollRes = await fetch(operationUrl, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
                 azureResult   = await pollRes.json();
                 if (azureResult.status === 'succeeded' || azureResult.status === 'failed') break;
@@ -460,10 +460,7 @@ app.http('scan-folder', {
               ];
               const isBackPage = text => {
                 const t = text.toLowerCase().trim();
-                // Only exclude paragraph if it's clearly back-page content
-                // (short paragraph dominated by back-page keywords, or contains multiple keywords)
-                const hits = BACK_PAGE_KEYWORDS.filter(k => t.includes(k)).length;
-                return hits >= 2 || (hits === 1 && t.length < 200);
+                return BACK_PAGE_KEYWORDS.some(k => t.includes(k));
               };
 
               const paragraphs = (azureResult.analyzeResult?.paragraphs || [])
@@ -577,45 +574,34 @@ app.http('scan-folder', {
                 },
                 body: JSON.stringify({
                   model:      'claude-sonnet-4-6',
-                  max_tokens: 2000,
-                  system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation, no preamble.',
+                  max_tokens: 800,
+                  system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation.',
                   messages: [{ role: 'user', content:
-`Extract structured data from this water testing Chain of Custody form.
-Azure Document Intelligence has already read the text. [CHECKED] = checked box. [unchecked] = unchecked.
+`Extract from this Chanalytical Laboratories Chain of Custody form.
+[CHECKED] = checked checkbox. [unchecked] = unchecked. Azure Document Intelligence already read the text.
 
 FORM TEXT:
 ${azureText}
 
-KNOWN CLIENTS (match customer name exactly if possible — if unsure, return ""):
+KNOWN CLIENTS (match exactly if name appears on form, else ""):
 ${aliasCtx}
 
-EXTRACTION RULES:
-
-FIRST — determine form type:
-- BUSINESS form: "Report To Be Sent To" has a company name that is NOT Chanalytical Laboratories (e.g. A-Z Water Systems, FPI, Madden Home Inspections). The well owner section has the property address.
-- PUBLIC form: "Report To Be Sent To" shows "Chanalytical Laboratories" or is the lab's own address. The form has a "CUSTOMER & PROPERTY INFORMATION" section with the submitter's personal name, address, email, and phone.
-
-- FORM TYPE DETECTION: Check the TOP OF FORM. If "Chanalytical Laboratories" appears as the printed header/logo AND the Report To section appears to be Chanalytical's own address (not a business client), this is a PUBLIC form submitted by an individual. Otherwise it is a BUSINESS form.
-
-- customer:
-  • PUBLIC FORM: Find the person's full name. Look in this order: 1) "Name:" field in "CUSTOMER & PROPERTY INFORMATION" or "CUSTOMER:" section 2) "Owner:" or "Submitter:" label 3) Any First Last name near the address, phone, or email. Never return "" if any name is visible anywhere on the form.
-  • BUSINESS FORM: The "REPORT TO BE SENT TO:" section has a list of company names with checkboxes. In the extracted text, checked boxes appear as [CHECKED] and unchecked as [unchecked]. Find the company name immediately next to or preceded by [CHECKED]. If no [CHECKED] marker exists (hand-drawn mark on paper), look for any company name that appears to have a mark, X, tick, circle, or scribble near it in the text. If it is a fill-in blank line (not a checkbox list), copy exactly what is handwritten or typed there. If only one company appears in the Report To section and no others, use it. ⛔ If the section is truly BLANK with nothing written or marked → return "". ⛔ NEVER invent a company name.
-- location: Street address — for public forms use the Address field in CUSTOMER & PROPERTY INFORMATION (TOP section); for business forms use the Well Owner section (MIDDLE section). Include ALL lines under the "Address:" label until the next label (City:, State:, etc.) even if they look like partial words — e.g. "was" after a street name is likely "Way" misread by OCR, include it. No periods or commas. If a circled T or ⊕ symbol appears → set waterType to "Treated". ⛔ Never use Report To address.
-- city/state/zip: from MIDDLE OF FORM (Well Owner) ONLY. Maine zip starts with 04, NH starts with 03.
-- email: Extract ONLY valid email addresses (must contain @ symbol). For PUBLIC forms, extract from "E-mail:" field in CUSTOMER & PROPERTY INFORMATION section. The email may span TWO lines — concatenate them. ⛔ If the field contains a name, label text, or anything without @ → return "". If not a public form or email is blank → return "".
-- dateDrawn: Date CLIENT collected sample — next to "Date Sampled:" label → YYYY-MM-DD. ⛔ If blank or not written on the form return "" — NEVER guess, infer, or use today's date. ⛔ If date is crossed out/scribed through, return "". 2-digit years: 26=2026, 25=2025.
-- timeDrawn: Time CLIENT collected sample — next to "Time Sampled:" label → HH:MM 24-hour. IMPORTANT: look carefully for this — it is often written as "9:59 AM", "9:59 A", "9:59a", "3:50 p", "3:50pm". "a"=AM, "p"=PM. Convert to 24hr (3:50 PM = 15:50, 9:59 AM = 09:59). ⛔ If time is crossed out, ignore it. Digit confusion: "0" vs "1", "5" vs "6". Minutes must be 00-59.
-- receivedDate: Date LAB received sample — in the small "Lab Use Only" box (upper right corner). Stamped or written by lab staff. Looks like "JUN 24" or "07/14/26". Year always 2026 → YYYY-MM-DD.
-- receivedTime: Time LAB received sample — in same "Lab Use Only" box. Looks like "14:06". DIFFERENT from Time Sampled. Minutes 00-59 only.
-- tests: Package names where [CHECKED] appears in the right-side TEST TYPE column. Valid: "Basic Safety (FHA)","Standard Safety","Expanded Safety (Mortgage Test)","WW - Expanded Safety","Comprehensive","Pro Plus"
-- hasRadon: true ONLY if [CHECKED] next to "Radon Water" in the TEST TYPE column. ⛔ NOT the "Radon Water Mitigation" note checkbox.
-- individualElements: Elements where [CHECKED] appears in the LEFT column of individual tests. Look carefully — these are separate from package tests. Valid names include: Alkalinity, Arsenic Total, Bacteria, Cadmium Total, Calcium Total, Chloride Total, Copper Total, Fluoride, Hardness Total, Iron Total, Lead Total, Magnesium Total, Manganese Total, Nitrate, Nitrite, pH, Sodium Total, Sulfate, Sulfur, Tannins, Total Dissolved Solids (TDS), Uranium Total. Include ALL that have [CHECKED]. Note: "TDS" or "Total Dissolved Solids" on the form = "Total Dissolved Solids (TDS)".
-- waterType: "Raw" or "Treated" if mentioned, else ""
-- notes: observations, illegible fields. Note "Public submission" for public forms.
-- barcodeId: barcode number like 0600326-006 or CHA-YYMMDD-####, else ""
-- phone: Check ALL phone fields: "Daytime Phone", "Daytime Phon", "Phone", "Cell", "Mobile". For PUBLIC forms look in CUSTOMER & PROPERTY INFORMATION section. Return number as-is. "" if truly blank.
-- billingAddress: BUSINESS forms only — the STREET ADDRESS (number + street) from the Report To section, followed by city, state, zip as one line (e.g. "24 Freedom Dr, Standish, ME 04084"). ⛔ NEVER put a company name here — company name goes in customer field. ⛔ If you only see a company name and no street address in Report To → return "". PUBLIC forms → always "".
-- formType: "business" if Report To has a real company/person name that is NOT Chanalytical. "public" if Report To is blank or shows Chanalytical's own info.
+RULES:
+- formType: "business" if Report To section has a company/person name other than Chanalytical. "public" if Report To is blank or shows Chanalytical.
+- customer: BUSINESS — find the company name next to [CHECKED] in Report To section. If fill-in line, copy what's written. "" if blank/nothing marked. PUBLIC — person's name from Customer & Property Information "Name:" field. "" if blank.
+- location: BUSINESS=well owner street address (MIDDLE section). PUBLIC=customer street address (TOP section). Never use Report To address.
+- city/state/zip: from Well Owner or Customer section only.
+- dateDrawn: "Date Sampled" field → YYYY-MM-DD. "" if blank or crossed out.
+- timeDrawn: "Time Sampled" → HH:MM 24hr (convert AM/PM). "" if blank.
+- receivedDate/receivedTime: from "Lab Use Only" box ONLY → YYYY-MM-DD / HH:MM.
+- barcodeId: alphanumeric code in Lab Use Only box. "" if absent.
+- tests: package names with [CHECKED]. Valid: "Basic Safety (FHA)","Standard Safety","Expanded Safety (Mortgage Test)","WW - Expanded Safety","Comprehensive","Pro Plus"
+- hasRadon: true ONLY if [CHECKED] next to "Radon Water" test type.
+- individualElements: individual element rows with [CHECKED]. "TDS"="Total Dissolved Solids (TDS)".
+- email: only if contains @. PUBLIC forms only. "" otherwise.
+- phone: from Daytime Phone/Phone/Cell field. "" if blank.
+- billingAddress: BUSINESS only — street+city+state+zip from Report To section as one line. "" for public.
+- waterType: "Raw" or "Treated" if stated. "" otherwise.
 - confidence: 0-100
 
 Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
@@ -628,6 +614,49 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               scanLog.push(`Claude raw: ${raw.length}chars`);
               context.log(`[scan] STEP 5 — Claude raw response length: ${raw.length}`);
               context.log(`[scan] STEP 5 — Claude preview: ${raw.slice(0, 300)}`);
+
+              // Retry if primary extraction returned near-empty result
+              if (raw) {
+                try {
+                  const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+                  if (s >= 0 && e > s) {
+                    const testParse = JSON.parse(raw.slice(s, e + 1));
+                    if (!testParse.customer && !testParse.tests?.length && testParse.confidence < 30) {
+                      context.log('[scan] STEP 5 — Primary extraction empty, retrying with minimal prompt');
+                      const retryRes = await fetch('https://api.anthropic.com/v1/messages', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+                        body: JSON.stringify({
+                          model: 'claude-sonnet-4-6',
+                          max_tokens: 600,
+                          system: 'You are a JSON extraction API. Output ONLY a valid JSON object.',
+                          messages: [{ role: 'user', content:
+`This is a water testing Chain of Custody form. Extract ONLY these fields:
+- customer: the company or person name that is CHECKED or written in the "Report To" section. If individual, their name from the Customer section.
+- tests: list of test packages with [CHECKED] next to them.
+- hasRadon: true if Radon Water is [CHECKED].
+- dateDrawn: date sampled as YYYY-MM-DD.
+- location: the well owner or property street address.
+- confidence: 0-100
+
+FORM TEXT:
+${azureText.slice(0, 3000)}
+
+Return ONLY: {"customer":"","tests":[],"hasRadon":false,"dateDrawn":"","location":"","city":"","state":"ME","zip":"","receivedDate":"","receivedTime":"","confidence":0}`
+                          }],
+                        }),
+                      });
+                      if (retryRes.ok) {
+                        const retryData = await retryRes.json();
+                        const retryRaw = retryData.content?.find(c => c.type === 'text')?.text || '';
+                        if (retryRaw && retryRaw.includes('{')) raw = retryRaw;
+                        context.log('[scan] STEP 5 retry — result:', retryRaw.slice(0, 200));
+                        scanLog.push(`retry raw: ${retryRaw.length}chars`);
+                      }
+                    }
+                  }
+                } catch(retryErr) { context.log('[scan] Retry parse/check failed:', retryErr.message); }
+              }
 
             } catch (azureErr) {
               context.log(`[scan] Azure hybrid failed: ${azureErr.message}`);
@@ -648,52 +677,28 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               },
               body: JSON.stringify({
                 model:      'claude-sonnet-4-6',
-                max_tokens: 2000,
+                max_tokens: 800,
                 system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation.',
                 messages: [{ role:'user', content:
-`Extract from this water testing COC form text. Known business clients: ${aliasCtx}
+`Extract from this Chanalytical Laboratories Chain of Custody form. Known clients: ${aliasCtx}
 
-TWO FORM TYPES EXIST:
-Extract ALL available information from this Chanalytical Laboratories Chain of Custody (COC) form.
-
-FORM LAYOUT:
-- TOP section: "Lab Use Only" box (has barcode), "Report To Be Sent To" section (company name, address, email, phone for business clients)
-- MIDDLE section: "Well Owner" or "Customer & Property Information" (sample collection address, owner name, date/time sampled)
-- BOTTOM section: Test type checkboxes
-
-EXTRACT EVERYTHING YOU CAN FIND:
-- barcodeId: alphanumeric code from Lab Use Only box. "" if absent.
-- formType: "business" if Report To section has a real company name/address (not Chanalytical). "public" if Report To is blank, says Chanalytical, or has only the lab's address.
-- customer: REQUIRED for all forms. For business=company name exactly as written in Report To section. For public=the person's full name from the Customer/Property Information section or the "Well Owner" name or any name written at the top of the form. Look everywhere — header, customer section, property information, submitter name. Never return "" unless no name appears anywhere on the form.
-- reportToName: Full name/company in Report To section exactly as written. "" if blank.
-- reportToAddress: Street address line from Report To section. "" if blank.
-- reportToCity: City from Report To section. "" if blank.
-- reportToState: State from Report To section. "" if blank.
-- reportToZip: Zip from Report To section. "" if blank.
-- reportToEmail: Email from Report To section. "" if blank.
-- reportToPhone: Phone from Report To section. "" if blank.
-- email: Best email found anywhere on the form. Prefer Report To email for business, Customer section for public.
-- phone: Best phone found anywhere — check ALL of: "Daytime Phone", "Phone", "Cell", "Mobile". Return digits only or formatted number. "" if truly blank.
-- billingAddress: For business=STREET ADDRESS only from Report To (street number, street name, city, state, zip on one line). ⛔ NEVER put a company name here — company name goes in customer. For public="".
-- dateDrawn: YYYY-MM-DD from "Date Sampled". "" if blank — NEVER guess.
-- timeDrawn: HH:MM 24hr from "Time Sampled". "" if blank.
-- receivedDate: YYYY-MM-DD from Lab Use Only box only. "" if blank.
-- receivedTime: HH:MM 24hr from Lab Use Only only. "" if blank.
-- location: Sample collection street address — from Well Owner section (business) or Customer & Property section (public).
-- city: Sample collection city.
-- state: Sample collection state. Default "ME".
-- zip: Sample collection zip (5 digits).
-- tests: Array of package test names with [CHECKED] mark only.
-- individualElements: Array of individual element names with [CHECKED] mark only.
-- hasRadon: true only if Radon Water is [CHECKED].
-- notes: Any unusual notes or flags. "" if none.
-- waterType: Water type if specified. "" if not.
-- confidence: 0-100 overall extraction confidence.
+RULES:
+- formType: "business" if Report To has a company/person name other than Chanalytical. "public" if Report To blank or shows Chanalytical.
+- customer: BUSINESS=company name next to [CHECKED] in Report To, or what's written on fill-in line. "". PUBLIC=person's name from Customer & Property Information "Name:" field. "" if blank.
+- location: BUSINESS=well owner street address. PUBLIC=customer street address. Never Report To address.
+- city/state/zip: from Well Owner or Customer section.
+- dateDrawn: Date Sampled → YYYY-MM-DD. "" if blank.
+- timeDrawn: Time Sampled → HH:MM 24hr. "" if blank.
+- receivedDate/receivedTime: Lab Use Only box only.
+- tests: packages with [CHECKED]. Valid: "Basic Safety (FHA)","Standard Safety","Expanded Safety (Mortgage Test)","WW - Expanded Safety","Comprehensive","Pro Plus"
+- hasRadon: true ONLY if [CHECKED] next to "Radon Water".
+- individualElements: individual rows with [CHECKED]. "TDS"="Total Dissolved Solids (TDS)".
+- confidence: 0-100
 
 COC TEXT:
 ${azureText}
 
-Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","reportToName":"","reportToAddress":"","reportToCity":"","reportToState":"","reportToZip":"","reportToEmail":"","reportToPhone":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
+Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone":"","billingAddress":"","dateDrawn":"","timeDrawn":"","receivedDate":"","receivedTime":"","location":"","city":"","state":"ME","zip":"","tests":[],"individualElements":[],"hasRadon":false,"notes":"","waterType":"","confidence":0}`
                 }],
               }),
             });
@@ -946,8 +951,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
         } catch (err) {
           context.log(`[scan] ✗ ${file.name}: ${err.message}`);
           results.push({ fileName: file.name, error: err.message });
-          // Move back to INCOMING on failure so it can be retried
-          await moveSpFile(file.id, SCAN_INCOMING, token).catch(() => {});
+          // Leave file in REVIEW folder — blank card will appear in queue for manual entry
         }
       }
 
