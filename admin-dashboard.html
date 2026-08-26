@@ -2432,9 +2432,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const tests   = r.tests || [];
     const testStr = tests.join(' | ');
     const isEmptyOcr = !r.customer && !r.location && !r.dateDrawn && !r.tests?.length;
+    let _dbgSteps = '';
+    if (isEmptyOcr && r._ocrDebug) { try { const _d = typeof r._ocrDebug==='string'?JSON.parse(r._ocrDebug):r._ocrDebug; _dbgSteps=_d.steps||''; } catch(e){} }
     return `<div class="scan-card" id="scan-card-${r.fileId}" data-baseid="${r.baseId}" data-barcode="${r.barcodeId||r.baseId||''}" data-fileid="${r.fileId}">
-    ${isEmptyOcr ? `<div style="background:var(--warning-light,#fff3cd);border:1.5px solid var(--warning,#f59e0b);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e;display:flex;align-items:center;gap:8px;">
-      ⚠️ <strong>OCR returned no data</strong> — form may be low quality or back-side only. Please fill in the fields manually below.
+    ${isEmptyOcr ? `<div style="background:#fff3cd;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e;">
+      ⚠️ <strong>OCR returned no data</strong> — fill in manually below.
+      ${_dbgSteps ? `<div style="margin-top:6px;font-size:11px;font-family:monospace;word-break:break-all;">${_dbgSteps}</div>` : ''}
     </div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
         <div>
