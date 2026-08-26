@@ -396,14 +396,14 @@ app.http('scan-folder', {
               const operationUrl = startRes.headers.get('Operation-Location');
               if (!operationUrl) throw new Error('Azure returned no Operation-Location');
 
-              // Poll until complete
+              // Poll until complete — scanned image PDFs can take 20-30 seconds
               let azureResult;
-              await new Promise(r => setTimeout(r, 1200)); // shorter initial wait
-              for (let i = 0; i < 15; i++) {
+              await new Promise(r => setTimeout(r, 2000)); // initial wait
+              for (let i = 0; i < 30; i++) {
                 const pollRes = await fetch(operationUrl, { headers: { 'Ocp-Apim-Subscription-Key': azureKey } });
                 azureResult   = await pollRes.json();
                 if (azureResult.status === 'succeeded' || azureResult.status === 'failed') break;
-                await new Promise(r => setTimeout(r, i < 3 ? 800 : 1200)); // faster early polls
+                await new Promise(r => setTimeout(r, i < 5 ? 1000 : 1500)); // ramp up wait time
               }
               if (!azureResult || azureResult.status !== 'succeeded') {
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
@@ -568,6 +568,8 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             } catch (azureErr) {
               context.log(`[scan] Azure hybrid failed: ${azureErr.message}`);
               results.push({ azureError: azureErr.message });
+              // Write failure reason so it's visible on the blank card in Review Queue
+              azureText = `[Azure DI failed: ${azureErr.message}]`;
             }
           }
 
