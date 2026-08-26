@@ -379,9 +379,11 @@ app.http('scan-folder', {
           const azureEndpoint = process.env.AZURE_DOC_INTEL_ENDPOINT;
           const azureKey      = process.env.AZURE_DOC_INTEL_KEY;
 
+          context.log(`[scan] STEP 1 — File: ${file.name} size: ${buf.length} bytes isPdf: ${isPdf}`);
+
           if (azureEndpoint && azureKey) {
             const endpoint = azureEndpoint.replace(/\/+$/, '');
-            context.log(`[scan] Azure endpoint: ${endpoint.slice(0, 50)}`);
+            context.log(`[scan] STEP 2 — Sending to Azure DI`);
 
             try {
               // Start Azure analysis
@@ -406,8 +408,10 @@ app.http('scan-folder', {
                 await new Promise(r => setTimeout(r, i < 5 ? 1000 : 1500)); // ramp up wait time
               }
               if (!azureResult || azureResult.status !== 'succeeded') {
+                context.log(`[scan] STEP 3 FAIL — Azure status: ${azureResult?.status || 'timeout'}`);
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
               }
+              context.log(`[scan] STEP 3 OK — Azure succeeded`);
 
               // Build structured plain text from Azure output (page 1 only)
               const page1      = azureResult.analyzeResult?.pages?.[0];
@@ -474,7 +478,8 @@ app.http('scan-folder', {
                 azureText += '\n';
               }
 
-              context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs, text length: ${azureText.length}`);
+              context.log(`[scan] STEP 4 — paragraphs: ${paragraphs.length}, kvPairs: ${kvPairs.length}, azureText length: ${azureText.length}`);
+              context.log(`[scan] STEP 4 — azureText preview: ${azureText.slice(0, 200)}`);
 
               // If paragraphs are thin, fall back to raw analyzeResult.content (always populated)
               if (azureText.length < 100) {
@@ -563,7 +568,8 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               if (!extractRes.ok) throw new Error(`Claude extract: ${extractRes.status}`);
               const extractData = await extractRes.json();
               raw = extractData.content?.find(c => c.type === 'text')?.text || '';
-              context.log(`[scan] Claude extracted: ${raw.slice(0, 300)}`);
+              context.log(`[scan] STEP 5 — Claude raw response length: ${raw.length}`);
+              context.log(`[scan] STEP 5 — Claude preview: ${raw.slice(0, 300)}`);
 
             } catch (azureErr) {
               context.log(`[scan] Azure hybrid failed: ${azureErr.message}`);
@@ -643,7 +649,9 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
             if (s < 0 || e < 0) throw new Error('no JSON braces');
             ocr = JSON.parse(raw.slice(s, e + 1));
+            context.log(`[scan] STEP 6 OK — JSON parsed, customer: "${ocr.customer}", tests: ${ocr.tests?.length || 0}, confidence: ${ocr.confidence}`);
           } catch {
+            context.log(`[scan] STEP 6 FAIL — JSON parse error, raw: ${raw.slice(0, 200)}`);
             throw new Error(`OCR JSON parse failed: ${raw.slice(0, 200)}`);
           }
 
