@@ -379,13 +379,9 @@ app.http('scan-folder', {
           const azureEndpoint = process.env.AZURE_DOC_INTEL_ENDPOINT;
           const azureKey      = process.env.AZURE_DOC_INTEL_KEY;
 
-          // Diagnostic log — written to OCRDebug so failures are visible in the dashboard
-          const scanLog = [`File: ${file.name}, size: ${buf.length}b, isPdf: ${isPdf}`];
-          context.log(`[scan] STEP 1 — File: ${file.name} size: ${buf.length} bytes isPdf: ${isPdf}`);
-
           if (azureEndpoint && azureKey) {
             const endpoint = azureEndpoint.replace(/\/+$/, '');
-            context.log(`[scan] STEP 2 — Sending to Azure DI`);
+            context.log(`[scan] Azure endpoint: ${endpoint.slice(0, 50)}`);
 
             try {
               // Start Azure analysis
@@ -410,29 +406,13 @@ app.http('scan-folder', {
                 await new Promise(r => setTimeout(r, i < 5 ? 1000 : 1500)); // ramp up wait time
               }
               if (!azureResult || azureResult.status !== 'succeeded') {
-                scanLog.push(`FAIL Azure: ${azureResult?.status || 'timeout'}`);
-              context.log(`[scan] STEP 3 FAIL — Azure status: ${azureResult?.status || 'timeout'}`);
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
               }
-              scanLog.push('OK Azure succeeded');
-              context.log(`[scan] STEP 3 OK — Azure succeeded`);
 
               // Build structured plain text from Azure output (page 1 only)
               const page1      = azureResult.analyzeResult?.pages?.[0];
               const pageHeight = page1?.height || 792;
               const pageWidth  = page1?.width  || 612;
-              const isLandscape = pageWidth > pageHeight;
-              context.log(`[scan] Page dimensions: ${pageWidth}x${pageHeight} — ${isLandscape ? 'LANDSCAPE' : 'portrait'}`);
-
-              // For landscape forms, section by X coordinate (left=top, right=bottom of portrait form)
-              // For portrait, section by Y coordinate as normal
-              const getSectionPos = para => {
-                if (isLandscape) {
-                  // X position normalized — left side of landscape = top of portrait form
-                  return (para.boundingRegions?.[0]?.polygon?.[0] || 0) / pageWidth;
-                }
-                return (para.boundingRegions?.[0]?.polygon?.[1] || 0) / pageHeight;
-              };
 
               const BACK_PAGE_KEYWORDS = [
                 'sample collection instructions','dropbox locations','payment information',
@@ -453,7 +433,8 @@ app.http('scan-folder', {
               const topSection = [], middleSection = [], bottomSection = [];
               for (const para of paragraphs) {
                 if (!para.content) continue;
-                const normalY = getSectionPos(para);
+                const y       = para.boundingRegions?.[0]?.polygon?.[1] ?? 0;
+                const normalY = y / pageHeight;
                 const line    = para.content
                   .replace(/:selected:/g,   '[CHECKED]')
                   .replace(/:unselected:/g, '[unchecked]');
@@ -493,40 +474,16 @@ app.http('scan-folder', {
                 azureText += '\n';
               }
 
-              scanLog.push(`azureText: ${azureText.length}chars, ${paragraphs.length}paras, ${kvPairs.length}kv`);
-              context.log(`[scan] STEP 4 — paragraphs: ${paragraphs.length}, kvPairs: ${kvPairs.length}, azureText length: ${azureText.length}`);
-              context.log(`[scan] STEP 4 — azureText preview: ${azureText.slice(0, 200)}`);
+              context.log(`[scan] Azure: ${paragraphs.length} paragraphs, ${kvPairs.length} kv pairs, text length: ${azureText.length}`);
 
               // If paragraphs are thin, fall back to raw analyzeResult.content (always populated)
-              // Use a high threshold (500) to catch cases where only partial content was extracted
-              if (azureText.length < 500) {
+              if (azureText.length < 100) {
                 const rawContent = (azureResult.analyzeResult?.content || '')
                   .replace(/:selected:/g, '[CHECKED]')
                   .replace(/:unselected:/g, '[unchecked]');
                 if (rawContent.length > azureText.length) {
                   context.log(`[scan] Paragraphs thin (${azureText.length} chars) — using raw content (${rawContent.length} chars)`);
-                  // Re-section the raw content using page-level word positions so Claude
-                  // still knows which part is Report To vs Well Owner vs Tests
-                  const words      = azureResult.analyzeResult?.pages?.[0]?.words || [];
-                  const rawTop = [], rawMid = [], rawBot = [];
-                  words.forEach(w => {
-                    const pos = isLandscape
-                      ? (w.polygon?.[0] || 0) / pageWidth   // X position for landscape
-                      : (w.polygon?.[1] || 0) / pageHeight; // Y position for portrait
-                    const t = (w.content || '').replace(/:selected:/g,'[CHECKED]').replace(/:unselected:/g,'[unchecked]');
-                    if (pos < 0.35)      rawTop.push(t);
-                    else if (pos < 0.75) rawMid.push(t);
-                    else                 rawBot.push(t);
-                  });
-                  if (rawTop.length || rawMid.length || rawBot.length) {
-                    azureText = '';
-                    if (rawTop.length) azureText += '=== TOP OF FORM (Lab Use Only, Report To, Header) ===\n' + rawTop.join(' ') + '\n\n';
-                    if (rawMid.length) azureText += '=== MIDDLE OF FORM (Well Owner Address, Date/Time Sampled) ===\n' + rawMid.join(' ') + '\n\n';
-                    if (rawBot.length) azureText += '=== BOTTOM OF FORM (Test Type Checkboxes, Individual Elements) ===\n' + rawBot.join(' ') + '\n\n';
-                    context.log(`[scan] Rebuilt sections from word positions: top=${rawTop.length} mid=${rawMid.length} bot=${rawBot.length} words`);
-                  } else {
-                    azureText = rawContent; // no word positions — use flat content as last resort
-                  }
+                  azureText = rawContent;
                 }
               }
 
@@ -606,9 +563,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               if (!extractRes.ok) throw new Error(`Claude extract: ${extractRes.status}`);
               const extractData = await extractRes.json();
               raw = extractData.content?.find(c => c.type === 'text')?.text || '';
-              scanLog.push(`Claude raw: ${raw.length}chars`);
-              context.log(`[scan] STEP 5 — Claude raw response length: ${raw.length}`);
-              context.log(`[scan] STEP 5 — Claude preview: ${raw.slice(0, 300)}`);
+              context.log(`[scan] Claude extracted: ${raw.slice(0, 300)}`);
 
             } catch (azureErr) {
               context.log(`[scan] Azure hybrid failed: ${azureErr.message}`);
@@ -688,11 +643,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
             if (s < 0 || e < 0) throw new Error('no JSON braces');
             ocr = JSON.parse(raw.slice(s, e + 1));
-            scanLog.push(`JSON OK: customer="${ocr.customer}", tests=${ocr.tests?.length||0}, conf=${ocr.confidence}`);
-            context.log(`[scan] STEP 6 OK — JSON parsed, customer: "${ocr.customer}", tests: ${ocr.tests?.length || 0}, confidence: ${ocr.confidence}`);
           } catch {
-            scanLog.push(`JSON FAIL: ${raw.slice(0,100)}`);
-            context.log(`[scan] STEP 6 FAIL — JSON parse error, raw: ${raw.slice(0, 200)}`);
             throw new Error(`OCR JSON parse failed: ${raw.slice(0, 200)}`);
           }
 
@@ -908,7 +859,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
-            OCRDebug:         JSON.stringify({ steps: scanLog.join(' | '), ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
+            OCRDebug:         JSON.stringify({ ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
           }, token);
 
           results.push({
