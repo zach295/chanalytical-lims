@@ -421,6 +421,18 @@ app.http('scan-folder', {
               const page1      = azureResult.analyzeResult?.pages?.[0];
               const pageHeight = page1?.height || 792;
               const pageWidth  = page1?.width  || 612;
+              const isLandscape = pageWidth > pageHeight;
+              context.log(`[scan] Page dimensions: ${pageWidth}x${pageHeight} — ${isLandscape ? 'LANDSCAPE' : 'portrait'}`);
+
+              // For landscape forms, section by X coordinate (left=top, right=bottom of portrait form)
+              // For portrait, section by Y coordinate as normal
+              const getSectionPos = para => {
+                if (isLandscape) {
+                  // X position normalized — left side of landscape = top of portrait form
+                  return (para.boundingRegions?.[0]?.polygon?.[0] || 0) / pageWidth;
+                }
+                return (para.boundingRegions?.[0]?.polygon?.[1] || 0) / pageHeight;
+              };
 
               const BACK_PAGE_KEYWORDS = [
                 'sample collection instructions','dropbox locations','payment information',
@@ -441,8 +453,7 @@ app.http('scan-folder', {
               const topSection = [], middleSection = [], bottomSection = [];
               for (const para of paragraphs) {
                 if (!para.content) continue;
-                const y       = para.boundingRegions?.[0]?.polygon?.[1] ?? 0;
-                const normalY = y / pageHeight;
+                const normalY = getSectionPos(para);
                 const line    = para.content
                   .replace(/:selected:/g,   '[CHECKED]')
                   .replace(/:unselected:/g, '[unchecked]');
@@ -494,7 +505,28 @@ app.http('scan-folder', {
                   .replace(/:unselected:/g, '[unchecked]');
                 if (rawContent.length > azureText.length) {
                   context.log(`[scan] Paragraphs thin (${azureText.length} chars) — using raw content (${rawContent.length} chars)`);
-                  azureText = rawContent;
+                  // Re-section the raw content using page-level word positions so Claude
+                  // still knows which part is Report To vs Well Owner vs Tests
+                  const words      = azureResult.analyzeResult?.pages?.[0]?.words || [];
+                  const rawTop = [], rawMid = [], rawBot = [];
+                  words.forEach(w => {
+                    const pos = isLandscape
+                      ? (w.polygon?.[0] || 0) / pageWidth   // X position for landscape
+                      : (w.polygon?.[1] || 0) / pageHeight; // Y position for portrait
+                    const t = (w.content || '').replace(/:selected:/g,'[CHECKED]').replace(/:unselected:/g,'[unchecked]');
+                    if (pos < 0.35)      rawTop.push(t);
+                    else if (pos < 0.75) rawMid.push(t);
+                    else                 rawBot.push(t);
+                  });
+                  if (rawTop.length || rawMid.length || rawBot.length) {
+                    azureText = '';
+                    if (rawTop.length) azureText += '=== TOP OF FORM (Lab Use Only, Report To, Header) ===\n' + rawTop.join(' ') + '\n\n';
+                    if (rawMid.length) azureText += '=== MIDDLE OF FORM (Well Owner Address, Date/Time Sampled) ===\n' + rawMid.join(' ') + '\n\n';
+                    if (rawBot.length) azureText += '=== BOTTOM OF FORM (Test Type Checkboxes, Individual Elements) ===\n' + rawBot.join(' ') + '\n\n';
+                    context.log(`[scan] Rebuilt sections from word positions: top=${rawTop.length} mid=${rawMid.length} bot=${rawBot.length} words`);
+                  } else {
+                    azureText = rawContent; // no word positions — use flat content as last resort
+                  }
                 }
               }
 
