@@ -379,6 +379,8 @@ app.http('scan-folder', {
           const azureEndpoint = process.env.AZURE_DOC_INTEL_ENDPOINT;
           const azureKey      = process.env.AZURE_DOC_INTEL_KEY;
 
+          // Diagnostic log — written to OCRDebug so failures are visible in the dashboard
+          const scanLog = [`File: ${file.name}, size: ${buf.length}b, isPdf: ${isPdf}`];
           context.log(`[scan] STEP 1 — File: ${file.name} size: ${buf.length} bytes isPdf: ${isPdf}`);
 
           if (azureEndpoint && azureKey) {
@@ -408,9 +410,11 @@ app.http('scan-folder', {
                 await new Promise(r => setTimeout(r, i < 5 ? 1000 : 1500)); // ramp up wait time
               }
               if (!azureResult || azureResult.status !== 'succeeded') {
-                context.log(`[scan] STEP 3 FAIL — Azure status: ${azureResult?.status || 'timeout'}`);
+                scanLog.push(`FAIL Azure: ${azureResult?.status || 'timeout'}`);
+              context.log(`[scan] STEP 3 FAIL — Azure status: ${azureResult?.status || 'timeout'}`);
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
               }
+              scanLog.push('OK Azure succeeded');
               context.log(`[scan] STEP 3 OK — Azure succeeded`);
 
               // Build structured plain text from Azure output (page 1 only)
@@ -478,6 +482,7 @@ app.http('scan-folder', {
                 azureText += '\n';
               }
 
+              scanLog.push(`azureText: ${azureText.length}chars, ${paragraphs.length}paras, ${kvPairs.length}kv`);
               context.log(`[scan] STEP 4 — paragraphs: ${paragraphs.length}, kvPairs: ${kvPairs.length}, azureText length: ${azureText.length}`);
               context.log(`[scan] STEP 4 — azureText preview: ${azureText.slice(0, 200)}`);
 
@@ -568,6 +573,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               if (!extractRes.ok) throw new Error(`Claude extract: ${extractRes.status}`);
               const extractData = await extractRes.json();
               raw = extractData.content?.find(c => c.type === 'text')?.text || '';
+              scanLog.push(`Claude raw: ${raw.length}chars`);
               context.log(`[scan] STEP 5 — Claude raw response length: ${raw.length}`);
               context.log(`[scan] STEP 5 — Claude preview: ${raw.slice(0, 300)}`);
 
@@ -649,8 +655,10 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
             if (s < 0 || e < 0) throw new Error('no JSON braces');
             ocr = JSON.parse(raw.slice(s, e + 1));
+            scanLog.push(`JSON OK: customer="${ocr.customer}", tests=${ocr.tests?.length||0}, conf=${ocr.confidence}`);
             context.log(`[scan] STEP 6 OK — JSON parsed, customer: "${ocr.customer}", tests: ${ocr.tests?.length || 0}, confidence: ${ocr.confidence}`);
           } catch {
+            scanLog.push(`JSON FAIL: ${raw.slice(0,100)}`);
             context.log(`[scan] STEP 6 FAIL — JSON parse error, raw: ${raw.slice(0, 200)}`);
             throw new Error(`OCR JSON parse failed: ${raw.slice(0, 200)}`);
           }
@@ -867,7 +875,7 @@ Return ONLY valid JSON: {"barcodeId":"","formType":"public","customer":"","repor
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
-            OCRDebug:         JSON.stringify({ ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
+            OCRDebug:         JSON.stringify({ steps: scanLog.join(' | '), ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
           }, token);
 
           results.push({
