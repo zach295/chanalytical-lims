@@ -102,16 +102,31 @@ function getSpecSuffix(id) {
 }
 
 function isCellRed(cell) {
-  if (!cell || !cell.s) return false;
-  const fg = String(cell.s.fgColor?.rgb || '').toUpperCase();
-  const bg = String(cell.s.bgColor?.rgb || '').toUpperCase();
+  if (!cell) return false;
+  const s = cell.s;
+  if (!s) return false;
+
+  // SheetJS stores fill colors at cell.s.fill.fgColor (not cell.s.fgColor directly)
+  const fg = String(
+    s.fill?.fgColor?.rgb || s.fill?.fgColor?.theme ||
+    s.fgColor?.rgb || s.fgColor?.theme || ''
+  ).toUpperCase();
+  const bg = String(
+    s.fill?.bgColor?.rgb || s.fill?.bgColor?.theme ||
+    s.bgColor?.rgb || s.bgColor?.theme || ''
+  ).toUpperCase();
+
+  const combined = fg + '|' + bg;
+  if (!combined.trim()) return false;
+
+  // Red shades used by ICP-MS software — checked as substring so ARGB (8-char) works too
   const redPatterns = [
-    'FA8072','FF0000','C0504D','FF5050','FF9999','FFC7CE',
-    'FF4444','CC0000','FF3333','EA9999','FF8080',
-    'FFB6B6','FFBFBF','FF6666','FF0066','E06666',
-    'CC4125','FF7575','FFAAAA','FF4500','DC143C',
+    'FF0000','C0504D','FA8072','FF5050','FF4444','FF9999',
+    'FFC7CE','CC0000','FF3333','EA9999','FF8080','E06666',
+    'FFB6B6','FFBFBF','FF6666','FF0066','CC4125','FF7575',
+    'FFAAAA','FF4500','DC143C','FF3300','FF2222','FF1111',
   ];
-  return redPatterns.some(p => fg.includes(p) || bg.includes(p));
+  return redPatterns.some(p => combined.includes(p));
 }
 
 function parseIcpmsFile(buffer, targetIds) {
@@ -159,6 +174,8 @@ function parseIcpmsFile(buffer, targetIds) {
       const cell     = ws[XLSX.utils.encode_cell({ r, c: colIdx })];
       const value    = cell && cell.v !== undefined && cell.v !== null ? cell.v : null;
       const rejected = isCellRed(cell);
+      // Log rejected cells so we can verify detection is working
+      if (rejected) console.log(`[icpms] REJECTED cell (${elemKey}) row ${r+1}: value=${value} fg=${JSON.stringify(cell?.s?.fill?.fgColor||cell?.s?.fgColor)}`);
       elements[elemKey] = { value, rejected };
     }
 
@@ -243,23 +260,15 @@ app.http('import-icpms', {
       // Always process all rows — find ones missing ANY element data
       // Results Cache "Lab ID" column may have internal name LabID OR Lab_x0020_ID
       const getLabId = r => String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
+      // Always process all IDs — overwrite existing data so corrections take effect
       const needsIcpms = cacheItems.filter(r => {
-        if (/\bREJ\b/i.test(r.LabID || '')) return false; // skip rejected samples
-        const hasId = !!getLabId(r);
-        if (!hasId) return false;
-        // Skip only if ALL element fields are already populated
-        const elementsFilled = Object.values({
-          a: r.Sodium_x0028_Na23_x0029_,
-          b: r.Arsenic_x0028_As75_x0029_,
-          c: r.Uranium_x0028_U238_x0029_,
-          d: r.Iron_x0028_Fe54_x0029_,
-        }).every(v => !!(v || '').toString().trim());
-        return importAll || !elementsFilled;
+        if (/\bREJ\b/i.test(r.LabID || '')) return false;
+        return !!getLabId(r);
       });
 
       if (!needsIcpms.length) {
         return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ success: true, message: 'All Results Cache entries already have ICP-MS data', updated: 0 }) };
+          body: JSON.stringify({ success: true, message: 'No Results Cache entries found', updated: 0 }) };
       }
 
       // Group IDs by date portion (MMDDYY)
