@@ -5497,9 +5497,10 @@ document.addEventListener('DOMContentLoaded', function() {
     window._keepaliveTimer = setInterval(async () => {
       if (!currentReportData?._tempId) { stopKeepalive(); return; }
       try {
-        await fetch('/api/export-pdf', {
+        // Lightweight ping — just touch the file metadata, no PDF conversion
+        await fetch(`/api/prepare-report`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tempId, cleanupOnly: false, labId: 'keepalive', isRadon: false, keepTemp: true }),
+          body: JSON.stringify({ ping: true, tempId }),
         });
       } catch(e) {}
     }, 4 * 60 * 1000); // every 4 minutes
