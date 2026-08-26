@@ -924,7 +924,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ReceivedDate:     ocr.receivedDate || '',
             ReceivedTime:     ocr.receivedTime || '',
             TestSelections:   tests.join(', '),
-            ValidationErrors: valError         || '',
+            ValidationErrors: (valError || '') + (scanLog.length ? ` | ${scanLog.join(' | ')}` : ''),
             OCRConfidence:    ocr.confidence   || 0,
             FileID:           file.id,
             ProcessedDate:    stamp,
@@ -932,7 +932,6 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
-            OCRDebug:         JSON.stringify({ steps: scanLog.join(' | '), ...matchDebug, reportToName: ocr.reportToName, billingAddress: ocr.billingAddress, confidence: ocr.confidence }),
           }, token);
 
           results.push({
@@ -951,7 +950,26 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
         } catch (err) {
           context.log(`[scan] ✗ ${file.name}: ${err.message}`);
           results.push({ fileName: file.name, error: err.message });
-          // Leave file in REVIEW folder — blank card will appear in queue for manual entry
+          // Try to write a minimal error card so the file shows in the Review Queue
+          try {
+            const errStamp = new Date().toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' })
+              + ' ' + new Date().toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+            await writeToReviewQueue({
+              Title:            errStamp,
+              FileID:           file.id,
+              ClientName:       '',
+              TestSelections:   '',
+              OCRConfidence:    0,
+              ProcessedDate:    errStamp,
+              ReviewStatus:     'Ready to Review',
+              ReceivedDate:     new Date().toISOString().slice(0,10),
+              ValidationErrors: `Error: ${err.message}`,
+              State:            'ME',
+              ScannedBy:        scannedByName,
+            }, token);
+            context.log(`[scan] Wrote error card for ${file.name}`);
+          } catch(e2) { context.log(`[scan] Could not write error card: ${e2.message}`); }
+          // Leave file in REVIEW folder
         }
       }
 
