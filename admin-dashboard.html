@@ -3737,7 +3737,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const AIO_TESTS_LIST = _allTestTypes
       ? _allTestTypes.testTypes.filter(t=>t.active && t.category==='AIO').map(t=>t.name)
       : ['AIO FHA','AIO Portability'];
-    const isAIOClient = (r.customer||'').toLowerCase().includes('all in one') || (r.customer||'').toLowerCase().includes('aio');
+    const isAIOClient = true; // AIO tests available for all clients
 
     // Use Eastern Time for date defaults in the browser
     const today = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'}); // YYYY-MM-DD in ET
@@ -6854,4 +6854,3 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </body>
 </html>
- 
