@@ -5473,6 +5473,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }).catch(() => {});
   }
 
+  // Flush any pending patches to Excel immediately (called before Save/Send)
+  async function flushPatchQueue() {
+    clearTimeout(window._patchDebounce);
+    if (!window._patchQueue || !Object.keys(window._patchQueue).length) return;
+    if (!currentReportData?._tempId) { window._patchQueue = {}; return; }
+    const queue = window._patchQueue;
+    window._patchQueue = {};
+    for (const [pName, patch] of Object.entries(queue)) {
+      try {
+        const r = await fetch('/api/patch-report-cell', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType }),
+        });
+        const d = await r.json();
+        if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
+      } catch(e) { console.warn('[flush] patch failed for', pName, e); }
+    }
+  }
+
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
@@ -5573,6 +5592,13 @@ document.addEventListener('DOMContentLoaded', function() {
       if (apIdx >= 0) currentReportData.activeParams[apIdx].qualifier = val;
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) currentReportData.fhaParams[fpIdx].qualifier = val;
+      if (currentReportData._tempId) {
+        if (!window._patchQueue) window._patchQueue = {};
+        const _sheet2 = (currentReportData.fhaParams||[]).find(p => p.name === param) ? 'fha' : 'lab';
+        window._patchQueue[param + ':qualifier'] = { field: 'qualifier', value: val, sheetType: _sheet2, colorDiv: null };
+        clearTimeout(window._patchDebounce);
+        window._patchDebounce = setTimeout(async () => { const q=window._patchQueue; window._patchQueue={}; for (const [,p] of Object.entries(q)) { try { await fetch('/api/patch-report-cell',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tempId:currentReportData._tempId,paramName:p.paramName||param,field:p.field,value:p.value,sheetType:p.sheetType})}); } catch(e){} } }, 800);
+      }
 
     } else if (key.startsWith('prepDT:')) {
       const param = key.replace('prepDT:', '');
@@ -6034,31 +6060,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (sendEmail) {
         // ── Step 1: Use cached PDF or generate now ──────────────────────────
         statusEl.textContent = '⏳ Preparing PDF...';
-        let pdfBase64, fileName;
-        if (currentReportData._tempId) {
-          // Use kept Excel file and delete it after send
-          statusEl.textContent = '⏳ Generating PDF...';
-          const pdfRes = await fetch('/api/export-pdf', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tempId: currentReportData._tempId, labId, isRadon: currentReportData.isRadon, keepTemp: false }),
-          });
-          const pdfData = await pdfRes.json().catch(() => ({}));
-          if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF export failed');
-          pdfBase64 = pdfData.pdfBase64;
-          fileName  = pdfData.fileName;
-          currentReportData._tempId = null; // file deleted by export-pdf
-        } else {
-          // Fallback
-          statusEl.textContent = '⏳ Generating PDF from template...';
-          const pdfRes = await fetch('/api/render-report-pdf', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
-          });
-          const pdfData = await pdfRes.json().catch(() => ({}));
-          if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
-          pdfBase64 = pdfData.pdfBase64;
-          fileName  = pdfData.fileName;
-        }
+        // Generate PDF from currentReportData — always has all edits in memory
+        statusEl.textContent = '⏳ Generating PDF...';
+        const pdfRes = await fetch('/api/render-report-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData = await pdfRes.json().catch(() => ({}));
+        if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+        const pdfBase64 = pdfData.pdfBase64;
+        const fileName  = pdfData.fileName;
 
         // ── Step 2: Email the PDF ────────────────────────────────────────────
         statusEl.textContent = '⏳ Sending email...';
@@ -6083,31 +6094,17 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
 
       } else {
-        // ── Save PDF ─────────────────────────────────────────────────────────
+        // ── Save PDF — always use render-report-pdf with currentReportData ────
+        // currentReportData always has all edits in memory, making this reliable
         statusEl.textContent = '⏳ Generating PDF...';
-        let pdfBase642, fileName2;
-        if (currentReportData._tempId) {
-          // Use kept Excel file — fast, accurate
-          const pdfRes2 = await fetch('/api/export-pdf', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tempId: currentReportData._tempId, labId, isRadon: currentReportData.isRadon, keepTemp: true }),
-          });
-          const pdfData2 = await pdfRes2.json().catch(() => ({}));
-          if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF export failed');
-          pdfBase642 = pdfData2.pdfBase64;
-          fileName2  = pdfData2.fileName;
-        } else {
-          // Fallback — no kept Excel file, generate from scratch
-          statusEl.textContent = '⏳ Generating PDF from template...';
-          const pdfRes2 = await fetch('/api/render-report-pdf', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
-          });
-          const pdfData2 = await pdfRes2.json().catch(() => ({}));
-          if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
-          pdfBase642 = pdfData2.pdfBase64;
-          fileName2  = pdfData2.fileName;
-        }
+        const pdfRes2 = await fetch('/api/render-report-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+        });
+        const pdfData2 = await pdfRes2.json().catch(() => ({}));
+        if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
+        const pdfBase642 = pdfData2.pdfBase64;
+        const fileName2  = pdfData2.fileName;
         const bytes2 = Uint8Array.from(atob(pdfBase642), c => c.charCodeAt(0));
         const blob2  = new Blob([bytes2], { type: 'application/pdf' });
         const url2   = URL.createObjectURL(blob2);
