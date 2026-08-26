@@ -6146,6 +6146,12 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
+        // Clean up the temp Excel file now that report is sent
+        if (currentReportData._tempId) {
+          cleanupTempFile(currentReportData._tempId);
+          currentReportData._tempId = null;
+          stopKeepalive();
+        }
 
       } else {
         // ── Save PDF — always use render-report-pdf with currentReportData ────
