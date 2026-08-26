@@ -48,7 +48,18 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, loc
   const boundary = 'coa_boundary_' + Date.now();
   const lines = [
     `From: ${FROM_NAME} <${FROM_EMAIL}>`,
-    `To: ${clientName ? `"${clientName.replace(/"/g, '\\"')}" <${toEmail}>` : toEmail}`,
+    `To: ${(() => {
+      // Handle multiple emails (comma or semicolon separated)
+      const emails = toEmail.split(/[,;]/).map(e => e.trim()).filter(Boolean);
+      if (emails.length === 1) {
+        return clientName ? `"${clientName.replace(/"/g, '\"')}" <${emails[0]}>` : emails[0];
+      }
+      // Multiple emails — use name on first, bare address for rest
+      const parts = emails.map((e, i) =>
+        i === 0 && clientName ? `"${clientName.replace(/"/g, '\"')}" <${e}>` : `<${e}>`
+      );
+      return parts.join(', ');
+    })()}`,
     `Subject: ${location ? `${location} ${isRadon ? 'RW ' : ''}Lab Report` : `Certificate of Analysis - ${labId}`}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
