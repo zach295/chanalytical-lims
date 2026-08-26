@@ -48,7 +48,7 @@ function buildMimeMessage(toEmail, clientName, labId, htmlBody, attachments, loc
   const boundary = 'coa_boundary_' + Date.now();
   const lines = [
     `From: ${FROM_NAME} <${FROM_EMAIL}>`,
-    `To: ${clientName ? `${clientName} <${toEmail}>` : toEmail}`,
+    `To: ${clientName ? `"${clientName.replace(/"/g, '\\"')}" <${toEmail}>` : toEmail}`,
     `Subject: ${location ? `${location} ${isRadon ? 'RW ' : ''}Lab Report` : `Certificate of Analysis - ${labId}`}`,
     `MIME-Version: 1.0`,
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -238,36 +238,9 @@ app.http('send-report', {
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
 
-      // Clear Results Cache entry for this lab ID now that report has been sent
-      try {
-        const graphToken = await getToken();
-        const siteId2    = process.env.SP_SITE_ID;
-        const baseId2    = String(labId).split(' ')[0].trim();
-        const gHdr       = { Authorization: `Bearer ${graphToken}` };
-        const GURL       = 'https://graph.microsoft.com/v1.0';
-
-        const rcListRes  = await fetch(`${GURL}/sites/${siteId2}/lists?$select=id,displayName`, { headers: gHdr });
-        const rcListId   = ((await rcListRes.json()).value || []).find(l => l.displayName === 'Results Cache')?.id;
-        if (rcListId) {
-          const rcItemsRes = await fetch(
-            `${GURL}/sites/${siteId2}/lists/${rcListId}/items?$expand=fields($select=LabID)&$top=500`,
-            { headers: gHdr }
-          );
-          const rcItem = ((await rcItemsRes.json()).value || [])
-            .find(i => String(i.fields?.LabID || '').split(' ')[0].trim() === baseId2);
-          if (rcItem) {
-            await fetch(
-              `${GURL}/sites/${siteId2}/lists/${rcListId}/items/${rcItem.id}`,
-              { method: 'DELETE', headers: gHdr }
-            );
-            context.log(`[send-report] Cleared Results Cache for ${baseId2}`);
-          } else {
-            context.log(`[send-report] No Results Cache entry found for ${baseId2}`);
-          }
-        }
-      } catch(cacheErr) {
-        context.log('[send-report] Results Cache clear error (non-fatal):', cacheErr.message);
-      }
+      // NOTE: Results Cache is intentionally NOT deleted here.
+      // Staff confirm delivery, then archive from the Archived Intake tab.
+      // This allows resending to the correct email if needed without re-importing.
 
       // Log to Activity Log
       try {
