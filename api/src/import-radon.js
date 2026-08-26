@@ -159,7 +159,7 @@ app.http('import-radon', {
         { headers: authHdr }
       );
       const rcItems = ((await rcRes.json()).value || [])
-        .filter(i => i.fields?.LabID && !i.fields?.Radon && !/\bREJ\b/i.test(i.fields.LabID) && radonBaseIds.has(i.fields.LabID.trim()));
+        .filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID) && radonBaseIds.has(i.fields.LabID.trim()));
 
       if (!rcItems.length) {
               // ── Activity Log ─────────────────────────────────────────────────────────
