@@ -660,14 +660,15 @@ Return ONLY: {"customer":"","tests":[],"hasRadon":false,"dateDrawn":"","location
 
             } catch (azureErr) {
               context.log(`[scan] Azure hybrid failed: ${azureErr.message}`);
+              scanLog.push(`FAIL Azure exception: ${azureErr.message.slice(0, 100)}`);
               results.push({ azureError: azureErr.message });
-              // Write failure reason so it's visible on the blank card in Review Queue
               azureText = `[Azure DI failed: ${azureErr.message}]`;
             }
           }
 
           // ── FALLBACK: Claude Sonnet text-only (if Azure not configured or failed) ──
           if (!raw) {
+            scanLog.push(`fallback — azureText: ${azureText.length}chars`);
             const step2Res = await fetch('https://api.anthropic.com/v1/messages', {
               method:  'POST',
               headers: {
