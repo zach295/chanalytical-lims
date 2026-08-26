@@ -249,9 +249,24 @@ app.http('send-report', {
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
 
-      // NOTE: Results Cache is intentionally NOT deleted here.
-      // Staff confirm delivery, then archive from the Archived Intake tab.
-      // This allows resending to the correct email if needed without re-importing.
+      // Delete Results Cache row after successful send
+      try {
+        const siteId2  = process.env.SP_SITE_ID;
+        const cacheRes = await fetch(
+          `${GRAPH}/sites/${siteId2}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$filter=fields/LabID eq '${labId}'&$top=5`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (cacheRes.ok) {
+          const cacheData = await cacheRes.json();
+          for (const item of (cacheData.value || [])) {
+            await fetch(
+              `${GRAPH}/sites/${siteId2}/lists/Results Cache/items/${item.id}`,
+              { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+          }
+          context.log(`[send-report] Deleted ${(cacheData.value||[]).length} Results Cache row(s) for ${labId}`);
+        }
+      } catch(e) { context.log('[send-report] Cache delete error (non-fatal):', e.message); }
 
       // Log to Activity Log
       try {
