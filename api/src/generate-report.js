@@ -113,7 +113,7 @@ const PACKAGE_COVERAGE_FALLBACK = {
 
 
 const FHA_PARAM_NAMES  = ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'];
-const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive','AIO FHA'];
+const NEEDS_FHA_TYPES  = ['Expanded Safety (Mortgage Test)','WW - Expanded Safety','Comprehensive'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
