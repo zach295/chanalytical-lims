@@ -5630,7 +5630,15 @@ document.addEventListener('DOMContentLoaded', function() {
         return d.slice(0,10);
       };
 
-      const getDate = r => toISO(r.reportDate || r.stmtDate || r.dateRec || '');
+      const getDate = r => {
+        // Try explicit date fields first
+        const d = toISO(r.reportDate || r.stmtDate || r.dateRec || r.datePaid || '');
+        if (d) return d;
+        // Fall back to labId prefix: MMDDYY-NNN → 2026-MM-DD
+        const m = (r.labId || '').match(/^(\d{2})(\d{2})(\d{2})-/);
+        if (m) return `20${m[3]}-${m[1]}-${m[2]}`;
+        return '';
+      };
 
       // Week start = most recent Monday
       const dayOfWeek = now.getDay();
