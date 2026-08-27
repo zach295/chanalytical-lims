@@ -47,11 +47,12 @@ async function deleteSpFile(itemId, token) {
       const archiveKeywords = ['archived', 'archive', 'lab scans/arch'];
       const inArchive = archiveKeywords.some(kw => parentPath.includes(kw));
 
-      // HARD CHECK 2: item looks like a completed COA (lab ID filename)
+      // HARD CHECK 2: item name matches COC scan pattern (MMDDYY-NNN format = lab sample)
       const looksLikeCOA = /^\d{6}-\d{3}.*\.pdf$/i.test(itemName);
+      const looksLikeCOC = /^scan.*\.pdf$|^coc.*\.pdf$/i.test(itemName);
 
-      if (inArchive || (looksLikeCOA && parentPath.includes('lab scan'))) {
-        const msg = `HARD BLOCK: Cannot delete "${itemName}" — it is in the Archive. Path: ${parentPath}`;
+      if (inArchive || looksLikeCOA || looksLikeCOC) {
+        const msg = `HARD BLOCK: Cannot delete "${itemName}" — it is a COC scan or is in the Archive. Path: ${parentPath}`;
         console.error(`[deleteSpFile] ${msg}`);
         throw new Error(msg);
       }
