@@ -862,7 +862,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">📈 Statistics</div>
         <div style="color:var(--slate);font-size:14px;">Income and kit metrics by period</div>
       </div>
-      <button class="action-btn" onclick="loadStatistics()" style="padding:10px 20px;">🔄 Refresh</button>
+
     </div>
 
     <div style="display:grid;grid-template-columns:120px 1fr 1fr 1fr;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:28px;">
@@ -5606,78 +5606,75 @@ document.addEventListener('DOMContentLoaded', function() {
   async function loadStatistics() {
     const errEl = document.getElementById('stats-error');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-
-    // Set all cells to loading state
-    ['week','month','year'].forEach(p => {
-      ['income','kits','avg'].forEach(m => {
-        const el = document.getElementById(`stat-${p}-${m}`);
-        if (el) el.textContent = '…';
-      });
-    });
+    ['week','month','year'].forEach(p => ['income','kits','avg'].forEach(m => {
+      const el = document.getElementById(`stat-${p}-${m}`);
+      if (el) el.textContent = '…';
+    }));
 
     try {
-      const res  = await fetch('/api/billing-read', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+      const res  = await fetch('/api/billing-read');
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `billing-read failed (${res.status})`);
 
-      const rows = data.rows || data.items || data || [];
+      const rows = data.rows || [];
       const now  = new Date();
 
-      // Date range helpers (ET)
-      const toISO = d => d.toLocaleDateString('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'})
-        .replace(/(\d+)\/(\d+)\/(\d+)/,'$3-$1-$2'); // MM/DD/YYYY → YYYY-MM-DD
+      // Normalize any date string to YYYY-MM-DD for comparison
+      const toISO = d => {
+        if (!d) return '';
+        // Already ISO: 2026-08-26
+        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
+        // MM/DD/YYYY or M/D/YYYY
+        const m = d.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+        return d.slice(0,10);
+      };
 
-      // Start of this week (Monday)
-      const dayOfWeek = now.getDay(); // 0=Sun
+      const getDate = r => toISO(r.reportDate || r.stmtDate || r.dateRec || '');
+
+      // Week start = most recent Monday
+      const dayOfWeek = now.getDay();
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
       weekStart.setHours(0,0,0,0);
-      const weekStartISO  = toISO(weekStart);
-      const monthStartISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-      const yearStartISO  = `${now.getFullYear()}-01-01`;
 
-      const getDate = row => {
-        // Try reportDate, stmtDate, dateRec in order
-        return (row.reportDate || row.stmtDate || row.dateRec || '').slice(0,10);
+      const fmt = d => d.toLocaleDateString('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'});
+      const weekISO  = toISO(fmt(weekStart));
+      const monthISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+      const yearISO  = `${now.getFullYear()}-01-01`;
+
+      const calc = subset => {
+        const income = subset.reduce((s, r) => s + (parseFloat(r.amt) || 0), 0);
+        const kits   = subset.length;
+        return { income, kits, avg: kits > 0 ? income / kits : 0 };
       };
 
-      const calcStats = rows => {
-        const income = rows.reduce((s, r) => s + (parseFloat(r.amt) || 0), 0);
-        const kits   = rows.length;
-        const avg    = kits > 0 ? income / kits : 0;
-        return { income, kits, avg };
-      };
+      const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-      const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const fmtN = n => n.toLocaleString('en-US');
+      const ws = calc(rows.filter(r => getDate(r) >= weekISO));
+      const ms = calc(rows.filter(r => getDate(r) >= monthISO));
+      const ys = calc(rows.filter(r => getDate(r) >= yearISO));
 
-      const weekRows  = rows.filter(r => { const d = getDate(r); return d >= weekStartISO; });
-      const monthRows = rows.filter(r => { const d = getDate(r); return d >= monthStartISO; });
-      const yearRows  = rows.filter(r => { const d = getDate(r); return d >= yearStartISO; });
-
-      const ws = calcStats(weekRows);
-      const ms = calcStats(monthRows);
-      const ys = calcStats(yearRows);
+      console.log('[stats] total rows:', rows.length, 'week:', ws.kits, 'month:', ms.kits, 'year:', ys.kits);
+      console.log('[stats] sample dates:', rows.slice(0,3).map(r => getDate(r)));
 
       document.getElementById('stat-week-income').textContent  = fmt$(ws.income);
-      document.getElementById('stat-week-kits').textContent    = fmtN(ws.kits);
+      document.getElementById('stat-week-kits').textContent    = ws.kits;
       document.getElementById('stat-week-avg').textContent     = fmt$(ws.avg);
       document.getElementById('stat-month-income').textContent = fmt$(ms.income);
-      document.getElementById('stat-month-kits').textContent   = fmtN(ms.kits);
+      document.getElementById('stat-month-kits').textContent   = ms.kits;
       document.getElementById('stat-month-avg').textContent    = fmt$(ms.avg);
       document.getElementById('stat-year-income').textContent  = fmt$(ys.income);
-      document.getElementById('stat-year-kits').textContent    = fmtN(ys.kits);
+      document.getElementById('stat-year-kits').textContent    = ys.kits;
       document.getElementById('stat-year-avg').textContent     = fmt$(ys.avg);
 
     } catch(e) {
       console.error('[stats] error:', e);
-      if (errEl) { errEl.style.display = 'block'; errEl.textContent = '⚠️ Could not load billing data: ' + e.message; }
-      ['week','month','year'].forEach(p => {
-        ['income','kits','avg'].forEach(m => {
-          const el = document.getElementById(`stat-${p}-${m}`);
-          if (el) el.textContent = '—';
-        });
-      });
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = '⚠️ ' + e.message; }
+      ['week','month','year'].forEach(p => ['income','kits','avg'].forEach(m => {
+        const el = document.getElementById(`stat-${p}-${m}`);
+        if (el) el.textContent = '—';
+      }));
     }
   }
 
