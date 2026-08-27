@@ -60,7 +60,7 @@ const PARAM_CONFIG = [
   { name:'Tannins',                      rl:null,    epa:null,      unit:'',     method:'Hach Method 8193', source:'gallery', cacheField:'field_18', cacheDT:'field_19' },
   { name:'Total Dissolved Solids (TDS)', rl:null,    epa:null,      unit:'ppm',  method:'SM4500CI E',        source:'gallery', cacheField:'field_20', cacheDT:'field_21' },
   { name:'Bromide',                      rl:null,    epa:null,      unit:'mg/L', method:'HI 93716',         source:'gallery', cacheField:'field_22', cacheDT:'field_23' , decimals:1},
-  { name:'Turbidity',                    rl:null,    epa:null,      unit:'NTU',  method:'SM 2130 B',        source:'gallery', cacheField:'field_24', cacheDT:'field_25' },
+  { name:'Turbidity',                    rl:null,    epa:1,         unit:'NTU',  method:'EPA 180.1',        source:'gallery', cacheField:'field_24', cacheDT:'field_25' },
   { name:'Total Coliform',               rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_2' , decimals:1},
   { name:'E. Coli',                      rl:null,    epa:1,         unit:'MPN',  method:'SM9223 B',         source:'bac',     cacheField:'field_3' , decimals:1},
 ];
