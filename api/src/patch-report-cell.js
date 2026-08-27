@@ -31,6 +31,7 @@ function calcColor(paramName, displayVal) {
   if (paramName === 'Total Coliform')            { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#0070C0'; return null; }
   if (paramName === 'E. Coli')                   { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#FF0000'; return null; }
   if (paramName === 'Radon Water')               { if (rl||(num&&n<4000))return '#00CC44'; if (num&&n>=4000) return '#0070C0'; return null; }
+  if (paramName === 'Turbidity')                 { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)    return '#0070C0'; return null; }
   return null;
 }
 
