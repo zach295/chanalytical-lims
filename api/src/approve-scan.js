@@ -966,8 +966,26 @@ app.http('approve-scan', {
         const archiveDest  = await ensureFolderPath(SCAN_ARCHIVE, [monthFolder, dayFolder], token)
           .catch(e => { context.log('[Archive folder]', e.message); return SCAN_ARCHIVE; });
         context.log(`[Archive] Destination: ${archiveDest}`);
-        // Move to month/day subfolder
-        await moveSpFile(fileId, archiveDest, token).catch(e => context.log('[Archive move]', e.message));
+
+        // Move to month/day subfolder — VERIFY success, log hard error if fails
+        try {
+          await moveSpFile(fileId, archiveDest, token);
+          // Verify the file is now in Archive
+          const siteId2 = process.env.SP_SITE_ID;
+          const verifyR = await fetch(`${GRAPH}/sites/${siteId2}/drive/items/${fileId}?$select=id,name,parentReference`,
+            { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+          if (verifyR?.ok) {
+            const meta = await verifyR.json();
+            const path = (meta.parentReference?.path || '').toLowerCase();
+            if (!path.includes('archive') && !path.includes('archived')) {
+              context.log(`[Archive] ⚠️ MOVE VERIFY FAILED — file ${fileId} (${meta.name}) NOT in Archive after move. Path: ${path}. Manual recovery needed.`);
+            } else {
+              context.log(`[Archive] ✓ Move verified — file in Archive: ${path}`);
+            }
+          }
+        } catch(moveErr) {
+          context.log(`[Archive] ⚠️ MOVE FAILED for fileId=${fileId} — file may still be in Review. Error: ${moveErr.message}. Manual recovery needed.`);
+        }
 
         // Rename PDF to [LabID]_[ClientAbbrev]_[Address].pdf
         // For radon: [LabID] RW_[ClientAbbrev]_[Address].pdf
@@ -1018,6 +1036,7 @@ app.http('approve-scan', {
 
       // ── Write Lab IDs to Control Sheet (direct Graph API) ─────────────────────
       const allFullIds = labItems.map(l => l.fullId);
+      let csWarning = '';
       try {
         // Get today's control sheet file: C_MMDDYY.xlsx in SP_CONTROL_FOLDER
         const now        = new Date();
@@ -1031,8 +1050,45 @@ app.http('approve-scan', {
         const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
 
         const csFileRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`, { headers: { Authorization:`Bearer ${_token}` } });
+        let csFileId;
         if (csFileRes.ok) {
-          const csFileId = (await csFileRes.json()).id;
+          csFileId = (await csFileRes.json()).id;
+          context.log(`[CS] Found existing ${csFileName}`);
+        } else {
+          // Auto-create today's control sheet from template
+          const csTmplPath = process.env.SP_CONTROL_TEMPLATE || `${csRel}/C_Template.xlsx`;
+          const csTmplEnc  = csTmplPath.split('/').map(encodeURIComponent).join('/');
+          const tmplRes    = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csTmplEnc}?$select=id`,
+            { headers: { Authorization:`Bearer ${_token}` } });
+          if (tmplRes.ok) {
+            const tmplId  = (await tmplRes.json()).id;
+            const folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csRel}?$select=id`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (folderR.ok) {
+              const folderId = (await folderR.json()).id;
+              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
+                method: 'POST',
+                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),
+              });
+              if (copyRes.ok || copyRes.status === 202) {
+                // Wait for copy to complete
+                await new Promise(r => setTimeout(r, 3000));
+                const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
+                  { headers: { Authorization:`Bearer ${_token}` } });
+                if (newR.ok) {
+                  csFileId = (await newR.json()).id;
+                  context.log(`[CS] Created ${csFileName} from template`);
+                }
+              }
+            }
+          }
+          if (!csFileId) {
+            context.log(`[CS] Could not create ${csFileName} — template not found or copy failed`);
+            csWarning = `Control sheet ${csFileName} not found and could not be created. Add lab IDs manually.`;
+          }
+        }
+        if (csFileId) {
           const wbBase2  = `${GRAPH}/sites/${_siteId}/drive/items/${csFileId}/workbook`;
           const ses2Res  = await fetch(`${wbBase2}/createSession`, {
             method:'POST', headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
@@ -1073,10 +1129,10 @@ app.http('approve-scan', {
           } finally {
             await fetch(`${wbBase2}/closeSession`, { method:'POST', headers:wbHdr2 }).catch(()=>{});
           }
-        } else {
-          context.log(`[CS] ${csFileName} not found (${csFileRes.status}) — create it first`);
+        } else if (!csWarning) {
+          csWarning = `Control sheet ${csFileName} not found — lab IDs not written. Create it and add manually.`;
         }
-      } catch(e) { context.log('[CS] Control sheet write failed:', e.message); }
+      } catch(e) { context.log('[CS] Control sheet write failed:', e.message); csWarning = `Control sheet write failed: ${e.message}`; }
 
       // ── Write to Radon Control Sheet if Radon Water approved ─────────────────
       const radonLabItem = labItems.find(l => l.isRadon && !l.isRejected);
