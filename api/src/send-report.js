@@ -144,7 +144,7 @@ app.http('send-report', {
   handler: async (request, context) => {
     try {
       const body       = await request.json().catch(() => ({}));
-      const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName, location, isRadon } = body;
+      const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName, location, isRadon, fileName: bodyFileName } = body;
       const resolvedEmail = overrideEmail || overrideEmail2 || '';
       if (!labId)     return { status: 400, jsonBody: { error: 'labId required' } };
       if (!pdfBase64) return { status: 400, jsonBody: { error: 'pdfBase64 required' } };
@@ -182,8 +182,8 @@ app.http('send-report', {
         } catch(e) { context.log('[send-report] Name lookup (non-fatal):', e.message); }
       }
 
-      // Build attachments
-      const pdfFileName = `${labId} Report.pdf`;
+      // Build attachments — use pretty filename if provided
+      const pdfFileName = bodyFileName || body.fileName || (isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`);
       const attachments = [{
         name:         pdfFileName,
         contentType:  'application/pdf',
