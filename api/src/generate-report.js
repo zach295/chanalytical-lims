@@ -107,7 +107,7 @@ const PACKAGE_COVERAGE_FALLBACK = {
   'Bacteria':                        ['Total Coliform','E. Coli'],
   'Radon Water':                     [],
   'AIO FHA':                         ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli','Turbidity'],
-  'AIO Portability':                 ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
+  'AIO Portability':                 ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Turbidity','Total Coliform','E. Coli'],
 };
 
 
@@ -379,14 +379,34 @@ async function readTemplateCFRules(token) {
         }
         const cfR = await fetch(`${wsBase}/conditionalFormats`, { headers: wbHdr });
         if (cfR.ok) {
-          const cfs = (await cfR.json()).value||[];
+          const cfs = (await cfR.json()).value || [];
           for (const cf of cfs) {
-            if (cf.type==='cellValue'&&cf.cellValue?.rule) {
-              const r2=cf.cellValue.rule, color=cf.cellValue.format?.fill?.color;
-              if (color && r2.operator) colorRules.push({ operator:r2.operator.toLowerCase(), formula1:r2.formula1||'', formula2:r2.formula2||'', color, priority:cf.priority||99 });
+            if (cf.type === 'cellValue' && cf.cellValue?.rule) {
+              const r2    = cf.cellValue.rule;
+              const color = cf.cellValue.format?.fill?.color;
+              if (!color || !r2.operator) continue;
+              // Fetch the range this rule applies to so we know which param rows it covers
+              let appliedRows = null;
+              try {
+                const rangeR = await fetch(`${wsBase}/conditionalFormats/${cf.id}/range`, { headers: wbHdr });
+                if (rangeR.ok) {
+                  const rd  = await rangeR.json();
+                  const addr = (rd.address || '').replace(/^.*!/, ''); // strip sheet name prefix
+                  const nums = addr.match(/\d+/g);
+                  if (nums) appliedRows = { start: parseInt(nums[0]), end: parseInt(nums[nums.length-1]) };
+                }
+              } catch(e) { /* non-fatal */ }
+              colorRules.push({ operator: r2.operator.toLowerCase(), formula1: r2.formula1||'', formula2: r2.formula2||'', color, priority: cf.priority||99, appliedRows });
             }
           }
-          colorRules.sort((a,b)=>a.priority-b.priority);
+          colorRules.sort((a, b) => a.priority - b.priority);
+        }
+        // Store each param's 1-based row number so dashboard can match rules to params
+        if (hdrRow >= 0) {
+          for (let r = hdrRow + 1; r < rows.length; r++) {
+            const name = String((rows[r]||[])[colParam]||'').trim();
+            if (name) epaLimits[`__row__${name}`] = r + 1;
+          }
         }
       }
     }
@@ -595,13 +615,16 @@ app.http('generate-report', {
       if (isRadon && cache) {
         const radonVal = cache.Radon || cache.radon || '';
         if (radonVal) {
-          const radonRaw     = parseFloat(String(radonVal)) || 0;
-          const radonDisplay = !radonVal ? ''
+          const radonStr     = String(radonVal).trim();
+          const radonRaw     = parseFloat(radonStr) || 0;
+          // Preserve original string if it starts with < (already formatted as <100)
+          // Otherwise format: below 100 = <100, above = rounded to nearest 100
+          const radonDisplay = radonStr.startsWith('<') ? radonStr
             : radonRaw < 100 ? '<100'
             : String(Math.round(radonRaw / 100) * 100);
           radonResult = {
             display: radonDisplay,
-            raw:     parseFloat(String(radonVal)) || 0,
+            raw:     radonRaw,
             color:   'green',
             time:    excelTimeToStr(cache.RadonTime || ''),
             date:    excelDateToStr(cache.RadonDate || ''),
