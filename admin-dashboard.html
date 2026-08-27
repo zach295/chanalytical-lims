@@ -2431,15 +2431,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const labId   = r.fullIds?.[0] || r.baseId || '';
     const tests   = r.tests || [];
     const testStr = tests.join(' | ');
-    // A scan is "problem" if customer is missing OR tests are missing — even if state/dates populated
     const isEmptyOcr = (!r.customer || r.customer.trim().length < 2) || !r.tests?.length;
-    const isLowConf  = (r.confidence || 0) < 50;
-    let _dbgSteps = '';
-    if ((isEmptyOcr || isLowConf) && r._ocrDebug) { try { const _d = typeof r._ocrDebug==='string'?JSON.parse(r._ocrDebug):r._ocrDebug; _dbgSteps=_d.steps||''; } catch(e){} }
     return `<div class="scan-card" id="scan-card-${r.fileId}" data-baseid="${r.baseId}" data-barcode="${r.barcodeId||r.baseId||''}" data-fileid="${r.fileId}">
     ${isEmptyOcr ? `<div style="background:#fff3cd;border:1.5px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#92400e;">
       ⚠️ <strong>OCR incomplete</strong> — ${!r.customer ? 'customer name missing. ' : ''}${!r.tests?.length ? 'no tests selected. ' : ''}Please review and fill in below.
-      ${_dbgSteps ? `<div style="margin-top:6px;font-size:11px;font-family:monospace;word-break:break-all;color:#78350f;">${_dbgSteps}</div>` : ''}
     </div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
         <div>
@@ -5971,8 +5966,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isRadon) {
       const radonRes    = resultsMap['Radon Water'] || {};
       const rawVal      = parseFloat(radonRes.value) || 0;
-      const bg          = rawVal > 0 ? getColor('Radon Water', String(rawVal)) : '#e8e8e8';
+      const bg          = radonRes.value ? getColor('Radon Water', radonRes.value) : '#e8e8e8';
       const dispVal     = !radonRes.value ? ''
+                        : String(radonRes.value).startsWith('<') ? radonRes.value
                         : rawVal < 100 ? '<100'
                         : String(Math.round(rawVal / 100) * 100);
       const radonDate   = data?.radon?.date || currentReportData?.radon?.date || '';
