@@ -504,7 +504,12 @@ app.http('render-report-pdf', {
     await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
     context.log('[pdf] Temp file deleted');
 
-    const reportFileName = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
+    // Build pretty filename: [address]_[abbrev]_[labId] Report.pdf
+    const safe = s => (s || '').trim().replace(/[<>:"/\\|?*]/g, '').trim();
+    const addr  = safe(reportData?.meta?.location || '');
+    const abbr  = safe(reportData?.meta?.abbrev || reportData?.meta?.clientCode || '');
+    const parts = [addr, abbr, labId].filter(Boolean);
+    const reportFileName = parts.join('_') + (isRadon ? ' RW Report.pdf' : ' Report.pdf');
     return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
   }
 });
