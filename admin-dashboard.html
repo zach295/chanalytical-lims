@@ -4246,6 +4246,11 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✅ ${labIdStr}`;
         if (data.archiveNote) statusEl.textContent += ` — ${data.archiveNote}`;
+        if (data.csWarning) {
+          showToast(`⚠️ ${data.csWarning}`, 8000);
+          statusEl.textContent += ` ⚠️ Control sheet: not written`;
+          statusEl.style.color = 'var(--warning)';
+        }
         if (data.warning) {
           statusEl.style.color = 'var(--warning)';
           statusEl.textContent += ` ⚠️ ${data.warning}`;
@@ -5470,6 +5475,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }).catch(() => {});
   }
 
+  // Build pretty PDF filename: [address]_[abbrev]_[labId] Report.pdf
+  function buildPdfFileName(reportData) {
+    const meta   = reportData?.meta || {};
+    const labId  = reportData?.labId || 'Report';
+    const isRadon = reportData?.isRadon;
+    // Address keeps spaces; only strip illegal filename chars
+    const safe = str => (str || '').trim().replace(/[<>:"/\\|?*]/g, '').trim();
+
+    const addr   = safe(meta.location || '');
+    const abbrev = safe(meta.abbrev || meta.clientCode || '');
+    const suffix = isRadon ? ' RW Report' : ' Report';
+
+    const parts = [addr, abbrev, labId].filter(Boolean);
+    return parts.join('_') + suffix + '.pdf';
+  }
+
   // Flush any pending patches to Excel immediately (called before Save/Send)
   async function flushPatchQueue() {
     clearTimeout(window._patchDebounce);
@@ -6165,7 +6186,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const blob2  = new Blob([bytes2], { type: 'application/pdf' });
         const url2   = URL.createObjectURL(blob2);
         const a2     = document.createElement('a');
-        a2.href = url2; a2.download = fileName2 || (labId + '_COA.pdf');
+        a2.href = url2; a2.download = buildPdfFileName(currentReportData);
         document.body.appendChild(a2); a2.click();
         document.body.removeChild(a2); URL.revokeObjectURL(url2);
         statusEl.style.color = 'var(--success)';
