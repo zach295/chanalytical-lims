@@ -175,6 +175,11 @@ function calcFillColor(paramName, displayVal) {
       if (num && n >= 4000)           return '#0070C0';
       return null;
 
+    case 'Turbidity':
+      // green: <1 string OR <1;  blue: >=1
+      if (rl || (num && n < 1))  return '#00CC44';
+      if (num && n >= 1)          return '#0070C0';
+      return null;
     default:
       return null;
   }
