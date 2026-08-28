@@ -232,38 +232,29 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Delete unused rows (bottom to top) and copy bottom border to row above first
+  // Delete unused rows (bottom to top), then re-apply borders to all remaining param rows
   if (toDelete.length > 0) {
+    const deleteSet = new Set(toDelete);
     const descending = [...toDelete].sort((a, b) => b - a);
 
-    // Step 1: For each row to delete, read its bottom border and write it to the row above
-    for (const rowNum of descending) {
-      if (rowNum <= 1) continue;
+    // Step 1: Read border style from a non-deleted param row before we start
+    let savedBorder = null;
+    const sampleRow = [...Object.values(pMap)].find(ri => !deleteSet.has(startRow + ri));
+    if (sampleRow !== undefined) {
       try {
-        // Read bottom border of this row (first cell is enough — same border across row)
+        const sampleRowNum = startRow + sampleRow;
         const borderR = await fetch(
-          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}')/format/borders/Bottom`,
+          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${sampleRowNum}')/format/borders/Bottom`,
           { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
         );
         if (borderR.ok) {
-          const borderData = await borderR.json();
-          // Only copy if there's an actual colored border (not "None")
-          if (borderData.style && borderData.style !== 'None') {
-            const lastCol = colLetter((nc||10)-1);
-            await fetch(
-              `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum-1}:${lastCol}${rowNum-1}')/format/borders/Bottom`,
-              {
-                method: 'PATCH',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-                body: JSON.stringify({ style: borderData.style, color: borderData.color, weight: borderData.weight }),
-              }
-            ).catch(() => {});
-          }
+          const bd = await borderR.json();
+          if (bd.style && bd.style !== 'None') savedBorder = { style: bd.style, color: bd.color, weight: bd.weight };
         }
-      } catch(e) { /* non-fatal */ }
+      } catch(e) {}
     }
 
-    // Step 2: Delete rows bottom to top (single rows, no ranges, to keep row numbers valid)
+    // Step 2: Delete rows bottom to top
     for (const rowNum of descending) {
       const addr = `A${rowNum}:${colLetter((nc||10)-1)}${rowNum}`;
       await fetch(
@@ -276,6 +267,40 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       ).catch(e => context.log('[fillSheet] delete error:', e.message));
     }
     context.log(`[pdf] Deleted ${toDelete.length} unused rows`);
+
+    // Step 3: Re-apply bottom border to all remaining param rows (row numbers have shifted)
+    if (savedBorder) {
+      const remainingRows = Object.values(pMap)
+        .filter(ri => !deleteSet.has(startRow + ri))
+        .map(ri => {
+          // Recalculate row number after deletions: count how many deleted rows were above this row
+          const excelRow = startRow + ri;
+          const deletedAbove = toDelete.filter(d => d < excelRow).length;
+          return excelRow - deletedAbove;
+        })
+        .sort((a, b) => a - b);
+
+      const lastCol = colLetter((nc||10)-1);
+      const borderReqs = remainingRows.map(rowNum => ({
+        url:  `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}:${lastCol}${rowNum}')/format/borders/Bottom`,
+        body: savedBorder,
+      }));
+      for (let i = 0; i < borderReqs.length; i += 20) {
+        const batch = borderReqs.slice(i, i + 20);
+        await fetch(`${GRAPH}/$batch`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requests: batch.map((r, idx) => ({
+              id: String(i + idx + 1), method: 'PATCH', url: r.url,
+              headers: { 'Content-Type': 'application/json', 'workbook-session-id': sid },
+              body: r.body,
+            })),
+          }),
+        }).catch(() => {});
+      }
+      context.log(`[pdf] Re-applied borders to ${remainingRows.length} remaining rows`);
+    }
   }
 }
 
