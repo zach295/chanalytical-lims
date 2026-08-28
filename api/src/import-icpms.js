@@ -386,6 +386,7 @@ app.http('import-icpms', {
       diagInfo.filesUsed = filesUsed;
       diagInfo.rowsFoundInFiles = allRows.length;
       diagInfo.mergedSampleCount = Object.keys(merged).length;
+      diagInfo.errors = errors;
 
       if (debug) {
         return { status: 200, headers: { 'content-type': 'application/json' },
