@@ -159,6 +159,28 @@ app.http('accession-status', {
           }};
         }
 
+        // all-intake: returns all Archived Intake rows for the lab tab
+        if (action === 'all-intake') {
+          const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
+          const items = allItems.map(r => ({
+            labId:        r.field_1 || '',
+            services:     r.field_2 || '',
+            clientName:   r.field_3 || '',
+            dateDrawn:    r.field_4 || '',
+            timeDrawn:    r.field_5 || '',
+            dateReceived: r.field_6 || '',
+            timeReceived: r.field_7 || '',
+            location:     r.field_8 || '',
+            city:         r.field_9 || '',
+            state:        r.field_10 || '',
+            zip:          r.field_11 || '',
+            approvedBy:   r.field_12 || '',
+            notes:        r.field_13 || '',
+            status:       r.field_14 || '',
+          }));
+          return { status: 200, jsonBody: { success: true, items } };
+        }
+
         // list-intake
         if (action === 'list-intake') {
           const searchId = body.baseId || '';
