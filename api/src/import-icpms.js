@@ -6,7 +6,7 @@
  * 4. Merges results across files, writes to Results Cache
  */
 const { app }    = require('@azure/functions');
-const { listFolder, downloadFile, listItems, createItem, updateItem } = require('../shared/graph');
+const { listFolder, downloadFile, listItems, createItem, updateItem, getToken } = require('../shared/graph');
 
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-icpms] xlsx not available:', e.message); }
@@ -385,31 +385,33 @@ app.http('import-icpms', {
           body: JSON.stringify({ filesUsed, sampleCount: Object.keys(merged).length, merged, diag: diagInfo }) };
       }
 
-      // Discover actual internal field names for AcqTime columns
-      let resolvedTimeMap = { ...ELEMENT_TIME_MAP }; // default to display names
+      // Discover actual internal field names for AcqTime columns using schema endpoint
+      let resolvedTimeMap = { ...ELEMENT_TIME_MAP };
       try {
         const siteId2 = process.env.SP_SITE_ID;
+        const schemaToken = await getToken();
         const fieldsRes = await fetch(
-          `${GRAPH}/sites/${siteId2}/lists/Results Cache/fields?$select=name,staticName,displayName&$top=200`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          `${GRAPH}/sites/${siteId2}/lists/Results Cache/fields?$select=name,displayName,staticName&$top=200`,
+          { headers: { Authorization: `Bearer ${schemaToken}` } }
         );
         if (fieldsRes.ok) {
           const fieldsData = await fieldsRes.json();
           const spFields = fieldsData.value || [];
-          // Build map from displayName → staticName for AcqTime columns
+          // Map displayName → internal name for AcqTime columns
+          const displayToInternal = {};
           for (const f of spFields) {
-            if (f.displayName?.startsWith('AcqTime')) {
-              // Find which ELEMENT_TIME_MAP value this matches
-              for (const [elemKey, dispName] of Object.entries(ELEMENT_TIME_MAP)) {
-                if (f.displayName === dispName || f.name === dispName) {
-                  resolvedTimeMap[elemKey] = f.name || f.staticName || dispName;
-                }
-              }
-            }
+            if (f.displayName) displayToInternal[f.displayName] = f.name;
           }
           diagInfo.timeFieldNames = spFields
-            .filter(f => f.displayName?.startsWith('AcqTime'))
+            .filter(f => f.displayName?.toLowerCase().includes('acqtime'))
             .map(f => `${f.displayName}→${f.name}`);
+          // Resolve each element's time field to its actual internal name
+          for (const [elemKey, displayName] of Object.entries(ELEMENT_TIME_MAP)) {
+            if (displayToInternal[displayName]) {
+              resolvedTimeMap[elemKey] = displayToInternal[displayName];
+            }
+          }
+          context.log('[import-icpms] Resolved time fields:', JSON.stringify(resolvedTimeMap));
         }
       } catch(e) { context.log('[import-icpms] Field discovery error:', e.message); }
 
