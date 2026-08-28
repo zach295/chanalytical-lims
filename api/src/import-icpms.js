@@ -65,6 +65,23 @@ const ELEMENT_MAP = {
   'U 238':  'Uranium_x0028_U238_x0029_',
 };
 
+// Maps element key → SharePoint per-element acquisition time column
+const ELEMENT_TIME_MAP = {
+  'Na 23':  'AcqTime_Na',
+  'Mg 24':  'AcqTime_Mg',
+  'Ca 43':  'AcqTime_Ca',
+  'Cr 52':  'AcqTime_Cr',
+  'Fe 54':  'AcqTime_Fe',
+  'Mn 55':  'AcqTime_Mn',
+  'Co 59':  'AcqTime_Co',
+  'Cu 63':  'AcqTime_Cu',
+  'As 75':  'AcqTime_As',
+  'Cd 111': 'AcqTime_Cd',
+  'Sb 121': 'AcqTime_Sb',
+  'Pb 208': 'AcqTime_Pb',
+  'U 238':  'AcqTime_U',
+};
+
 const QC_PREFIXES = ['cal ', 'ccb', 'ccs', 'cqc', 'smsd', 'sms_', 'cvm', 'qcs', 'calibration', 'blank', 'ccv'];
 
 function isQCRow(id) {
@@ -345,25 +362,20 @@ app.http('import-icpms', {
       const log = []; let updated = 0, created = 0, errors = 0;
 
       for (const [baseId, result] of Object.entries(merged)) {
-        const fields = { AcquisitionTime: toMilitaryDT(result.acqTime) };
+        const fields = {};
 
-        // Build per-element time map — only store times that differ from the primary acqTime
-        const primaryTime = toMilitaryDT(result.acqTime);
-        const elementTimes = {};
+        // Write per-element values and per-element acquisition times
         for (const [elemKey, elemResult] of Object.entries(result.elements)) {
-          const fieldName = ELEMENT_MAP[elemKey];
+          const fieldName     = ELEMENT_MAP[elemKey];
+          const timeFieldName = ELEMENT_TIME_MAP[elemKey];
           if (fieldName && elemResult) {
             const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
             fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
-            // Track element time if it differs from primary
-            const elemTime = toMilitaryDT(elemResult.acqTime || result.acqTime);
-            if (elemTime && elemTime !== primaryTime) {
-              elementTimes[fieldName] = elemTime; // key by SP field name so generate-report can look it up
-            }
+          }
+          if (timeFieldName && elemResult) {
+            fields[timeFieldName] = toMilitaryDT(elemResult.acqTime || result.acqTime);
           }
         }
-        // Store element times JSON (empty object if all elements share the same time)
-        fields.ElementTimes = Object.keys(elementTimes).length ? JSON.stringify(elementTimes) : '';
         // ArsenicIII written separately to avoid blocking main update if field name is wrong
 
         const existing = cacheItems.find(r => {
