@@ -385,22 +385,50 @@ app.http('import-icpms', {
           body: JSON.stringify({ filesUsed, sampleCount: Object.keys(merged).length, merged, diag: diagInfo }) };
       }
 
+      // Discover actual internal field names for AcqTime columns
+      let resolvedTimeMap = { ...ELEMENT_TIME_MAP }; // default to display names
+      try {
+        const siteId2 = process.env.SP_SITE_ID;
+        const fieldsRes = await fetch(
+          `${GRAPH}/sites/${siteId2}/lists/Results Cache/fields?$select=name,staticName,displayName&$top=200`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (fieldsRes.ok) {
+          const fieldsData = await fieldsRes.json();
+          const spFields = fieldsData.value || [];
+          // Build map from displayName → staticName for AcqTime columns
+          for (const f of spFields) {
+            if (f.displayName?.startsWith('AcqTime')) {
+              // Find which ELEMENT_TIME_MAP value this matches
+              for (const [elemKey, dispName] of Object.entries(ELEMENT_TIME_MAP)) {
+                if (f.displayName === dispName || f.name === dispName) {
+                  resolvedTimeMap[elemKey] = f.name || f.staticName || dispName;
+                }
+              }
+            }
+          }
+          diagInfo.timeFieldNames = spFields
+            .filter(f => f.displayName?.startsWith('AcqTime'))
+            .map(f => `${f.displayName}→${f.name}`);
+        }
+      } catch(e) { context.log('[import-icpms] Field discovery error:', e.message); }
+
       // Step 4: Write to Results Cache
       const log = []; let updated = 0, created = 0, errors = 0;
 
       for (const [baseId, result] of Object.entries(merged)) {
+        // Element values only (these SP field names are confirmed working)
         const fields = {};
-
-        // Write per-element values and per-element acquisition times
+        const timeFields = {};
         for (const [elemKey, elemResult] of Object.entries(result.elements)) {
           const fieldName     = ELEMENT_MAP[elemKey];
-          const timeFieldName = ELEMENT_TIME_MAP[elemKey];
+          const timeFieldName = resolvedTimeMap[elemKey];
           if (fieldName && elemResult) {
             const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
             fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
           }
           if (timeFieldName && elemResult) {
-            fields[timeFieldName] = toMilitaryDT(elemResult.acqTime || result.acqTime);
+            timeFields[timeFieldName] = toMilitaryDT(elemResult.acqTime || result.acqTime);
           }
         }
         // ArsenicIII written separately to avoid blocking main update if field name is wrong
@@ -411,9 +439,15 @@ app.http('import-icpms', {
         });
 
         if (existing) {
+          // Write element values
           await updateItem('Results Cache', existing._id, fields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
             .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
+          // Write per-element times separately — won't block the main update
+          if (Object.keys(timeFields).length) {
+            updateItem('Results Cache', existing._id, timeFields)
+              .catch(e => log.push(`AcqTime write skipped for ${baseId}: ${e.message.slice(0,80)}`));
+          }
           // Separately write ArsenicIII — try multiple possible internal field names
           // so this doesn't block the main update if the name is wrong
           if (result.arsenicIII !== null && result.arsenicIII !== undefined) {
