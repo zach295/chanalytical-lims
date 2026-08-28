@@ -432,8 +432,19 @@ app.http('render-report-pdf', {
         await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       }
     } else if (isArsenicSpec && specSheet) {
-      // Arsenic Speciation: use the Arsenic Spec Report sheet
+      // Arsenic Speciation: write headers first, then fill params
+      await writeHeaders(specSheet.id, [
+        ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
+      ]);
       await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24');
+      // Write authorized by and review date to D32/I32 for Arsenic Spec report
+      const wsBaseSpec = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`;
+      const wbHdrSpec  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      for (const [addr, val] of [['D32', authorizedBy||''],['I32', reviewDate||'']]) {
+        if (val) await fetch(`${wsBaseSpec}/range(address='${addr}')`, {
+          method: 'PATCH', headers: wbHdrSpec, body: JSON.stringify({ values: [[val]] })
+        }).catch(()=>{});
+      }
       await fitOnePage(specSheet.id);
       // Hide Lab Report and FHA sheets
       if (labSheet)   await hideSheet(siteId, tempId, labSheet.id,   token, sid);
