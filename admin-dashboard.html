@@ -5826,7 +5826,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Build merged kit rows — sort lab IDs, use first as display ID
     const dedupedRows = Object.values(kitMap).map(r => {
-      const sortedIds = r._allLabIds.sort();
+      const sortedIds = r._allLabIds.sort((a, b) => {
+        const numA = parseInt((a||'').replace(/\D/g,'')) || 0;
+        const numB = parseInt((b||'').replace(/\D/g,'')) || 0;
+        return numA - numB;
+      });
       return {
         ...r,
         labId:    sortedIds.join(' + '),
@@ -5847,7 +5851,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Build HTML report — one row per kit
     const companyRows = companies.map(co => {
-      const samples = byCompany[co].sort((a,b) => (a.labId||'').localeCompare(b.labId||''));
+      const samples = byCompany[co].sort((a,b) => {
+        // Sort by the first lab ID in each kit
+        const aId = (a.labId || '').split(' + ')[0].trim();
+        const bId = (b.labId || '').split(' + ')[0].trim();
+        return aId.localeCompare(bId);
+      });
       const sampleRows = samples.map((s, i) =>
         `<tr style="background:${i % 2 === 0 ? 'white' : '#f9fafb'}">
           <td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;font-weight:600;color:#1e3a5f;">${s.labId||'—'}</td>
