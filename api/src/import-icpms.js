@@ -441,15 +441,20 @@ app.http('import-icpms', {
         });
 
         if (existing) {
-          // Write element values
-          await updateItem('Results Cache', existing._id, fields)
+          // Combine element values and per-element times into one single PATCH
+          const allFields = { ...fields, ...timeFields };
+          await updateItem('Results Cache', existing._id, allFields)
             .then(() => { updated++; log.push(`Updated: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
-          // Write per-element times separately — won't block the main update
-          if (Object.keys(timeFields).length) {
-            updateItem('Results Cache', existing._id, timeFields)
-              .catch(e => log.push(`AcqTime write skipped for ${baseId}: ${e.message.slice(0,80)}`));
-          }
+            .catch(async (e) => {
+              // If combined write fails (e.g. time field name wrong), retry with just element values
+              if (e.message?.includes('not recognized') || e.message?.includes('400')) {
+                await updateItem('Results Cache', existing._id, fields)
+                  .then(() => { updated++; log.push(`Updated (values only): ${baseId}`); })
+                  .catch(e2 => { errors++; log.push(`Error ${baseId}: ${e2.message}`); });
+              } else {
+                errors++; log.push(`Error ${baseId}: ${e.message}`);
+              }
+            });
           // Separately write ArsenicIII — try multiple possible internal field names
           // so this doesn't block the main update if the name is wrong
           if (result.arsenicIII !== null && result.arsenicIII !== undefined) {
