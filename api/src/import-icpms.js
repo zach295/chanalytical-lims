@@ -190,8 +190,8 @@ function parseIcpmsFile(buffer, targetIds) {
     const idCell   = ws[XLSX.utils.encode_cell({ r, c: sampleIdCol })];
     const sampleId = idCell ? String(idCell.v || '').trim() : '';
     if (!sampleId) continue;
-    if (rawIdsFound.length < 10) rawIdsFound.push(sampleId); // capture first 10 raw IDs
     if (isQCRow(sampleId)) continue;
+    if (rawIdsFound.length < 10) rawIdsFound.push({ raw: sampleId, base: getBaseId(sampleId) });
     const baseId = getBaseId(sampleId);
     if (!baseId) continue;
     // Only process IDs we need
