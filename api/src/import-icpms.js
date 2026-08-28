@@ -99,8 +99,18 @@ function getDilution(id) {
 }
 
 function getBaseId(id) {
-  const m = String(id || '').match(/^(\d{6}-\d{3})/);
-  return m ? m[1] : '';
+  const s = String(id || '').trim();
+  // Standard format: 082726-001
+  let m = s.match(/^(\d{6}-\d{3})/);
+  if (m) return m[1];
+  // No dash: 082726001 → 082726-001
+  m = s.match(/^(\d{6})(\d{3})/);
+  if (m) return `${m[1]}-${m[2]}`;
+  // Has dash but different spacing: return everything up to first space/letter
+  m = s.match(/^([\d]{6}-[\d]{3})/);
+  if (m) return m[1];
+  // Just return the first 10 chars stripped of non-alphanumeric for loose matching
+  return s.replace(/[^\d]/g, '').slice(0, 9);
 }
 
 function getDatePart(baseId) {
@@ -187,11 +197,14 @@ function parseIcpmsFile(buffer, targetIds) {
     const sampleId = idCell ? String(idCell.v || '').trim() : '';
     if (!sampleId) continue;
     if (rawIdsFound.length < 10) rawIdsFound.push(sampleId); // capture first 10 raw IDs
-    if (isQCRow(sampleId) || !isSampleRow(sampleId)) continue;
+    if (isQCRow(sampleId)) continue;
     const baseId = getBaseId(sampleId);
     if (!baseId) continue;
     // Only process IDs we need
-        if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
+        if (targetIds && targetIds.size > 0) {
+      const match = [...targetIds].some(tid => tid === baseId || baseId.startsWith(tid) || tid.startsWith(baseId));
+      if (!match) continue;
+    }
         // Log first few IDs found so we can see if they're matching
         if (rows.length < 3) console.log(`[icpms] Found sample row: "${sampleId}" → baseId="${baseId}"`);
 
@@ -318,6 +331,13 @@ app.http('import-icpms', {
                            'July','August','September','October','November','December'];
       const allRows = [];
       const filesUsed = [];
+      const diagInfo = {
+        datesSearched: Object.keys(byDate),
+        idsNeeded: Object.fromEntries(Object.entries(byDate).map(([d, s]) => [d, [...s]])),
+        rowsFoundInFiles: 0,
+        mergedSampleCount: 0,
+        rawIdsFromFile: {},
+      };
 
       for (const [datePart, ids] of Object.entries(byDate)) {
         // Build month subfolder: MMDDYY → "August 2026"
@@ -368,14 +388,10 @@ app.http('import-icpms', {
 
       const merged = mergeResults(allRows);
 
-      // Add diagnostic info to help debug zero-match cases
-      const diagInfo = {
-        filesUsed,
-        datesSearched: Object.keys(byDate),
-        idsNeeded: Object.fromEntries(Object.entries(byDate).map(([d, s]) => [d, [...s]])),
-        rowsFoundInFiles: allRows.length,
-        mergedSampleCount: Object.keys(merged).length,
-      };
+      // Update diag with final counts
+      diagInfo.filesUsed = filesUsed;
+      diagInfo.rowsFoundInFiles = allRows.length;
+      diagInfo.mergedSampleCount = Object.keys(merged).length;
 
       if (debug) {
         return { status: 200, headers: { 'content-type': 'application/json' },
