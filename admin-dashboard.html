@@ -1021,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="form-field"><label for="edit-code">Registration Code</label><input type="text" id="edit-code" autocomplete="new-password" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;text-transform:uppercase;"/></div>
         <div style="display:flex;gap:10px;margin-top:16px;">
           <button class="btn-ok" onclick="doEditUser()" style="flex:1;">Save Changes</button>
-          <button class="btn-cancel" onclick="document.getElementById(\'modal-edit-user\').style.display='none'" style="flex:1;">Cancel</button>
+          <button class="btn-cancel" onclick="document.getElementById('modal-edit-user').style.display='none'" style="flex:1;">Cancel</button>
         </div>
       </div>
     </div>
@@ -1683,6 +1683,7 @@ document.addEventListener('DOMContentLoaded', function() {
     lab:    ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
              'sb-labtool-label','sb-clients-btn','sb-admin-label',
              'sb-testtypes-btn','sb-intake-btn'],
+    wq:     ['sb-review-btn','sb-rejected-btn','sb-clients-btn','sb-admin-label'],
     admin:  ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
              'sb-labtool-label','sb-billing-btn','sb-revenue-btn',
              'sb-inventory-label','sb-kits-btn','sb-bottles-btn','sb-kitstk-btn',
@@ -1691,6 +1692,9 @@ document.addEventListener('DOMContentLoaded', function() {
              'sb-testtypes-btn','sb-statistics-btn','sb-intake-btn'],
     owner:  ['sb-statistics-btn'],
   };
+
+  // Roles that can NEVER see the statistics tab regardless of other roles
+  const STATS_BLOCKED_ROLES = new Set(['lab','office','wq','client','public','deactivated']);
 
   // ── Role helpers (supports comma-separated multi-role) ────────────────────
   function getRolesFromWrap(wrapId) {
@@ -1721,6 +1725,9 @@ document.addEventListener('DOMContentLoaded', function() {
       if (el) el.style.display = 'none';
     });
     const allowed = new Set(roles.flatMap(r => ROLE_SECTIONS[r] || ROLE_SECTIONS['office'] || []));
+    // Hard block: statistics is ONLY for admin and owner — never lab, office, wq, or any other role
+    const canSeeStats = roles.some(r => r === 'admin' || r === 'owner');
+    if (!canSeeStats) allowed.delete('sb-statistics-btn');
     allowed.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = '';
@@ -2740,10 +2747,10 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/users-manage', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ action: 'edit', email: origEmail, name, newEmail, role: getRolesFromWrap('edit-role-wrap'), regCode: code, clientKey: code }),
+        body: JSON.stringify({ action: 'edit', email: origEmail, name, newEmail: newEmail || origEmail, role: getRolesFromWrap('edit-role-wrap'), regCode: code, clientKey: code }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || `Server error (${res.status})`);
       showToast('✅ Account updated.');
       document.getElementById('modal-edit-user').style.display = 'none';
       loadUsersTab();
