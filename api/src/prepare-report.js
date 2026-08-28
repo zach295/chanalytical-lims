@@ -335,22 +335,46 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
   }
 
-  // Hide unused rows by setting rowHeight=0 — preserves borders and template formatting
+  // Delete unused rows (bottom to top) and copy bottom border to row above first
   if (toHide.length > 0) {
-    const ascending = [...toHide].sort((a, b) => a - b);
-    const ranges = [];
-    let rs2 = ascending[0], re2 = ascending[0];
-    for (let i = 1; i < ascending.length; i++) {
-      if (ascending[i] === re2 + 1) re2 = ascending[i];
-      else { ranges.push([rs2, re2]); rs2 = re2 = ascending[i]; }
+    const descending = [...toHide].sort((a, b) => b - a);
+
+    // Step 1: Copy bottom border from each deleted row to the row above
+    for (const rowNum of descending) {
+      if (rowNum <= 1) continue;
+      try {
+        const borderR = await fetch(
+          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}')/format/borders/Bottom`,
+          { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
+        );
+        if (borderR.ok) {
+          const borderData = await borderR.json();
+          if (borderData.style && borderData.style !== 'None') {
+            const lastCol = colLetter((nc||10)-1);
+            await fetch(
+              `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum-1}:${lastCol}${rowNum-1}')/format/borders/Bottom`,
+              {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+                body: JSON.stringify({ style: borderData.style, color: borderData.color, weight: borderData.weight }),
+              }
+            ).catch(() => {});
+          }
+        }
+      } catch(e) {}
     }
-    ranges.push([rs2, re2]);
-    const hideReqs = ranges.map(([s, e]) => ({
-      url:  `${base}/range(address='A${s}:${colLetter((nc || 10) - 1)}${e}')/format`,
-      body: { rowHeight: 1 },
-    }));
-    for (let i = 0; i < hideReqs.length; i += 20) {
-      await graphBatch(hideReqs.slice(i, i + 20), token, sid);
+
+    // Step 2: Delete rows bottom to top
+    for (const rowNum of descending) {
+      const addr = `A${rowNum}:${colLetter((nc || 10) - 1)}${rowNum}`;
+      await fetch(
+        `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+          body: JSON.stringify({ shift: 'Up' }),
+        }
+      ).catch(e => context.log('[prepare] delete error:', e.message));
     }
   }
 
