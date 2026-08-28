@@ -874,7 +874,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="date" id="report-date-from" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
         <span style="font-size:13px;color:var(--slate);">to</span>
         <input type="date" id="report-date-to" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
-        <button class="action-btn" onclick="generateMonthlyReport()" style="padding:8px 16px;background:var(--navy);color:white;border-color:var(--navy);">📄 Dysart's Report</button>
+        <button class="action-btn" onclick="generateMonthlyReport()" style="padding:8px 16px;background:var(--navy);color:white;border-color:var(--navy);">📄 Dysart's Run Report</button>
       </div>
     </div>
 
@@ -5840,6 +5840,23 @@ document.addEventListener('DOMContentLoaded', function() {
       };
     });
 
+    // Helper: next business day after a given date
+    const nextBusinessDay = (dateStr) => {
+      const d = new Date(dateStr + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+      if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+    };
+
+    // Assign report date from lab ID prefix (MMDDYY → received date → +1 business day)
+    for (const r of dedupedRows) {
+      const id = (r.labId || '').split(' + ')[0].trim();
+      const mm = id.slice(0,2), dd = id.slice(2,4), yy = id.slice(4,6);
+      const received = `20${yy}-${mm}-${dd}`;
+      r._reportDate = nextBusinessDay(received);
+    }
+
     // Group by company
     const byCompany = {};
     for (const r of dedupedRows) {
@@ -5853,17 +5870,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Build HTML report — grouped by date within each company, with day subtotals
     const companyRows = companies.map(co => {
-      // Sort by date then lab ID
+      // Sort by report date then lab ID
       const samples = byCompany[co].sort((a,b) => {
-        const da = a.dateDrawn || '', db = b.dateDrawn || '';
-        if (da !== db) return da.localeCompare(db);
+        if (a._reportDate !== b._reportDate) return (a._reportDate||'').localeCompare(b._reportDate||'');
         return (a.labId||'').localeCompare(b.labId||'');
       });
 
-      // Group by date sampled
+      // Group by report date
       const byDate = {};
       for (const s of samples) {
-        const d = s.dateDrawn || 'Unknown Date';
+        const d = s._reportDate || 'Unknown Date';
         if (!byDate[d]) byDate[d] = [];
         byDate[d].push(s);
       }
@@ -5914,7 +5930,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Dysart's Monthly Report — ${monthLabel}</title>
+  <title>Dysart's Run Report — ${monthLabel}</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; color: #222; }
     @media print { body { margin: 20px; } .no-print { display:none; } }
@@ -5922,14 +5938,14 @@ document.addEventListener('DOMContentLoaded', function() {
 </head>
 <body>
   <div class="no-print" style="background:#1e3a5f;color:white;padding:12px 20px;margin-bottom:24px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
-    <span>Dysart's Monthly Report — ${monthLabel}</span>
+    <span>Dysart's Run Report — ${monthLabel}</span>
     <button onclick="window.print()" style="background:white;color:#1e3a5f;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer;">🖨️ Print / Save PDF</button>
   </div>
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <div>
       <div style="font-size:20px;font-weight:700;color:#1e3a5f;">Chanalytical Laboratories, Inc.</div>
-      <div style="font-size:14px;color:#555;">Dysart's Monthly Report — ${monthLabel}</div>
+      <div style="font-size:14px;color:#555;">Dysart's Run Report — ${monthLabel}</div>
     </div>
     <div style="text-align:right;">
       <div style="font-size:28px;font-weight:700;color:#1e3a5f;">${dedupedRows.length}</div>
