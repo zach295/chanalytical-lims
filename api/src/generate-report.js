@@ -95,6 +95,23 @@ const PARAM_SERVICE_ALIASES = {
 };
 
 // Hardcoded fallback — reports always work even when SP list is unreachable
+// Maps ICP-MS value cacheField → per-element acquisition time SP column
+const ICPMS_TIME_FIELDS = {
+  'Arsenic_x0028_As75_x0029_':     'AcqTime_As',
+  'Lead_x0028_Pb208_x0029_':        'AcqTime_Pb',
+  'Uranium_x0028_U238_x0029_':      'AcqTime_U',
+  'Copper_x0028_Cu63_x0029_':       'AcqTime_Cu',
+  'Iron_x0028_Fe54_x0029_':         'AcqTime_Fe',
+  'Manganese_x0028_Mn55_x0029_':    'AcqTime_Mn',
+  'Sodium_x0028_Na23_x0029_':       'AcqTime_Na',
+  'Calcium_x0028_Ca43_x0029_':      'AcqTime_Ca',
+  'Magnesium_x0028_Mg24_x0029_':    'AcqTime_Mg',
+  'Antimony_x0028_Sb121_x0029_':    'AcqTime_Sb',
+  'Cadmium_x0028_Cd111_x0029_':     'AcqTime_Cd',
+  'Chromium_x0028_Cr52_x0029_':     'AcqTime_Cr',
+  'Cobalt_x0028_Co59_x0029_':       'AcqTime_Co',
+};
+
 const PACKAGE_COVERAGE_FALLBACK = {
   'Basic Safety (FHA)':              ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
   'Basic Safety':                    ['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'],
@@ -755,8 +772,10 @@ app.http('generate-report', {
             break;
           case 'icpms':
             rawVal = String(c[p.cacheField] || '');
-            // Use per-element time if this element came from a different dilution run
-            analDT = (p.cacheField && elementTimes[p.cacheField]) ? elementTimes[p.cacheField] : icpmsAcqTime;
+            // Use per-element acquisition time column, fall back to global AcquisitionTime
+            analDT = (p.cacheField && ICPMS_TIME_FIELDS[p.cacheField] && c[ICPMS_TIME_FIELDS[p.cacheField]])
+              ? c[ICPMS_TIME_FIELDS[p.cacheField]]
+              : icpmsAcqTime;
             prepDT = acidPrepDT;
             break;
           case 'ph':
