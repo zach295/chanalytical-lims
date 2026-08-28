@@ -453,7 +453,7 @@ app.http('render-report-pdf', {
       // Write authorized by and review date directly to known cell positions
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
       const wbHdrLab  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
-      for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
+      for (const [addr, val] of [['D57', authorizedBy||''],['I57', reviewDate||'']]) {
         if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, {
           method: 'PATCH', headers: wbHdrLab, body: JSON.stringify({ values: [[val]] })
         }).catch(()=>{});
