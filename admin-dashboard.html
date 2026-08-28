@@ -7006,7 +7006,8 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         const rawIds = icpData.diag?.rawIdsFromFile ? Object.entries(icpData.diag.rawIdsFromFile).map(([f,ids]) => `${f}: [${ids.map(x => typeof x === 'object' ? `raw:"${x.raw}" base:"${x.base}"` : x).join(' | ')}]`).join(' | ') : '';
         const firstErr = icpData.log?.find(l => l.startsWith('Error')) || '';
-        const diagStr = icpData.diag ? ` | rows: ${icpData.diag.rowsFoundInFiles}, merged: ${icpData.diag.mergedSampleCount}, errors: ${icpData.diag.errors||0}${firstErr ? ` | ${firstErr}` : ''}` : '';
+        const timeFields = icpData.diag?.timeFieldNames ? ` | SP names: ${icpData.diag.timeFieldNames.join(', ')}` : '';
+        const diagStr = icpData.diag ? ` | rows: ${icpData.diag.rowsFoundInFiles}, merged: ${icpData.diag.mergedSampleCount}, errors: ${icpData.diag.errors||0}${firstErr ? ` | ${firstErr}` : ''}${timeFields}` : '';
         statusEl.textContent = `✅ ICP-MS: ${icpData.created||0} created, ${icpData.updated||0} updated (${(icpData.filesUsed||[]).join(', ')||icpData.fileName||'—'}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}${diagStr}`;
         showToast('✅ ICP-MS + Acid import complete');
       } else {
