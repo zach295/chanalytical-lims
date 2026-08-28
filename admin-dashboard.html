@@ -7004,7 +7004,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.textContent = '⏳ Importing Acid dates...';
         const acidData = await doImport('/api/import-acid', 'Acid').catch(e => ({ success:false, error: e.message }));
         statusEl.style.color = 'var(--success)';
-        const rawIds = icpData.diag?.rawIdsFromFile ? Object.entries(icpData.diag.rawIdsFromFile).map(([f,ids]) => `${f}: [${ids.join(', ')}]`).join(' | ') : '';
+        const rawIds = icpData.diag?.rawIdsFromFile ? Object.entries(icpData.diag.rawIdsFromFile).map(([f,ids]) => `${f}: [${ids.map(x => typeof x === 'object' ? `raw:"${x.raw}" base:"${x.base}"` : x).join(' | ')}]`).join(' | ') : '';
         const diagStr = icpData.diag ? ` | rows in file: ${icpData.diag.rowsFoundInFiles}, IDs needed: ${JSON.stringify(icpData.diag.idsNeeded)}${rawIds ? ` | raw IDs: ${rawIds}` : ''}` : '';
         statusEl.textContent = `✅ ICP-MS: ${icpData.created||0} created, ${icpData.updated||0} updated (${(icpData.filesUsed||[]).join(', ')||icpData.fileName||'—'}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}${diagStr}`;
         showToast('✅ ICP-MS + Acid import complete');
