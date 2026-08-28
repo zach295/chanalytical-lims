@@ -527,7 +527,7 @@ app.http('prepare-report', {
       // Write authorized by and review date
       const wbHdrLab = { Authorization:`Bearer ${token}`, 'workbook-session-id':sid, 'Content-Type':'application/json' };
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
-      for (const [addr, val] of [['D56', authorizedBy||''],['I56', reviewDate||'']]) {
+      for (const [addr, val] of [['D57', authorizedBy||''],['I57', reviewDate||'']]) {
         if (val) await fetch(`${wsBaseLab}/range(address='${addr}')`, { method:'PATCH', headers:wbHdrLab, body:JSON.stringify({ values:[[val]] }) }).catch(()=>{});
       }
       const c = await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A48');
