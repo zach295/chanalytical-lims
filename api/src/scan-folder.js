@@ -925,7 +925,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ReceivedDate:     ocr.receivedDate || '',
             ReceivedTime:     ocr.receivedTime || '',
             TestSelections:   tests.join(', '),
-            ValidationErrors: (valError || '') + (scanLog.length ? ` | ${scanLog.join(' | ')}` : ''),
+            ValidationErrors: valError || '',
             OCRConfidence:    ocr.confidence   || 0,
             FileID:           file.id,
             ProcessedDate:    stamp,
