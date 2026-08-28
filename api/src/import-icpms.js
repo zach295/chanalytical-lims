@@ -100,17 +100,11 @@ function getDilution(id) {
 
 function getBaseId(id) {
   const s = String(id || '').trim();
-  // Standard format: 082726-001
-  let m = s.match(/^(\d{6}-\d{3})/);
-  if (m) return m[1];
-  // No dash: 082726001 → 082726-001
+  let m = s.match(/^\d{6}-\d{3}/);
+  if (m) return m[0];
   m = s.match(/^(\d{6})(\d{3})/);
   if (m) return `${m[1]}-${m[2]}`;
-  // Has dash but different spacing: return everything up to first space/letter
-  m = s.match(/^([\d]{6}-[\d]{3})/);
-  if (m) return m[1];
-  // Just return the first 10 chars stripped of non-alphanumeric for loose matching
-  return s.replace(/[^\d]/g, '').slice(0, 9);
+  return '';
 }
 
 function getDatePart(baseId) {
