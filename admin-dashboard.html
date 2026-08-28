@@ -186,6 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div class="sb-label" id="sb-labtool-label">Lab Tools</div>
     <button class="sb-btn" id="sb-reports" onclick="showSection('reports',this)">📄 Reports</button>
+    <button class="sb-btn" id="sb-intake-btn" onclick="showSection('intake',this)" style="display:none;">🗂️ Archived Intake</button>
     <button class="sb-btn" id="sb-billing-btn" onclick="showSection('billing',this)">💰 Billing</button>
     <button class="sb-btn" id="sb-revenue-btn" onclick="showSection('revenue',this)">📊 Revenue</button>
 
@@ -858,6 +859,42 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
   <!-- ══ USERS ════════════════════════════════════════════════════════════ -->
+  <div class="section" id="section-intake">
+  <div style="max-width:1100px;margin:0 auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">🗂️ Archived Intake</div>
+        <div style="color:var(--slate);font-size:14px;">All approved samples</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <input id="intake-search" type="text" placeholder="Search by Lab ID, client, location..." oninput="filterIntake()"
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:280px;font-family:var(--font-body);">
+        <button class="action-btn" onclick="loadIntake()" style="padding:8px 16px;">🔄 Refresh</button>
+      </div>
+    </div>
+
+    <div id="intake-table-wrap" style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:var(--off-white);border-bottom:2px solid var(--border);">
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Lab ID</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Client</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Location</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Drawn</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Received</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Tests</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Status</th>
+          </tr>
+        </thead>
+        <tbody id="intake-table-body">
+          <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="intake-count" style="margin-top:10px;font-size:12px;color:var(--slate);"></div>
+  </div>
+</div>
+
   <div class="section" id="section-statistics">
   <div style="max-width:960px;margin:0 auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
@@ -1645,13 +1682,13 @@ document.addEventListener('DOMContentLoaded', function() {
     office: ['sb-billing-btn','sb-revenue-btn','sb-sendkits-btn','sb-clients-btn','sb-admin-label'],
     lab:    ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
              'sb-labtool-label','sb-clients-btn','sb-admin-label',
-             'sb-testtypes-btn'],
+             'sb-testtypes-btn','sb-intake-btn'],
     admin:  ['sb-review-btn','sb-rejected-btn','sb-correction-btn','sb-reports',
              'sb-labtool-label','sb-billing-btn','sb-revenue-btn',
              'sb-inventory-label','sb-kits-btn','sb-bottles-btn','sb-kitstk-btn',
              'sb-log-btn','sb-actions-label','sb-sendkits-btn','sb-setstock-btn',
              'sb-admin-label','sb-clients-btn','sb-users-btn',
-             'sb-testtypes-btn','sb-statistics-btn'],
+             'sb-testtypes-btn','sb-statistics-btn','sb-intake-btn'],
     owner:  ['sb-statistics-btn'],
   };
 
@@ -2193,6 +2230,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function showSection(id,btn) {
     if (id === 'statistics') loadStatistics();
+    if (id === 'intake') loadIntake();
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
     document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('active'));
     const sec = document.getElementById(`section-${id}`);
@@ -3860,11 +3898,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         displayTests = displayTests.filter(t => allPackages.includes(t) || !expiredElements.includes(t));
       } else {
-        // All key elements expired OR standalone elements — reject entire sample
+        // Elements expired — show warning but keep original tests, do NOT auto-reject
         timeoutNotes = rejectedFlags.map(f =>
           `${f.element} over time limit (${f.hours||'?'} hrs old, limit ${f.limit||'?'} hrs)`
         );
-        displayTests = ['Rejected - Timeout'];
+        // Keep displayTests as-is — staff can manually select Rejected - Timeout if needed
       }
     }
 
@@ -5708,6 +5746,67 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch(e) {
       if (statusEl) { statusEl.textContent = `⚠️ ${e.message}`; statusEl.style.color = 'var(--error)'; }
     }
+  }
+
+  // ── Archived Intake Tab ──────────────────────────────────────────────────
+  let _intakeRows = [];
+
+  async function loadIntake() {
+    const tbody = document.getElementById('intake-table-body');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
+    try {
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'all-intake' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
+      _intakeRows = (data.items || []).sort((a, b) => (b.labId || '').localeCompare(a.labId || ''));
+      filterIntake();
+    } catch(e) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--error);">⚠️ ${e.message}</td></tr>`;
+    }
+  }
+
+  function filterIntake() {
+    const q     = (document.getElementById('intake-search')?.value || '').toLowerCase().trim();
+    const tbody = document.getElementById('intake-table-body');
+    const count = document.getElementById('intake-count');
+    if (!tbody) return;
+    const filtered = q
+      ? _intakeRows.filter(r =>
+          (r.labId||'').toLowerCase().includes(q) ||
+          (r.clientName||r.customer||'').toLowerCase().includes(q) ||
+          (r.location||'').toLowerCase().includes(q) ||
+          (r.services||'').toLowerCase().includes(q)
+        )
+      : _intakeRows;
+
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
+      if (count) count.textContent = '';
+      return;
+    }
+
+    const statusLabel = s => {
+      if (!s) return 'Pending';
+      if (s === 'Reported') return 'Reported';
+      if (s === 'Rejected') return 'Rejected';
+      return 'Pending';
+    };
+
+    tbody.innerHTML = filtered.map(r => `
+      <tr style="border-bottom:1px solid var(--border);" onmouseover="this.style.background='var(--off-white)'" onmouseout="this.style.background=''">
+        <td style="padding:10px 12px;font-weight:600;color:var(--navy);white-space:nowrap;">${r.labId||'—'}</td>
+        <td style="padding:10px 12px;color:var(--navy);">${r.clientName||r.customer||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);">${r.location||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateDrawn||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateReceived||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);font-size:12px;max-width:200px;">${r.services||r.tests||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${statusLabel(r.status)}</td>
+      </tr>`).join('');
+
+    if (count) count.textContent = `Showing ${filtered.length} of ${_intakeRows.length} samples`;
   }
 
   function resetReportEdits() {
