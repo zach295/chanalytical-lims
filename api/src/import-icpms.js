@@ -169,9 +169,16 @@ function parseIcpmsFile(buffer, targetIds) {
     if (idx >= 0) elementCols[elemKey] = idx;
   }
 
-  const sampleIdCol = headers.findIndex(h => /sample.?id/i.test(h) || h.toLowerCase() === 'sample id');
-  const acqTimeCol  = headers.findIndex(h => /acquisition/i.test(h));
-  if (sampleIdCol < 0) return [];
+  const sampleIdCol = headers.findIndex(h =>
+    /sample.?id/i.test(h) || /sample.?name/i.test(h) || h.toLowerCase() === 'sample id' ||
+    h.toLowerCase() === 'sample name' || h.toLowerCase() === 'name' || h.toLowerCase() === 'id'
+  );
+  const acqTimeCol  = headers.findIndex(h => /acquisition/i.test(h) || /acq.*time/i.test(h) || /date.*time/i.test(h));
+  if (sampleIdCol < 0) {
+    console.log(`[icpms] No sample ID column found. Headers: ${headers.slice(0,15).join(', ')}`);
+    return [];
+  }
+  console.log(`[icpms] Using column ${sampleIdCol} ("${headers[sampleIdCol]}") as sample ID, column ${acqTimeCol} as acqTime`);
 
   const rows = [];
   for (let r = 1; r <= range.e.r; r++) {
@@ -181,7 +188,9 @@ function parseIcpmsFile(buffer, targetIds) {
     const baseId = getBaseId(sampleId);
     if (!baseId) continue;
     // Only process IDs we need
-    if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
+        if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
+        // Log first few IDs found so we can see if they're matching
+        if (rows.length < 3) console.log(`[icpms] Found sample row: "${sampleId}" → baseId="${baseId}"`);
 
     const acqCell = ws[XLSX.utils.encode_cell({ r, c: acqTimeCol })];
     const acqTime = acqCell ? String(acqCell.w || acqCell.v || '') : '';
