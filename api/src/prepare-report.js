@@ -335,23 +335,22 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
   }
 
-  // Delete unused rows (bottom to top so row numbers stay valid after each delete)
+  // Hide unused rows by setting rowHeight=0 — preserves borders and template formatting
   if (toHide.length > 0) {
-    const descending = [...toHide].sort((a, b) => b - a);
+    const ascending = [...toHide].sort((a, b) => a - b);
     const ranges = [];
-    let re3 = descending[0], rs3 = descending[0];
-    for (let i = 1; i < descending.length; i++) {
-      if (descending[i] === rs3 - 1) rs3 = descending[i];
-      else { ranges.push([rs3, re3]); re3 = rs3 = descending[i]; }
+    let rs2 = ascending[0], re2 = ascending[0];
+    for (let i = 1; i < ascending.length; i++) {
+      if (ascending[i] === re2 + 1) re2 = ascending[i];
+      else { ranges.push([rs2, re2]); rs2 = re2 = ascending[i]; }
     }
-    ranges.push([rs3, re3]);
-    for (const [s, e] of ranges) {
-      const addr = `A${s}:${colLetter((nc || 10) - 1)}${e}`;
-      await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-        body: JSON.stringify({ shift: 'Up' }),
-      }).catch(e => context.log('[prepare] row delete error:', e.message));
+    ranges.push([rs2, re2]);
+    const hideReqs = ranges.map(([s, e]) => ({
+      url:  `${base}/range(address='A${s}:${colLetter((nc || 10) - 1)}${e}')/format`,
+      body: { rowHeight: 1 },
+    }));
+    for (let i = 0; i < hideReqs.length; i += 20) {
+      await graphBatch(hideReqs.slice(i, i + 20), token, sid);
     }
   }
 
