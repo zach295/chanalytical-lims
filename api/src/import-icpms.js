@@ -123,25 +123,38 @@ function isCellRed(cell) {
   const s = cell.s;
   if (!s) return false;
 
-  // SheetJS stores fill colors at cell.s.fill.fgColor (not cell.s.fgColor directly)
-  const fg = String(
-    s.fill?.fgColor?.rgb || s.fill?.fgColor?.theme ||
-    s.fgColor?.rgb || s.fgColor?.theme || ''
-  ).toUpperCase();
-  const bg = String(
-    s.fill?.bgColor?.rgb || s.fill?.bgColor?.theme ||
-    s.bgColor?.rgb || s.bgColor?.theme || ''
-  ).toUpperCase();
+  const fill = s.fill || s;
+  const fgColor = fill.fgColor || fill.patternFgColor || {};
+  const bgColor = fill.bgColor || fill.patternBgColor || {};
 
+  // Check indexed colors — Excel palette reds: 2, 10, 30, 38, 46
+  const RED_INDEXED = new Set([2, 10, 30, 38, 46]);
+  if (RED_INDEXED.has(fgColor.indexed) || RED_INDEXED.has(bgColor.indexed)) return true;
+
+  // Check theme colors that map to red — theme 4 with negative tint, or specific combos
+  // Most ICP-MS software uses RGB/ARGB fills, not theme colors for failures
+
+  // Extract RGB from both ARGB (8-char like FFFF0000) and RGB (6-char like FF0000)
+  const extractRGB = (colorObj) => {
+    if (!colorObj) return '';
+    const raw = String(colorObj.rgb || '').toUpperCase();
+    if (raw.length === 8) return raw.slice(2); // strip alpha: FFFF0000 → FF0000
+    if (raw.length === 6) return raw;
+    return '';
+  };
+
+  const fg = extractRGB(fgColor);
+  const bg = extractRGB(bgColor);
   const combined = fg + '|' + bg;
-  if (!combined.trim()) return false;
 
-  // Red shades used by ICP-MS software — checked as substring so ARGB (8-char) works too
+  if (!combined.replace('|','').trim()) return false;
+
   const redPatterns = [
     'FF0000','C0504D','FA8072','FF5050','FF4444','FF9999',
     'FFC7CE','CC0000','FF3333','EA9999','FF8080','E06666',
     'FFB6B6','FFBFBF','FF6666','FF0066','CC4125','FF7575',
     'FFAAAA','FF4500','DC143C','FF3300','FF2222','FF1111',
+    'F4CCCC','FCE4EC','FFCDD2','EF9A9A','E57373','EF5350',
   ];
   return redPatterns.some(p => combined.includes(p));
 }
