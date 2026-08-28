@@ -83,10 +83,13 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const _dbg = []; // debug collector
   _dbg.push('dtCollected=' + (meta?.dtCollected||'EMPTY') + ' location=' + (meta?.location||'EMPTY') + ' city=' + (meta?.city||'EMPTY'));
   const rr = await gReq('GET',
-    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount`,
+    `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount,address`,
     token, undefined, sid);
   if (!rr.ok) { context.log('usedRange failed:', rr.status); return; }
-  const { values: rows, columnCount: nc } = await rr.json();
+  const { values: rows, columnCount: nc, address: rangeAddr } = await rr.json();
+  // Parse the starting row from the range address (e.g. "Sheet1!B12:J60" → startRow = 12)
+  const startRowMatch = (rangeAddr || '').match(/[A-Z]+(\d+):/);
+  const startRow = startRowMatch ? parseInt(startRowMatch[1]) : 1;
   if (!rows?.length) return;
 
   const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
@@ -209,7 +212,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       return pn === nameLow || pn.startsWith(nameLow) || nameLow.startsWith(pn);
     });
     if (!p) {
-      toDelete.push(ri + 1); // 1-based row number
+      toDelete.push(startRow + ri); // correct Excel row = usedRange start + row index
     } else {
       // Write result value and dates
       if (colResult >= 0 && p.value)              addCell(ri, colResult,    p.value);
