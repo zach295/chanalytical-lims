@@ -741,6 +741,9 @@ app.http('generate-report', {
       const c = cache || {};
       const acidPrepDT   = c.MetalsStartDate_x002f_Time || '';
       const icpmsAcqTime = c.AcquisitionTime || '';
+      // Per-element acquisition times for elements that passed on a different dilution run
+      let elementTimes = {};
+      try { elementTimes = c.ElementTimes ? JSON.parse(c.ElementTimes) : {}; } catch(e) {}
 
       const buildRow = (p) => {
         let rawVal = '', analDT = '', prepDT = '';
