@@ -5865,66 +5865,52 @@ document.addEventListener('DOMContentLoaded', function() {
       byCompany[co].push(r);
     }
 
-    // Sort companies alphabetically
-    const companies = Object.keys(byCompany).sort();
+    // Build one big list grouped by report date across all companies
+    const allSamples = dedupedRows.sort((a,b) => {
+      if (a._reportDate !== b._reportDate) return (a._reportDate||'').localeCompare(b._reportDate||'');
+      return (a.labId||'').localeCompare(b.labId||'');
+    });
 
-    // Build HTML report — grouped by date within each company, with day subtotals
-    const companyRows = companies.map(co => {
-      // Sort by report date then lab ID
-      const samples = byCompany[co].sort((a,b) => {
-        if (a._reportDate !== b._reportDate) return (a._reportDate||'').localeCompare(b._reportDate||'');
-        return (a.labId||'').localeCompare(b.labId||'');
-      });
+    const byDate = {};
+    for (const s of allSamples) {
+      const d = s._reportDate || 'Unknown Date';
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(s);
+    }
 
-      // Group by report date
-      const byDate = {};
-      for (const s of samples) {
-        const d = s._reportDate || 'Unknown Date';
-        if (!byDate[d]) byDate[d] = [];
-        byDate[d].push(s);
-      }
-
-      const dateBlocks = Object.keys(byDate).sort().map(date => {
-        const dayKits = byDate[date];
-        const kitsWord = dayKits.length === 1 ? 'kit' : 'kits';
-        const dayRows = dayKits.map((s, i) =>
-          `<tr style="background:${i % 2 === 0 ? 'white' : '#f9fafb'}">
-            <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;font-weight:600;color:#1e3a5f;">${s.labId||'—'}</td>
-            <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;">${s.services||'—'}</td>
-            <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${s.location||'—'}</td>
-          </tr>`
-        ).join('');
-        return `
-          <tr style="background:#e8edf2;">
-            <td colspan="2" style="padding:5px 10px;border:1px solid #ccc;font-size:11px;font-weight:700;color:#1e3a5f;">${date}</td>
-            <td style="padding:5px 10px;border:1px solid #ccc;font-size:11px;font-weight:700;color:#555;text-align:right;">${dayKits.length} ${kitsWord}</td>
-          </tr>
-          ${dayRows}`;
-      }).join('');
-
+    const dateBlocks = Object.keys(byDate).sort().map(date => {
+      const dayKits = byDate[date];
+      const kitsWord = dayKits.length === 1 ? 'kit' : 'kits';
+      const dayRows = dayKits.map((s, i) =>
+        `<tr style="background:${i % 2 === 0 ? 'white' : '#f9fafb'}">
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;font-weight:600;color:#1e3a5f;">${s.labId||'—'}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${(s.clientName||s.customer||'—').trim()}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;">${s.services||'—'}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${s.location||'—'}</td>
+        </tr>`
+      ).join('');
       return `
-        <div style="margin-bottom:28px;break-inside:avoid;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #1e3a5f;padding-bottom:4px;margin-bottom:8px;">
-            <span style="font-weight:700;font-size:14px;color:#1e3a5f;">${co}</span>
-          </div>
-          <table style="width:100%;border-collapse:collapse;">
-            <thead>
-              <tr style="background:#1e3a5f;">
-                <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Lab ID</th>
-                <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Test Type</th>
-                <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Location</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dateBlocks}
-              <tr style="background:#1e3a5f20;border-top:2px solid #1e3a5f;">
-                <td colspan="2" style="padding:6px 10px;border:1px solid #ccc;font-size:12px;font-weight:700;color:#1e3a5f;">Company Total</td>
-                <td style="padding:6px 10px;border:1px solid #ccc;font-size:12px;font-weight:700;color:#1e3a5f;text-align:right;">${samples.length} kit${samples.length!==1?'s':''}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>`;
+        <tr style="background:#e8edf2;">
+          <td colspan="3" style="padding:5px 10px;border:1px solid #ccc;font-size:11px;font-weight:700;color:#1e3a5f;">${date}</td>
+          <td style="padding:5px 10px;border:1px solid #ccc;font-size:11px;font-weight:700;color:#555;text-align:right;">${dayKits.length} ${kitsWord}</td>
+        </tr>
+        ${dayRows}`;
     }).join('');
+
+    const companyRows = `
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#1e3a5f;">
+            <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Lab ID</th>
+            <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Client</th>
+            <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Test Type</th>
+            <th style="padding:6px 10px;border:1px solid #ccc;font-size:11px;text-align:left;font-weight:600;color:white;">Location</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${dateBlocks}
+        </tbody>
+      </table>`;
 
     const html = `<!DOCTYPE html>
 <html>
