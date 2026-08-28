@@ -5798,8 +5798,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const id = r.labId || '';
       const mm = parseInt(id.slice(0,2)), dd = parseInt(id.slice(2,4)), yy = parseInt(id.slice(4,6));
       if (isNaN(mm) || isNaN(dd) || isNaN(yy)) return false;
-      const fullYear = 2000 + yy;
-      if (fullYear !== year || mm !== month) return false;
+      const labDate = `20${String(yy).padStart(2,'0')}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+      if (labDate < fromVal || labDate > toVal) return false;
       // Only include dysart's run clients
       const co = (r.clientName || r.customer || '').toLowerCase();
       return NORTHERN_CLIENTS.some(nc => co.includes(nc.split(' ')[0]));
