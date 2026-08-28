@@ -763,6 +763,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
       <!-- Send / Save buttons -->
       <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap;">
+        <button class="action-btn" style="padding:12px 20px;color:var(--success);border-color:var(--success);" onclick="markCurrentReportAsReported()">
+          ✅ Mark as Reported
+        </button>
         <button class="btn-ok" style="padding:12px 28px;background:var(--navy);" onclick="saveAndSendReport(false)">
           🖨️ Save PDF (Print)
         </button>
@@ -5683,6 +5686,27 @@ document.addEventListener('DOMContentLoaded', function() {
         const el = document.getElementById(`stat-${p}-${m}`);
         if (el) el.textContent = '—';
       }));
+    }
+  }
+
+  async function markCurrentReportAsReported() {
+    if (!currentReportData?.labId) return;
+    const statusEl = document.getElementById('rpt-send-status');
+    if (statusEl) { statusEl.textContent = '⏳ Marking as reported...'; statusEl.style.color = 'var(--slate)'; }
+    try {
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-reported', labId: currentReportData.labId, reportedBy: getAdminName() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        if (statusEl) { statusEl.textContent = `✅ Marked as Reported`; statusEl.style.color = 'var(--success)'; }
+        showToast(`✅ ${currentReportData.labId} marked as Reported`);
+      } else {
+        throw new Error(data.error || 'Failed to mark as reported');
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = `⚠️ ${e.message}`; statusEl.style.color = 'var(--error)'; }
     }
   }
 
