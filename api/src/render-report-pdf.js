@@ -229,28 +229,27 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Hide unused rows by setting rowHeight=0 — no row shifting, no address adjustment needed
-  // Group consecutive rows into ranges to minimize API calls
+  // Delete unused rows (bottom to top so row numbers stay valid after each delete)
+  // Preserves colored borders between remaining element rows
   if (toDelete.length > 0) {
-    const ascending = [...toDelete].sort((a, b) => a - b);
+    const descending = [...toDelete].sort((a, b) => b - a);
     const ranges = [];
-    let rs = ascending[0], re = ascending[0];
-    for (let i = 1; i < ascending.length; i++) {
-      if (ascending[i] === re + 1) { re = ascending[i]; }
-      else { ranges.push([rs, re]); rs = re = ascending[i]; }
+    let re2 = descending[0], rs2 = descending[0];
+    for (let i = 1; i < descending.length; i++) {
+      if (descending[i] === rs2 - 1) rs2 = descending[i];
+      else { ranges.push([rs2, re2]); re2 = rs2 = descending[i]; }
     }
-    ranges.push([rs, re]);
-    context.log(`[pdf] Hiding ${toDelete.length} rows as ${ranges.length} ranges`);
-    // Hide each range (rowHeight=0 makes rows invisible in PDF export)
-    const hideRequests = ranges.map(([start, end]) => ({
-      url:    `${base}/range(address='A${start}:${colLetter((nc||10)-1)}${end}')/format`,
-      body:   { rowHeight: 0 },
-    }));
-    for (let i = 0; i < hideRequests.length; i += 20) {
-      await graphBatch(hideRequests.slice(i, i + 20), token, sid);
+    ranges.push([rs2, re2]);
+    context.log(`[pdf] Deleting ${toDelete.length} rows as ${ranges.length} ranges (bottom-to-top)`);
+    for (const [start, end] of ranges) {
+      const addr = `A${start}:${colLetter((nc||10)-1)}${end}`;
+      await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+        body: JSON.stringify({ shift: 'Up' }),
+      }).catch(e => context.log('[fillSheet] delete error:', e.message));
     }
   }
-
 }
 
 app.http('render-report-pdf', {
