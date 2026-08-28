@@ -232,24 +232,50 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Hide unused rows by setting rowHeight=0 — preserves borders and template formatting
+  // Delete unused rows (bottom to top) and copy bottom border to row above first
   if (toDelete.length > 0) {
-    const ascending = [...toDelete].sort((a, b) => a - b);
-    const ranges = [];
-    let rs = ascending[0], re = ascending[0];
-    for (let i = 1; i < ascending.length; i++) {
-      if (ascending[i] === re + 1) re = ascending[i];
-      else { ranges.push([rs, re]); rs = re = ascending[i]; }
+    const descending = [...toDelete].sort((a, b) => b - a);
+
+    // Step 1: For each row to delete, read its bottom border and write it to the row above
+    for (const rowNum of descending) {
+      if (rowNum <= 1) continue;
+      try {
+        // Read bottom border of this row (first cell is enough — same border across row)
+        const borderR = await fetch(
+          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}')/format/borders/Bottom`,
+          { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
+        );
+        if (borderR.ok) {
+          const borderData = await borderR.json();
+          // Only copy if there's an actual colored border (not "None")
+          if (borderData.style && borderData.style !== 'None') {
+            const lastCol = colLetter((nc||10)-1);
+            await fetch(
+              `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum-1}:${lastCol}${rowNum-1}')/format/borders/Bottom`,
+              {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+                body: JSON.stringify({ style: borderData.style, color: borderData.color, weight: borderData.weight }),
+              }
+            ).catch(() => {});
+          }
+        }
+      } catch(e) { /* non-fatal */ }
     }
-    ranges.push([rs, re]);
-    context.log(`[pdf] Hiding ${toDelete.length} rows in ${ranges.length} range(s)`);
-    const hideReqs = ranges.map(([s, e]) => ({
-      url:  `${base}/range(address='A${s}:${colLetter((nc||10)-1)}${e}')/format`,
-      body: { rowHeight: 1 },
-    }));
-    for (let i = 0; i < hideReqs.length; i += 20) {
-      await graphBatch(hideReqs.slice(i, i + 20), token, sid);
+
+    // Step 2: Delete rows bottom to top (single rows, no ranges, to keep row numbers valid)
+    for (const rowNum of descending) {
+      const addr = `A${rowNum}:${colLetter((nc||10)-1)}${rowNum}`;
+      await fetch(
+        `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+          body: JSON.stringify({ shift: 'Up' }),
+        }
+      ).catch(e => context.log('[fillSheet] delete error:', e.message));
     }
+    context.log(`[pdf] Deleted ${toDelete.length} unused rows`);
   }
 }
 
