@@ -203,8 +203,12 @@ function parseIcpmsFile(buffer, targetIds) {
       const cell     = ws[XLSX.utils.encode_cell({ r, c: colIdx })];
       const value    = cell && cell.v !== undefined && cell.v !== null ? cell.v : null;
       const rejected = isCellRed(cell);
-      // Log rejected cells so we can verify detection is working
-      if (rejected) console.log(`[icpms] REJECTED cell (${elemKey}) row ${r+1}: value=${value} fg=${JSON.stringify(cell?.s?.fill?.fgColor||cell?.s?.fgColor)}`);
+      // Capture a sample of non-null cell colors for diagnostics
+      if (cell?.s?.fill && diagInfo.sampleColors && diagInfo.sampleColors.length < 20) {
+        const fg = cell.s.fill?.fgColor;
+        const bg = cell.s.fill?.bgColor;
+        if (fg || bg) diagInfo.sampleColors.push({ elem: elemKey, row: r+1, fg: JSON.stringify(fg), bg: JSON.stringify(bg), rejected });
+      }
       elements[elemKey] = { value, rejected };
     }
 
@@ -324,6 +328,7 @@ app.http('import-icpms', {
         rowsFoundInFiles: 0,
         mergedSampleCount: 0,
         rawIdsFromFile: {},
+        sampleColors: [],
       };
 
       for (const [datePart, ids] of Object.entries(byDate)) {
