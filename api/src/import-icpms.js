@@ -99,12 +99,8 @@ function getDilution(id) {
 }
 
 function getBaseId(id) {
-  const s = String(id || '').trim();
-  let m = s.match(/^\d{6}-\d{3}/);
-  if (m) return m[0];
-  m = s.match(/^(\d{6})(\d{3})/);
-  if (m) return `${m[1]}-${m[2]}`;
-  return '';
+  const m = String(id || '').match(/^(\d{6}-\d{3})/);
+  return m ? m[1] : '';
 }
 
 function getDatePart(baseId) {
@@ -190,15 +186,12 @@ function parseIcpmsFile(buffer, targetIds) {
     const idCell   = ws[XLSX.utils.encode_cell({ r, c: sampleIdCol })];
     const sampleId = idCell ? String(idCell.v || '').trim() : '';
     if (!sampleId) continue;
-    if (isQCRow(sampleId)) continue;
     if (rawIdsFound.length < 10) rawIdsFound.push({ raw: sampleId, base: getBaseId(sampleId) });
+    if (isQCRow(sampleId) || !isSampleRow(sampleId)) continue;
     const baseId = getBaseId(sampleId);
     if (!baseId) continue;
     // Only process IDs we need
-        if (targetIds && targetIds.size > 0) {
-      const match = [...targetIds].some(tid => tid === baseId || baseId.startsWith(tid) || tid.startsWith(baseId));
-      if (!match) continue;
-    }
+        if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
         // Log first few IDs found so we can see if they're matching
         if (rows.length < 3) console.log(`[icpms] Found sample row: "${sampleId}" → baseId="${baseId}"`);
 
@@ -386,7 +379,6 @@ app.http('import-icpms', {
       diagInfo.filesUsed = filesUsed;
       diagInfo.rowsFoundInFiles = allRows.length;
       diagInfo.mergedSampleCount = Object.keys(merged).length;
-      diagInfo.errors = errors;
 
       if (debug) {
         return { status: 200, headers: { 'content-type': 'application/json' },
@@ -463,7 +455,7 @@ app.http('import-icpms', {
       } catch(e) {}
 
       return { status: 200, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log, diag: diagInfo }) };
+        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log, diag: { ...diagInfo, errors } }) };
 
     } catch(e) {
       context.log('[import-icpms] Error:', e.message);
