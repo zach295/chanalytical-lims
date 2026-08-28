@@ -5805,9 +5805,38 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (!rows.length) { showToast(`No samples found for ${monthLabel}`); return; }
 
+    // Group same-kit samples: two lab IDs from the same COC share the same
+    // client, location, and date/time drawn. Merge them into one kit entry.
+    const kitMap = {};
+    for (const r of rows) {
+      const kitKey = [
+        (r.clientName || r.customer || '').toLowerCase().trim(),
+        (r.location || '').toLowerCase().trim(),
+        (r.dateDrawn || '').trim(),
+        (r.timeDrawn || '').trim(),
+      ].join('|');
+
+      if (!kitMap[kitKey]) {
+        kitMap[kitKey] = { ...r, _allLabIds: [r.labId], _allServices: [r.services].filter(Boolean) };
+      } else {
+        kitMap[kitKey]._allLabIds.push(r.labId);
+        if (r.services) kitMap[kitKey]._allServices.push(r.services);
+      }
+    }
+
+    // Build merged kit rows — sort lab IDs, use first as display ID
+    const dedupedRows = Object.values(kitMap).map(r => {
+      const sortedIds = r._allLabIds.sort();
+      return {
+        ...r,
+        labId:    sortedIds.join(' + '),
+        services: [...new Set(r._allServices)].join(' + '),
+      };
+    });
+
     // Group by company
     const byCompany = {};
-    for (const r of rows) {
+    for (const r of dedupedRows) {
       const co = (r.clientName || r.customer || 'Unknown').trim();
       if (!byCompany[co]) byCompany[co] = [];
       byCompany[co].push(r);
@@ -5867,7 +5896,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div style="font-size:14px;color:#555;">Northern Run Report — ${monthLabel}</div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:28px;font-weight:700;color:#1e3a5f;">${rows.length}</div>
+      <div style="font-size:28px;font-weight:700;color:#1e3a5f;">${dedupedRows.length}</div>
       <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Total Kits</div>
     </div>
   </div>
