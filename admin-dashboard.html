@@ -5789,12 +5789,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!_intakeRows.length) await loadIntake();
 
     // Filter to selected month using labId prefix MMDDYY
+    const NORTHERN_CLIENTS = ['madden home inspections','yankee home inspections',
+      'defender home inspections',"elliott's information service"];
+
     const rows = _intakeRows.filter(r => {
       const id = r.labId || '';
       const mm = parseInt(id.slice(0,2)), dd = parseInt(id.slice(2,4)), yy = parseInt(id.slice(4,6));
       if (isNaN(mm) || isNaN(dd) || isNaN(yy)) return false;
       const fullYear = 2000 + yy;
-      return fullYear === year && mm === month;
+      if (fullYear !== year || mm !== month) return false;
+      // Only include northern run clients
+      const co = (r.clientName || r.customer || '').toLowerCase();
+      return NORTHERN_CLIENTS.some(nc => co.includes(nc.split(' ')[0]));
     });
 
     if (!rows.length) { showToast(`No samples found for ${monthLabel}`); return; }
@@ -5810,14 +5816,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Sort companies alphabetically
     const companies = Object.keys(byCompany).sort();
 
-    // Build HTML report
+    // Build HTML report — one row per kit
     const companyRows = companies.map(co => {
       const samples = byCompany[co].sort((a,b) => (a.labId||'').localeCompare(b.labId||''));
-      const sampleRows = samples.map(s =>
-        `<tr>
-          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.labId||'—'}</td>
-          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.services||'—'}</td>
-          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.location||'—'}</td>
+      const sampleRows = samples.map((s, i) =>
+        `<tr style="background:${i % 2 === 0 ? 'white' : '#f9fafb'}">
+          <td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;font-weight:600;color:#1e3a5f;">${s.labId||'—'}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;">${s.services||'—'}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;font-size:12px;color:#555;">${s.location||'—'}</td>
         </tr>`
       ).join('');
       return `
@@ -5828,10 +5834,10 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
           <table style="width:100%;border-collapse:collapse;">
             <thead>
-              <tr style="background:#f0f4f8;">
-                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Lab ID</th>
-                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Test Type</th>
-                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Location</th>
+              <tr style="background:#e8edf2;">
+                <th style="padding:6px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#333;">Lab ID</th>
+                <th style="padding:6px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#333;">Test Type</th>
+                <th style="padding:6px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#333;">Location</th>
               </tr>
             </thead>
             <tbody>${sampleRows}</tbody>
