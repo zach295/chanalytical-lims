@@ -519,8 +519,16 @@ app.http('prepare-report', {
       Object.assign(cellColors, c);
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
     } else if (isArsenicSpec && specSheet) {
+      await writeHeaders(specSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
       const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24');
       Object.assign(cellColors, c);
+      const wsBaseSpec2 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`;
+      const wbHdrSpec2  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
+      for (const [addr, val] of [['D32', authorizedBy||''],['I32', reviewDate||'']]) {
+        if (val) await fetch(`${wsBaseSpec2}/range(address='${addr}')`, {
+          method: 'PATCH', headers: wbHdrSpec2, body: JSON.stringify({ values: [[val]] })
+        }).catch(()=>{});
+      }
     } else if (labSheet) {
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
       await writeHeaders(labSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
