@@ -786,11 +786,13 @@ app.http('generate-report', {
             prepDT = acidPrepDT;
             break;
           case 'spec_v': {
-            // Arsenic V = Arsenic Total (TAs) minus Arsenic III (As3) — calculated
+            // Arsenic V = rounded(Arsenic Total) minus rounded(Arsenic III) — matches display values
             const asTotal = parseFloat(c['Arsenic_x0028_As75_x0029_'] || '');
             const asIII   = parseFloat(c.Arsenic3 || c.ArsenicIII || '');
             if (!isNaN(asTotal) && !isNaN(asIII)) {
-              rawVal = String(Math.max(0, Math.round((asTotal - asIII) * 10000) / 10000));
+              const asTotalRounded = Math.round(asTotal);
+              const asIIIRounded   = Math.round(asIII);
+              rawVal = String(Math.max(0, asTotalRounded - asIIIRounded));
             }
             analDT = ''; // calculated — no instrument date
             prepDT = ''; // calculated — no prep date
