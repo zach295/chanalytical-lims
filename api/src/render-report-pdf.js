@@ -232,25 +232,23 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
   }
 
-  // Delete unused rows (bottom to top so row numbers stay valid after each delete)
-  // Preserves colored borders between remaining element rows
+  // Hide unused rows by setting rowHeight=0 — preserves borders and template formatting
   if (toDelete.length > 0) {
-    const descending = [...toDelete].sort((a, b) => b - a);
+    const ascending = [...toDelete].sort((a, b) => a - b);
     const ranges = [];
-    let re2 = descending[0], rs2 = descending[0];
-    for (let i = 1; i < descending.length; i++) {
-      if (descending[i] === rs2 - 1) rs2 = descending[i];
-      else { ranges.push([rs2, re2]); re2 = rs2 = descending[i]; }
+    let rs = ascending[0], re = ascending[0];
+    for (let i = 1; i < ascending.length; i++) {
+      if (ascending[i] === re + 1) re = ascending[i];
+      else { ranges.push([rs, re]); rs = re = ascending[i]; }
     }
-    ranges.push([rs2, re2]);
-    context.log(`[pdf] Deleting ${toDelete.length} rows as ${ranges.length} ranges (bottom-to-top)`);
-    for (const [start, end] of ranges) {
-      const addr = `A${start}:${colLetter((nc||10)-1)}${end}`;
-      await fetch(`${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-        body: JSON.stringify({ shift: 'Up' }),
-      }).catch(e => context.log('[fillSheet] delete error:', e.message));
+    ranges.push([rs, re]);
+    context.log(`[pdf] Hiding ${toDelete.length} rows in ${ranges.length} range(s)`);
+    const hideReqs = ranges.map(([s, e]) => ({
+      url:  `${base}/range(address='A${s}:${colLetter((nc||10)-1)}${e}')/format`,
+      body: { rowHeight: 1 },
+    }));
+    for (let i = 0; i < hideReqs.length; i += 20) {
+      await graphBatch(hideReqs.slice(i, i + 20), token, sid);
     }
   }
 }
