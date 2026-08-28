@@ -5734,7 +5734,7 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res  = await fetch('/api/accession-status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark-reported', labId: currentReportData.labId, reportedBy: getAdminName() }),
+        body: JSON.stringify({ action: 'mark-reported', baseId: currentReportData.labId, reportedBy: getAdminName() }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
