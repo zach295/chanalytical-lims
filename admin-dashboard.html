@@ -7005,10 +7005,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const acidData = await doImport('/api/import-acid', 'Acid').catch(e => ({ success:false, error: e.message }));
         statusEl.style.color = 'var(--success)';
         const rawIds = icpData.diag?.rawIdsFromFile ? Object.entries(icpData.diag.rawIdsFromFile).map(([f,ids]) => `${f}: [${ids.map(x => typeof x === 'object' ? `raw:"${x.raw}" base:"${x.base}"` : x).join(' | ')}]`).join(' | ') : '';
-        const firstErr = icpData.log?.find(l => l.startsWith('Error')) || '';
-        const timeFields = icpData.diag?.timeFieldNames ? ` | SP names: ${icpData.diag.timeFieldNames.join(', ')}` : '';
-        const colors = icpData.diag?.sampleColors?.length ? ` | cell colors: ${JSON.stringify(icpData.diag.sampleColors.slice(0,5))}` : '';
-        const diagStr = icpData.diag ? ` | rows: ${icpData.diag.rowsFoundInFiles}, merged: ${icpData.diag.mergedSampleCount}, errors: ${icpData.diag.errors||0}${firstErr ? ` | ${firstErr}` : ''}${timeFields}${colors}` : '';
+        const rejected = (icpData.diag?.sampleColors||[]).filter(c => c.rejected).map(c => c.elem).join(', ');
+        const diagStr = icpData.diag ? ` | rows: ${icpData.diag.rowsFoundInFiles}, merged: ${icpData.diag.mergedSampleCount}${rejected ? ` | rejected: ${rejected}` : ''}` : '';
         statusEl.textContent = `✅ ICP-MS: ${icpData.created||0} created, ${icpData.updated||0} updated (${(icpData.filesUsed||[]).join(', ')||icpData.fileName||'—'}) · Acid: ${acidData.updated || 0} updated${acidData.error ? ' ⚠️ ' + acidData.error : ''}${diagStr}`;
         showToast('✅ ICP-MS + Acid import complete');
       } else {
