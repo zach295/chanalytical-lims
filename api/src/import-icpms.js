@@ -203,13 +203,13 @@ function mergeResults(rows) {
 
     const result = { baseId, acqTime: regularRows[0]?.acqTime || baseRows[0]?.acqTime || '', elements: {}, arsenicIII: null };
 
-    // Fill elements from regular/TAs rows only
+    // Fill elements from regular/TAs rows only — track per-element acqTime
     for (const elemKey of Object.keys(ELEMENT_MAP)) {
       for (const row of regularRows) {
         const el = row.elements[elemKey];
         if (!el) continue;
         if (!el.rejected && el.value !== null && el.value !== undefined) {
-          result.elements[elemKey] = { value: el.value, dilution: row.dilution };
+          result.elements[elemKey] = { value: el.value, dilution: row.dilution, acqTime: row.acqTime || '' };
           break;
         }
       }
@@ -346,13 +346,24 @@ app.http('import-icpms', {
 
       for (const [baseId, result] of Object.entries(merged)) {
         const fields = { AcquisitionTime: toMilitaryDT(result.acqTime) };
+
+        // Build per-element time map — only store times that differ from the primary acqTime
+        const primaryTime = toMilitaryDT(result.acqTime);
+        const elementTimes = {};
         for (const [elemKey, elemResult] of Object.entries(result.elements)) {
           const fieldName = ELEMENT_MAP[elemKey];
           if (fieldName && elemResult) {
             const num = typeof elemResult.value === 'number' ? elemResult.value : parseFloat(elemResult.value);
             fields[fieldName] = isNaN(num) ? '' : num < 0 ? '0' : String(Math.round(num * 10000) / 10000);
+            // Track element time if it differs from primary
+            const elemTime = toMilitaryDT(elemResult.acqTime || result.acqTime);
+            if (elemTime && elemTime !== primaryTime) {
+              elementTimes[fieldName] = elemTime; // key by SP field name so generate-report can look it up
+            }
           }
         }
+        // Store element times JSON (empty object if all elements share the same time)
+        fields.ElementTimes = Object.keys(elementTimes).length ? JSON.stringify(elementTimes) : '';
         // ArsenicIII written separately to avoid blocking main update if field name is wrong
 
         const existing = cacheItems.find(r => {
