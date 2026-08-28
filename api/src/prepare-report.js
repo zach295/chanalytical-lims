@@ -219,9 +219,11 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const colorUpdates = [];
   const cellColors   = {}; // return value: paramName → hex
 
-  const rr = await gReq('GET', `${base}/usedRange?$select=values,columnCount`, token, undefined, sid);
+  const rr = await gReq('GET', `${base}/usedRange?$select=values,columnCount,address`, token, undefined, sid);
   if (!rr.ok) { context.log('[prepare] usedRange failed:', rr.status); return cellColors; }
-  const { values: rows, columnCount: nc } = await rr.json();
+  const { values: rows, columnCount: nc, address: rangeAddr } = await rr.json();
+  const startRowM = (rangeAddr || '').match(/[A-Z]+(\d+):/);
+  const startRow  = startRowM ? parseInt(startRowM[1]) : 1;
   if (!rows?.length) return cellColors;
 
   const addCell = (r, c, val) => cellUpdates.push({
@@ -303,7 +305,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       return pn === nameLow || pn.startsWith(nameLow) || nameLow.startsWith(pn);
     });
     if (!p) {
-      toHide.push(ri + 1);
+      toHide.push(startRow + ri); // correct Excel row = usedRange start + index
     } else {
       if (colResult >= 0 && p.value)               addCell(ri, colResult,    p.value);
       if (colPrepDT >= 0 && p.prepDT)              addCell(ri, colPrepDT,    p.prepDT);
