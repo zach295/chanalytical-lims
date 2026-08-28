@@ -96,15 +96,18 @@ app.http('users-manage', {
       }
 
       if (action === 'edit') {
-        const { email, name, role, clientKey, regCode } = body;
+        const { email, name, role, clientKey, regCode, newEmail } = body;
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
-        await updateItem(LISTS.USERS, user._id, {
+        const updates = {
           field_1: name      || '',
           field_2: role      || 'lab',
           field_3: clientKey || '',
           field_4: regCode   || '',
-        });
+        };
+        // Update email (Title) if a new one was provided and it differs
+        if (newEmail && newEmail !== email) updates.Title = newEmail.trim().toLowerCase();
+        await updateItem(LISTS.USERS, user._id, updates);
         await logUserActivity('User Edited', email, `User account updated in Users list.\nNew email: ${newEmail || email} | Name: ${name || '—'} | Role: ${role || '—'}`, 'Admin');
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
