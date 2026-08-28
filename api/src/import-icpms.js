@@ -181,10 +181,13 @@ function parseIcpmsFile(buffer, targetIds) {
   console.log(`[icpms] Using column ${sampleIdCol} ("${headers[sampleIdCol]}") as sample ID, column ${acqTimeCol} as acqTime`);
 
   const rows = [];
+  const rawIdsFound = []; // for diagnostics
   for (let r = 1; r <= range.e.r; r++) {
     const idCell   = ws[XLSX.utils.encode_cell({ r, c: sampleIdCol })];
     const sampleId = idCell ? String(idCell.v || '').trim() : '';
-    if (!sampleId || isQCRow(sampleId) || !isSampleRow(sampleId)) continue;
+    if (!sampleId) continue;
+    if (rawIdsFound.length < 10) rawIdsFound.push(sampleId); // capture first 10 raw IDs
+    if (isQCRow(sampleId) || !isSampleRow(sampleId)) continue;
     const baseId = getBaseId(sampleId);
     if (!baseId) continue;
     // Only process IDs we need
@@ -210,6 +213,7 @@ function parseIcpmsFile(buffer, targetIds) {
     rows.push({ sampleId, baseId, specSuffix, dilution: getDilution(sampleId), acqTime, elements });
   }
 
+  rows._rawIds = rawIdsFound;
   return rows;
 }
 
@@ -356,7 +360,9 @@ app.http('import-icpms', {
           const buffer = await downloadFile(file.id);
           const rows   = parseIcpmsFile(buffer, ids);
           allRows.push(...rows);
-          context.log(`[import-icpms] ${file.name}: ${rows.length} rows`);
+          context.log(`[import-icpms] ${file.name}: ${rows.length} rows, raw IDs sample: ${(rows._rawIds||[]).join(', ')}`);
+          diagInfo.rawIdsFromFile = diagInfo.rawIdsFromFile || {};
+          diagInfo.rawIdsFromFile[file.name] = rows._rawIds || [];
         }
       }
 
