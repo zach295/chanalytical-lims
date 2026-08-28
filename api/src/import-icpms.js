@@ -362,9 +362,18 @@ app.http('import-icpms', {
 
       const merged = mergeResults(allRows);
 
+      // Add diagnostic info to help debug zero-match cases
+      const diagInfo = {
+        filesUsed,
+        datesSearched: Object.keys(byDate),
+        idsNeeded: Object.fromEntries(Object.entries(byDate).map(([d, s]) => [d, [...s]])),
+        rowsFoundInFiles: allRows.length,
+        mergedSampleCount: Object.keys(merged).length,
+      };
+
       if (debug) {
         return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ filesUsed, sampleCount: Object.keys(merged).length, merged }) };
+          body: JSON.stringify({ filesUsed, sampleCount: Object.keys(merged).length, merged, diag: diagInfo }) };
       }
 
       // Step 4: Write to Results Cache
@@ -437,7 +446,7 @@ app.http('import-icpms', {
       } catch(e) {}
 
       return { status: 200, headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log }) };
+        body: JSON.stringify({ success: true, filesUsed, sampleCount: Object.keys(merged).length, created, updated, errors, log, diag: diagInfo }) };
 
     } catch(e) {
       context.log('[import-icpms] Error:', e.message);
