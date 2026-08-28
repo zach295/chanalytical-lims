@@ -752,7 +752,8 @@ app.http('generate-report', {
             break;
           case 'icpms':
             rawVal = String(c[p.cacheField] || '');
-            analDT = icpmsAcqTime;
+            // Use per-element time if this element came from a different dilution run
+            analDT = (p.cacheField && elementTimes[p.cacheField]) ? elementTimes[p.cacheField] : icpmsAcqTime;
             prepDT = acidPrepDT;
             break;
           case 'ph':
