@@ -118,48 +118,72 @@ function getSpecSuffix(id) {
   return null;
 }
 
-function isCellRed(cell) {
-  if (!cell) return false;
-  const s = cell.s;
-  if (!s) return false;
+// Red Excel indexed color palette entries
+const RED_INDEXED = new Set([2, 10, 30, 38, 46]);
 
-  const fill = s.fill || s;
-  const fgColor = fill.fgColor || fill.patternFgColor || {};
-  const bgColor = fill.bgColor || fill.patternBgColor || {};
+// All red-family RGB patterns (handles both 6-char RGB and 8-char ARGB)
+const RED_PATTERNS = [
+  'FF0000','C0504D','FA8072','FF5050','FF4444','FF9999',
+  'FFC7CE','CC0000','FF3333','EA9999','FF8080','E06666',
+  'FFB6B6','FFBFBF','FF6666','FF0066','CC4125','FF7575',
+  'FFAAAA','FF4500','DC143C','FF3300','FF2222','FF1111',
+  'F4CCCC','FCE4EC','FFCDD2','EF9A9A','E57373','EF5350',
+];
 
-  // Check indexed colors — Excel palette reds: 2, 10, 30, 38, 46
-  const RED_INDEXED = new Set([2, 10, 30, 38, 46]);
-  if (RED_INDEXED.has(fgColor.indexed) || RED_INDEXED.has(bgColor.indexed)) return true;
-
-  // Check theme colors that map to red — theme 4 with negative tint, or specific combos
-  // Most ICP-MS software uses RGB/ARGB fills, not theme colors for failures
-
-  // Extract RGB from both ARGB (8-char like FFFF0000) and RGB (6-char like FF0000)
-  const extractRGB = (colorObj) => {
-    if (!colorObj) return '';
-    const raw = String(colorObj.rgb || '').toUpperCase();
-    if (raw.length === 8) return raw.slice(2); // strip alpha: FFFF0000 → FF0000
-    if (raw.length === 6) return raw;
-    return '';
-  };
-
-  const fg = extractRGB(fgColor);
-  const bg = extractRGB(bgColor);
-  const combined = fg + '|' + bg;
-
-  if (!combined.replace('|','').trim()) return false;
-
-  const redPatterns = [
-    'FF0000','C0504D','FA8072','FF5050','FF4444','FF9999',
-    'FFC7CE','CC0000','FF3333','EA9999','FF8080','E06666',
-    'FFB6B6','FFBFBF','FF6666','FF0066','CC4125','FF7575',
-    'FFAAAA','FF4500','DC143C','FF3300','FF2222','FF1111',
-    'F4CCCC','FCE4EC','FFCDD2','EF9A9A','E57373','EF5350',
-  ];
-  return redPatterns.some(p => combined.includes(p));
+function extractRGB(c) {
+  if (!c) return '';
+  const raw = String(c.rgb || '').toUpperCase();
+  return raw.length === 8 ? raw.slice(2) : raw; // strip alpha from ARGB
 }
 
-function parseIcpmsFile(buffer, targetIds) {
+function resolveFill(cell, wb) {
+  if (!cell) return null;
+  const s = cell.s;
+  if (!s) return null;
+
+  // Already resolved — SheetJS populated fill directly
+  if (s.fill) return s.fill;
+
+  // Style is just an index — resolve via workbook styles
+  const idx = typeof s === 'number' ? s : s.idx;
+  if (idx === undefined || idx === null) return null;
+
+  const styles = wb && wb.Styles;
+  if (!styles) return null;
+
+  // Try both SheetJS property name variants
+  const xfs = styles.CellXf || styles.cellXfs || [];
+  const xf  = xfs[idx];
+  if (!xf) return null;
+
+  const fillId = xf.fillId ?? xf.FillId ?? 0;
+  const fills  = styles.Fill || styles.fills || [];
+  return fills[fillId] || null;
+}
+
+function isCellRed(cell, wb) {
+  if (!cell) return false;
+
+  // Try to get the fill — either directly from cell.s or resolved from workbook
+  const fill = resolveFill(cell, wb);
+  const s    = cell.s;
+
+  // Gather all color candidates
+  const candidates = [
+    fill?.fgColor, fill?.bgColor,
+    fill?.patternFgColor, fill?.patternBgColor,
+    s?.fgColor, s?.bgColor,
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    if (RED_INDEXED.has(c.indexed)) return true;
+    const rgb = extractRGB(c);
+    if (rgb && RED_PATTERNS.some(p => rgb.includes(p))) return true;
+  }
+  return false;
+}
+
+function parseIcpmsFile(buffer, targetIds, diagSampleColors) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellStyles: true });
   const sheetName = wb.SheetNames.find(n => /concentrat/i.test(n)) || wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];
@@ -215,12 +239,11 @@ function parseIcpmsFile(buffer, targetIds) {
     for (const [elemKey, colIdx] of Object.entries(elementCols)) {
       const cell     = ws[XLSX.utils.encode_cell({ r, c: colIdx })];
       const value    = cell && cell.v !== undefined && cell.v !== null ? cell.v : null;
-      const rejected = isCellRed(cell);
-      // Capture a sample of non-null cell colors for diagnostics
-      if (cell?.s?.fill && diagInfo.sampleColors && diagInfo.sampleColors.length < 20) {
-        const fg = cell.s.fill?.fgColor;
-        const bg = cell.s.fill?.bgColor;
-        if (fg || bg) diagInfo.sampleColors.push({ elem: elemKey, row: r+1, fg: JSON.stringify(fg), bg: JSON.stringify(bg), rejected });
+      const rejected = isCellRed(cell, wb);
+      // Capture cell color sample for diagnostics
+      if (diagSampleColors && diagSampleColors.length < 10) {
+        const fill = resolveFill(cell, wb);
+        if (fill || cell?.s) diagSampleColors.push({ elem: elemKey, row: r+1, s: JSON.stringify(cell?.s)?.slice(0,80), rejected });
       }
       elements[elemKey] = { value, rejected };
     }
@@ -383,7 +406,7 @@ app.http('import-icpms', {
         for (const file of matchingFiles) {
           filesUsed.push(file.name);
           const buffer = await downloadFile(file.id);
-          const rows   = parseIcpmsFile(buffer, ids);
+          const rows   = parseIcpmsFile(buffer, ids, diagInfo.sampleColors);
           allRows.push(...rows);
           context.log(`[import-icpms] ${file.name}: ${rows.length} rows, raw IDs sample: ${(rows._rawIds||[]).join(', ')}`);
           diagInfo.rawIdsFromFile = diagInfo.rawIdsFromFile || {};
