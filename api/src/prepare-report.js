@@ -335,31 +335,24 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     await graphBatch(colorUpdates.slice(i, i + 20), token, sid);
   }
 
-  // Delete unused rows (bottom to top) and copy bottom border to row above first
+  // Delete unused rows (bottom to top), then re-apply borders to remaining param rows
   if (toHide.length > 0) {
+    const deleteSet = new Set(toHide);
     const descending = [...toHide].sort((a, b) => b - a);
 
-    // Step 1: Copy bottom border from each deleted row to the row above
-    for (const rowNum of descending) {
-      if (rowNum <= 1) continue;
+    // Step 1: Read border style from a non-deleted param row
+    let savedBorder = null;
+    const sampleRi = Object.values(pMap).find(ri => !deleteSet.has(startRow + ri));
+    if (sampleRi !== undefined) {
       try {
+        const sampleRowNum = startRow + sampleRi;
         const borderR = await fetch(
-          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}')/format/borders/Bottom`,
+          `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${sampleRowNum}')/format/borders/Bottom`,
           { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
         );
         if (borderR.ok) {
-          const borderData = await borderR.json();
-          if (borderData.style && borderData.style !== 'None') {
-            const lastCol = colLetter((nc||10)-1);
-            await fetch(
-              `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum-1}:${lastCol}${rowNum-1}')/format/borders/Bottom`,
-              {
-                method: 'PATCH',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-                body: JSON.stringify({ style: borderData.style, color: borderData.color, weight: borderData.weight }),
-              }
-            ).catch(() => {});
-          }
+          const bd = await borderR.json();
+          if (bd.style && bd.style !== 'None') savedBorder = { style: bd.style, color: bd.color, weight: bd.weight };
         }
       } catch(e) {}
     }
@@ -375,6 +368,33 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
           body: JSON.stringify({ shift: 'Up' }),
         }
       ).catch(e => context.log('[prepare] delete error:', e.message));
+    }
+
+    // Step 3: Re-apply bottom border to remaining param rows (row numbers shifted after deletions)
+    if (savedBorder) {
+      const remainingRows = Object.values(pMap)
+        .filter(ri => !deleteSet.has(startRow + ri))
+        .map(ri => {
+          const excelRow = startRow + ri;
+          const deletedAbove = toHide.filter(d => d < excelRow).length;
+          return excelRow - deletedAbove;
+        })
+        .sort((a, b) => a - b);
+
+      const lastCol = colLetter((nc || 10) - 1);
+      for (let i = 0; i < remainingRows.length; i += 20) {
+        const batch = remainingRows.slice(i, i + 20).map((rowNum, idx) => ({
+          id: String(i + idx + 1), method: 'PATCH',
+          url: `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='A${rowNum}:${lastCol}${rowNum}')/format/borders/Bottom`,
+          headers: { 'Content-Type': 'application/json', 'workbook-session-id': sid },
+          body: savedBorder,
+        }));
+        await fetch(`${GRAPH}/$batch`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests: batch }),
+        }).catch(() => {});
+      }
     }
   }
 
