@@ -866,10 +866,14 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">🗂️ Archived Intake</div>
         <div style="color:var(--slate);font-size:14px;">All approved samples</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input id="intake-search" type="text" placeholder="Search by Lab ID, client, location..." oninput="filterIntake()"
-          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:280px;font-family:var(--font-body);">
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:240px;font-family:var(--font-body);">
         <button class="action-btn" onclick="loadIntake()" style="padding:8px 16px;">🔄 Refresh</button>
+        <div style="width:1px;height:28px;background:var(--border);"></div>
+        <select id="monthly-report-month" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);background:white;">
+        </select>
+        <button class="action-btn" onclick="generateMonthlyReport()" style="padding:8px 16px;background:var(--navy);color:white;border-color:var(--navy);">📄 Monthly Report</button>
       </div>
     </div>
 
@@ -2237,7 +2241,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function showSection(id,btn) {
     if (id === 'statistics') loadStatistics();
-    if (id === 'intake') loadIntake();
+    if (id === 'intake') { initMonthPicker(); loadIntake(); }
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
     document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('active'));
     const sec = document.getElementById(`section-${id}`);
@@ -5757,6 +5761,128 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Archived Intake Tab ──────────────────────────────────────────────────
   let _intakeRows = [];
+
+  // ── Monthly Run Report ───────────────────────────────────────────────────
+  function initMonthPicker() {
+    const sel = document.getElementById('monthly-report-month');
+    if (!sel || sel.options.length > 0) return;
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d   = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const lbl = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = lbl;
+      sel.appendChild(opt);
+    }
+  }
+
+  async function generateMonthlyReport() {
+    const monthVal = document.getElementById('monthly-report-month')?.value;
+    if (!monthVal) { showToast('Select a month first.'); return; }
+    const [year, month] = monthVal.split('-').map(Number);
+    const monthLabel = new Date(year, month-1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    showToast('⏳ Generating report...');
+
+    // Pull all intake data if not already loaded
+    if (!_intakeRows.length) await loadIntake();
+
+    // Filter to selected month using labId prefix MMDDYY
+    const rows = _intakeRows.filter(r => {
+      const id = r.labId || '';
+      const mm = parseInt(id.slice(0,2)), dd = parseInt(id.slice(2,4)), yy = parseInt(id.slice(4,6));
+      if (isNaN(mm) || isNaN(dd) || isNaN(yy)) return false;
+      const fullYear = 2000 + yy;
+      return fullYear === year && mm === month;
+    });
+
+    if (!rows.length) { showToast(`No samples found for ${monthLabel}`); return; }
+
+    // Group by company
+    const byCompany = {};
+    for (const r of rows) {
+      const co = (r.clientName || r.customer || 'Unknown').trim();
+      if (!byCompany[co]) byCompany[co] = [];
+      byCompany[co].push(r);
+    }
+
+    // Sort companies alphabetically
+    const companies = Object.keys(byCompany).sort();
+
+    // Build HTML report
+    const companyRows = companies.map(co => {
+      const samples = byCompany[co].sort((a,b) => (a.labId||'').localeCompare(b.labId||''));
+      const sampleRows = samples.map(s =>
+        `<tr>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.labId||'—'}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.services||'—'}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:12px;">${s.location||'—'}</td>
+        </tr>`
+      ).join('');
+      return `
+        <div style="margin-bottom:24px;break-inside:avoid;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #1e3a5f;padding-bottom:4px;margin-bottom:8px;">
+            <span style="font-weight:700;font-size:14px;color:#1e3a5f;">${co}</span>
+            <span style="font-size:12px;color:#555;">${samples.length} kit${samples.length !== 1 ? 's' : ''}</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f0f4f8;">
+                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Lab ID</th>
+                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Test Type</th>
+                <th style="padding:5px 10px;border:1px solid #ddd;font-size:11px;text-align:left;font-weight:600;color:#444;">Location</th>
+              </tr>
+            </thead>
+            <tbody>${sampleRows}</tbody>
+          </table>
+        </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Northern Run Report — ${monthLabel}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #222; }
+    @media print { body { margin: 20px; } .no-print { display:none; } }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="background:#1e3a5f;color:white;padding:12px 20px;margin-bottom:24px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+    <span>Northern Run Report — ${monthLabel}</span>
+    <button onclick="window.print()" style="background:white;color:#1e3a5f;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer;">🖨️ Print / Save PDF</button>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div>
+      <div style="font-size:20px;font-weight:700;color:#1e3a5f;">Chanalytical Laboratories, Inc.</div>
+      <div style="font-size:14px;color:#555;">Northern Run Report — ${monthLabel}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:28px;font-weight:700;color:#1e3a5f;">${rows.length}</div>
+      <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Total Kits</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:#888;margin-bottom:24px;">Generated ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+  <hr style="border:none;border-top:2px solid #1e3a5f;margin-bottom:24px;">
+
+  <div style="display:flex;gap:20px;margin-bottom:24px;flex-wrap:wrap;">
+    ${companies.map(co => `<div style="background:#f0f4f8;padding:8px 14px;border-radius:6px;font-size:12px;">
+      <span style="font-weight:700;color:#1e3a5f;">${co}</span>
+      <span style="color:#555;margin-left:6px;">${byCompany[co].length} kit${byCompany[co].length!==1?'s':''}</span>
+    </div>`).join('')}
+  </div>
+
+  ${companyRows}
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+  }
 
   async function loadIntake() {
     const tbody = document.getElementById('intake-table-body');
