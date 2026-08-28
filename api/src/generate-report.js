@@ -38,7 +38,7 @@ const PARAM_CONFIG = [
   { name:'Fluoride, Total',              rl:0.20,    epa:4,         unit:'mg/L', method:'SM4500F',          source:'gallery', cacheField:'field_8',  cacheDT:'field_9' , decimals:1},
   { name:'Nitrite-Nitrogen, Total',      rl:0.20,    epa:1,         unit:'mg/L', method:'CL-028',        source:'gallery', cacheField:'field_10', cacheDT:'field_11' , decimals:1},
   { name:'Nitrate-Nitrogen, Total',      rl:1.00,    epa:10,        unit:'mg/L', method:'CL-029',        source:'gallery', cacheField:'field_12', cacheDT:'field_13' , decimals:0},
-  { name:'Arsenic, III',                 rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'spec_iii', cacheField:'ArsenicIII' },
+  { name:'Arsenic, III',                 rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'spec_iii', cacheField:'ArsenicIII', decimals:0 },
   { name:'Arsenic, V',                   rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'spec_v',   cacheField:null },
   { name:'Arsenic, Total',               rl:1.00,    epa:10,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Arsenic_x0028_As75_x0029_' , decimals:0},
   { name:'Lead, Total',                  rl:1.00,    epa:15,        unit:'ug/L', method:'EPA 200.8',        source:'icpms',   cacheField:'Lead_x0028_Pb208_x0029_' , decimals:0, cacheDT:'AcquisitionTime'},
