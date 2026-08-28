@@ -510,9 +510,7 @@ app.http('render-report-pdf', {
       await writeHeaders(labSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
-
-      // Write authorized by and review date directly to known cell positions
+      // Write authorized by BEFORE fillSheet so row deletions shift it with the row
       const wsBaseLab = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${labSheet.id}`;
       const wbHdrLab  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
       for (const [addr, val] of [['D57', authorizedBy||''],['I57', reviewDate||'']]) {
@@ -520,6 +518,7 @@ app.http('render-report-pdf', {
           method: 'PATCH', headers: wbHdrLab, body: JSON.stringify({ values: [[val]] })
         }).catch(()=>{});
       }
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
       await fitOnePage(labSheet.id);
     }
 
