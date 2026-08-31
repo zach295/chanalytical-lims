@@ -6013,6 +6013,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (count) count.textContent = `Showing ${filtered.length} of ${_intakeRows.length} samples`;
   }
 
+  function deleteReportRow(paramName) {
+    if (!currentReportData?.activeParams) return;
+    currentReportData.activeParams = currentReportData.activeParams.filter(p => p.name !== paramName);
+    if (currentReportData.fhaParams) {
+      currentReportData.fhaParams = currentReportData.fhaParams.filter(p => p.name !== paramName);
+    }
+    renderEditableReport(currentReportData);
+  }
+
   function resetReportEdits() {
     if (!currentReportData) return;
     renderEditableReport(currentReportData);
@@ -6303,6 +6312,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let rows = `<tr>
       <th style="${hStyle};text-align:left;width:20%;">Parameter</th>
       <th style="${hStyle};width:16px;"></th>
+      <th style="${hStyle};width:16px;"></th>
       <th style="${hStyle};width:7%;">Result</th>
       <th style="${hStyle};width:7%;">EPA Limit</th>
       <th style="${hStyle};width:5%;">Qual.</th>
@@ -6327,6 +6337,11 @@ document.addEventListener('DOMContentLoaded', function() {
       const analVal  = analDT;
       rows += `<tr>
         <td style="${cStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</td>
+        <td style="${cStyle};text-align:center;padding:2px;">
+          <button onclick="deleteReportRow('${p.name}')" title="Remove from report"
+            style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;line-height:1;padding:1px 3px;"
+            onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='#ccc'">✕</button>
+        </td>
         <td style="${cStyle};padding:2px;text-align:center;">
           <div class="color-dot" data-param="${p.name}"
             style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;cursor:pointer;title:'Click to override color'"
