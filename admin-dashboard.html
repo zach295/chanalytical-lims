@@ -6019,6 +6019,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (currentReportData.fhaParams) {
       currentReportData.fhaParams = currentReportData.fhaParams.filter(p => p.name !== paramName);
     }
+    // Invalidate cached PDF so it regenerates with the row removed
+    currentReportData._cachedPdfBase64 = null;
+    currentReportData._cachedFileName  = null;
+    currentReportData._pdfStale        = true;
     renderEditableReport(currentReportData);
   }
 
@@ -6312,7 +6316,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let rows = `<tr>
       <th style="${hStyle};text-align:left;width:20%;">Parameter</th>
       <th style="${hStyle};width:16px;"></th>
-      <th style="${hStyle};width:16px;"></th>
       <th style="${hStyle};width:7%;">Result</th>
       <th style="${hStyle};width:7%;">EPA Limit</th>
       <th style="${hStyle};width:5%;">Qual.</th>
@@ -6337,11 +6340,6 @@ document.addEventListener('DOMContentLoaded', function() {
       const analVal  = analDT;
       rows += `<tr>
         <td style="${cStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</td>
-        <td style="${cStyle};text-align:center;padding:2px;">
-          <button onclick="deleteReportRow('${p.name}')" title="Remove from report"
-            style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;line-height:1;padding:1px 3px;"
-            onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='#ccc'">✕</button>
-        </td>
         <td style="${cStyle};padding:2px;text-align:center;">
           <div class="color-dot" data-param="${p.name}"
             style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;cursor:pointer;title:'Click to override color'"
@@ -6354,6 +6352,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="${cStyle};text-align:center;font-size:11px;color:var(--slate);">${p.method || ''}</td>
         <td style="${cStyle};text-align:center;">${editable(prepVal, 'prepDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
         <td style="${cStyle};text-align:center;">${editable(analVal, 'analDT:' + p.name, 'font-size:11px;text-align:center;width:100%;')}</td>
+        <td style="padding:2px;text-align:center;border:none;">
+          <button onclick="deleteReportRow('${p.name}')" title="Remove from report"
+            style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;line-height:1;padding:1px 3px;"
+            onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='#ccc'">✕</button>
+        </td>
       </tr>`;
     });
 
