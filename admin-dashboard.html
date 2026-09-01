@@ -875,6 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <span style="font-size:13px;color:var(--slate);">to</span>
         <input type="date" id="report-date-to" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
         <button class="action-btn" onclick="generateMonthlyReport()" style="padding:8px 16px;background:var(--navy);color:white;border-color:var(--navy);">📄 Dysart's Run Report</button>
+        <button class="action-btn" onclick="generateRadonStateReport()" style="padding:8px 16px;background:#2d6a4f;color:white;border-color:#2d6a4f;">📊 Monthly Radon State Report</button>
       </div>
     </div>
 
@@ -5593,9 +5594,19 @@ document.addEventListener('DOMContentLoaded', function() {
     window._patchQueue = {};
     for (const [pName, patch] of Object.entries(queue)) {
       try {
+        const paramMeta = currentReportData.activeParams?.find(p => p.name === pName)
+                       || currentReportData.fhaParams?.find(p => p.name === pName);
         const r = await fetch('/api/patch-report-cell', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType }),
+          body: JSON.stringify({
+            tempId:     currentReportData._tempId,
+            paramName:  pName,
+            field:      patch.field,
+            value:      patch.value,
+            sheetType:  patch.sheetType,
+            labId:      currentReportData.labId,
+            cacheField: paramMeta?.cacheField || '',
+          }),
         });
         const d = await r.json();
         if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
@@ -5762,6 +5773,122 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Archived Intake Tab ──────────────────────────────────────────────────
   let _intakeRows = [];
+
+  // ── Monthly Radon State Report ───────────────────────────────────────────
+  async function generateRadonStateReport() {
+    const fromVal = document.getElementById('report-date-from')?.value;
+    const toVal   = document.getElementById('report-date-to')?.value;
+    if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
+
+    showToast('⏳ Generating radon state report...');
+
+    try {
+      // Fetch billing data and clients in parallel
+      const [billingRes, clientsRes] = await Promise.all([
+        fetch('/api/billing-read'),
+        fetch('/api/accession-status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'clients-full' }),
+        }),
+      ]);
+
+      const billingData = await billingRes.json().catch(() => ({}));
+      const clientsData = await clientsRes.json().catch(() => ({}));
+
+      const billingRows = billingData.rows || [];
+      const clients     = clientsData.clients || [];
+
+      // Build client lookup: clientCode → { radonLic, billingZip }
+      const clientMap = {};
+      for (const c of clients) {
+        const code = (c.clientCode || c.ClientCode || '').trim();
+        if (code) {
+          clientMap[code] = {
+            radonLic:   c.radonLic   || c.RadonLic  || c.Radon_Lic || '',
+            billingZip: c.billingZip || c.BillingZip || (c.billingAddress || '').match(/\d{5}/)?.[0] || '',
+          };
+        }
+      }
+
+      // Filter billing rows: radon items with results in date range
+      const toISO = d => {
+        if (!d) return '';
+        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
+        const m = d.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+        return d.slice(0,10);
+      };
+      const getDate = r => {
+        const id = (r.labId || '').slice(0,6);
+        const mm = id.slice(0,2), dd = id.slice(2,4), yy = id.slice(4,6);
+        if (mm && dd && yy) return `20${yy}-${mm}-${dd}`;
+        return toISO(r.reportDate || r.stmtDate || '');
+      };
+
+      const rows = billingRows.filter(r => {
+        if (!r.rwResults) return false; // must have radon result
+        const isRadonSvc = (r.service || r.testTypeSKU || '').toLowerCase().includes('radon')
+          || (r.labId || '').toUpperCase().includes('RW');
+        if (!isRadonSvc) return false;
+        const d = getDate(r);
+        return d >= fromVal && d <= toVal;
+      });
+
+      if (!rows.length) { showToast('No radon results found for this period.'); return; }
+
+      // JS Date → Excel serial date
+      const toExcelDate = d => {
+        const msPerDay = 86400000;
+        return Math.floor((new Date(d + 'T00:00:00') - new Date('1899-12-30')) / msPerDay);
+      };
+
+      // Build xlsx rows
+      const headers = ['ME_ID','Type','PRIME_REG','Billing_Zip','Sample_ID','RESULT','Address','TOWN','Report Date','Notes','MIT_SYS'];
+      const dataRows = rows.map(r => {
+        const client    = clientMap[r.clientCode] || {};
+        const reportDt  = toISO(r.reportDate || r.stmtDate || '');
+        const excelDate = reportDt ? toExcelDate(reportDt) : '';
+        return [
+          'LAB480',
+          'Water',
+          client.radonLic || '',
+          client.billingZip || '',
+          r.labId || '',
+          parseFloat(r.rwResults) || r.rwResults || '',
+          r.location || '',
+          r.city || '',
+          excelDate,
+          '',
+          '',
+        ];
+      });
+
+      // Generate xlsx using SheetJS
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Format Report Date column (index 8) as date
+      const dateColLetter = 'I';
+      for (let i = 1; i <= dataRows.length; i++) {
+        const cell = ws[`${dateColLetter}${i+1}`];
+        if (cell && typeof cell.v === 'number') {
+          cell.t = 'n';
+          cell.z = 'MM/DD/YYYY';
+        }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+      const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}).replace(/\//g,'_');
+      const fileName = `Radon_Water_to_State_${fmtDate(fromVal)}_to_${fmtDate(toVal)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`✅ Downloaded ${fileName} — ${dataRows.length} rows`);
+
+    } catch(e) {
+      console.error('[radon state report]', e);
+      showToast('⚠️ Error generating report: ' + e.message);
+    }
+  }
 
   // ── Monthly Run Report ───────────────────────────────────────────────────
   function initMonthPicker() {
@@ -6646,6 +6773,9 @@ document.addEventListener('DOMContentLoaded', function() {
             location:    currentReportData.meta?.location || '',
             authorizedBy,
             overrideEmail,
+            radonResult: currentReportData.isRadon
+              ? (currentReportData.resultsMap?.['Radon Water']?.value || '')
+              : '',
           }),
         });
         const data = await res.json().catch(() => ({}));
