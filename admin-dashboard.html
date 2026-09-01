@@ -860,44 +860,74 @@ document.addEventListener('DOMContentLoaded', function() {
 
   <!-- ══ USERS ════════════════════════════════════════════════════════════ -->
   <div class="section" id="section-intake">
-  <div style="max-width:1100px;margin:0 auto;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
-      <div>
-        <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">🗂️ Archived Intake</div>
-        <div style="color:var(--slate);font-size:14px;">All approved samples</div>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+  <div style="max-width:1200px;margin:0 auto;display:flex;gap:20px;align-items:flex-start;">
+
+    <!-- Main content -->
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;">
+        <div>
+          <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">🗂️ Archived Intake</div>
+          <div style="color:var(--slate);font-size:14px;">All approved samples</div>
+        </div>
         <input id="intake-search" type="text" placeholder="Search by Lab ID, client, location..." oninput="filterIntake()"
-          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:240px;font-family:var(--font-body);">
-        <button class="action-btn" onclick="loadIntake()" style="padding:8px 16px;">🔄 Refresh</button>
-        <div style="width:1px;height:28px;background:var(--border);"></div>
-        <input type="date" id="report-date-from" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
-        <span style="font-size:13px;color:var(--slate);">to</span>
-        <input type="date" id="report-date-to" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
-        <button class="action-btn" onclick="generateMonthlyReport()" style="padding:8px 16px;background:var(--navy);color:white;border-color:var(--navy);">📄 Dysart's Run Report</button>
-        <button class="action-btn" onclick="generateRadonStateReport()" style="padding:8px 16px;background:#2d6a4f;color:white;border-color:#2d6a4f;">📊 Monthly Radon State Report</button>
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:260px;font-family:var(--font-body);">
       </div>
+
+      <div id="intake-table-wrap" style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:var(--off-white);border-bottom:2px solid var(--border);">
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Lab ID</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Client</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Location</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Drawn</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Received</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Tests</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Status</th>
+            </tr>
+          </thead>
+          <tbody id="intake-table-body">
+            <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="intake-count" style="margin-top:10px;font-size:12px;color:var(--slate);"></div>
     </div>
 
-    <div id="intake-table-wrap" style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead>
-          <tr style="background:var(--off-white);border-bottom:2px solid var(--border);">
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Lab ID</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Client</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Location</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Drawn</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Received</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Tests</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Status</th>
-          </tr>
-        </thead>
-        <tbody id="intake-table-body">
-          <tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>
-        </tbody>
-      </table>
+    <!-- Right sidebar: report generation -->
+    <div style="width:210px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Dysart's Run Report -->
+      <div class="card" style="padding:16px;">
+        <div style="font-weight:700;font-size:13px;color:var(--navy);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px;">📄 Dysart's Run Report</div>
+        <div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Date Range</div>
+        <input type="date" id="report-date-from" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:4px;box-sizing:border-box;">
+        <span style="font-size:11px;color:var(--slate);display:block;text-align:center;margin-bottom:4px;">to</span>
+        <input type="date" id="report-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
+        <button class="action-btn" onclick="generateMonthlyReport()" style="width:100%;padding:10px 8px;background:var(--navy);color:white;border-color:var(--navy);font-size:12px;text-align:center;box-sizing:border-box;">
+          Generate Report
+        </button>
+      </div>
+
+      <!-- Monthly Radon State Report -->
+      <div class="card" style="padding:16px;">
+        <div style="font-weight:700;font-size:13px;color:#2d6a4f;border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px;">📊 Radon State Report</div>
+        <div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Date Range</div>
+        <input type="date" id="radon-date-from" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:4px;box-sizing:border-box;">
+        <span style="font-size:11px;color:var(--slate);display:block;text-align:center;margin-bottom:4px;">to</span>
+        <input type="date" id="radon-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
+        <div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Company</div>
+        <select id="radon-company" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;background:white;">
+          <option value="">All ME Companies</option>
+        </select>
+        <button class="action-btn" onclick="generateRadonStateReport()" style="width:100%;padding:10px 8px;background:#2d6a4f;color:white;border-color:#2d6a4f;font-size:12px;text-align:center;box-sizing:border-box;">
+          Generate Report
+        </button>
+      </div>
+
     </div>
-    <div id="intake-count" style="margin-top:10px;font-size:12px;color:var(--slate);"></div>
+
+  </div>
   </div>
 </div>
 
@@ -5777,8 +5807,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Monthly Radon State Report ───────────────────────────────────────────
   async function generateRadonStateReport() {
-    const fromVal = document.getElementById('report-date-from')?.value;
-    const toVal   = document.getElementById('report-date-to')?.value;
+    const fromVal  = document.getElementById('radon-date-from')?.value;
+    const toVal    = document.getElementById('radon-date-to')?.value;
+    const company  = document.getElementById('radon-company')?.value || '';
     if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
 
     showToast('⏳ Generating radon state report...');
@@ -5824,11 +5855,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return toISO(r.reportDate || r.stmtDate || '');
       };
 
-      // Filter: must have radon result and be in date range
+      // Filter: must have radon result, be in date range, and match company if selected
       const rows = billingRows.filter(r => {
         if (!r.rwResults) return false;
         const d = getDate(r);
-        return d >= fromVal && d <= toVal;
+        if (d < fromVal || d > toVal) return false;
+        if (company) {
+          const coMatch = r.clientCode === company || (r.customer||'').toLowerCase().includes(company.toLowerCase());
+          if (!coMatch) return false;
+        }
+        return true;
       });
 
       if (!rows.length) { showToast('No radon results found in billing for this period.'); return; }
@@ -5907,21 +5943,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── Monthly Run Report ───────────────────────────────────────────────────
   function initMonthPicker() {
-    const fromEl = document.getElementById('report-date-from');
-    const toEl   = document.getElementById('report-date-to');
-    if (!fromEl || fromEl.value) return;
     const now   = new Date();
     const y     = now.getFullYear();
     const m     = String(now.getMonth() + 1).padStart(2, '0');
     const today = `${y}-${m}-${String(now.getDate()).padStart(2,'0')}`;
-    // Default from = first of current month, to = today
-    fromEl.value = `${y}-${m}-01`;
-    toEl.value   = today;
+    const first = `${y}-${m}-01`;
+
+    const fromEl = document.getElementById('report-date-from');
+    const toEl   = document.getElementById('report-date-to');
+    if (fromEl && !fromEl.value) { fromEl.value = first; toEl.value = today; }
+
+    const rFromEl = document.getElementById('radon-date-from');
+    const rToEl   = document.getElementById('radon-date-to');
+    if (rFromEl && !rFromEl.value) { rFromEl.value = first; rToEl.value = today; }
+
+    // Populate Maine companies dropdown for radon report
+    const sel = document.getElementById('radon-company');
+    if (sel && sel.options.length <= 1) {
+      fetch('/api/accession-status', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({action:'clients-full'}),
+      }).then(r=>r.json()).then(d=>{
+        const clients = (d.clients||[])
+          .filter(c => /ME/.test(c.billingAddress || '') || /maine/i.test(c.billingAddress || ''))
+          .filter(c => c.clientName)
+          .sort((a,b) => a.clientName.localeCompare(b.clientName));
+        for (const c of clients) {
+          const opt = document.createElement('option');
+          opt.value = c.clientCode || c.clientName;
+          opt.textContent = c.clientName;
+          sel.appendChild(opt);
+        }
+      }).catch(()=>{});
+    }
   }
 
   async function generateMonthlyReport() {
-    const fromVal = document.getElementById('report-date-from')?.value;
-    const toVal   = document.getElementById('report-date-to')?.value;
+    const fromVal  = document.getElementById('radon-date-from')?.value;
+    const toVal    = document.getElementById('radon-date-to')?.value;
+    const company  = document.getElementById('radon-company')?.value || '';
     if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
     if (fromVal > toVal) { showToast('Start date must be before end date.'); return; }
     const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
