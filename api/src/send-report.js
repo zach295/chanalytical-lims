@@ -249,6 +249,29 @@ app.http('send-report', {
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
 
+      // Write Report Date to Reports to be Billed when report is sent
+      try {
+        const siteId4   = process.env.SP_SITE_ID;
+        const now4      = new Date();
+        const etNow4    = new Date(now4.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const pad4      = n => String(n).padStart(2, '0');
+        const reportDate4 = `${pad4(etNow4.getMonth()+1)}/${pad4(etNow4.getDate())}/${String(etNow4.getFullYear()).slice(-2)}`;
+        const rtbSearch4 = await fetch(
+          `${GRAPH}/sites/${siteId4}/lists/Reports to be Billed/items?$expand=fields($select=id,Title)&$filter=fields/Title eq '${labId}'&$top=5`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (rtbSearch4.ok) {
+          const rtbData4 = await rtbSearch4.json();
+          for (const item of (rtbData4.value || [])) {
+            await fetch(
+              `${GRAPH}/sites/${siteId4}/lists/Reports to be Billed/items/${item.id}/fields`,
+              { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ Report_x0020_Date: reportDate4 }) }
+            ).catch(() => {});
+          }
+        }
+      } catch(e) { context.log('[send-report] Report Date billing update (non-fatal):', e.message); }
+
       // Delete Results Cache row after successful send
       try {
         const siteId2  = process.env.SP_SITE_ID;
