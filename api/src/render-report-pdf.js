@@ -520,7 +520,7 @@ app.http('render-report-pdf', {
           method: 'PATCH', headers: wbHdrLab, body: JSON.stringify({ values: [[val]] })
         }).catch(()=>{});
       }
-      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A48');
+      await fillSheet(siteId, tempId, labSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A49');
       await fitOnePage(labSheet.id);
     }
 
