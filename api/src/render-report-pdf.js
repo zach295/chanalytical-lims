@@ -113,16 +113,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
-  // ── Write comments to specific cell ────────────────────────────────────────
-  if (comments && commentsCell) {
-    // commentsCell format: 'A48' → row=47 (0-based), col=0
-    const ccMatch = commentsCell.match(/^([A-Z]+)(\d+)$/i);
-    if (ccMatch) {
-      const ccCol = ccMatch[1].toUpperCase().split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
-      const ccRow = parseInt(ccMatch[2], 10) - 1;
-      addCell(ccRow, ccCol, comments);
-    }
-  }
+  // Comments written AFTER row deletions so correct row is targeted — handled below
 
   if (attLbl) {
     const m             = meta || {};
@@ -301,6 +292,33 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       }
       context.log(`[pdf] Re-applied borders to ${remainingRows.length} remaining rows`);
     }
+  }
+
+  // ── Write comment AFTER deletions — search for "comment"/"note" label row ──
+  if (comments) {
+    try {
+      const rrAfter = await fetch(
+        `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,address`,
+        { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
+      );
+      if (rrAfter.ok) {
+        const { values: rowsAfter, address: addrAfter } = await rrAfter.json();
+        const sm = (addrAfter || '').match(/[A-Z]+(\d+):/);
+        const srA = sm ? parseInt(sm[1]) : 1;
+        let commentRowExcel = null;
+        for (let ri = 0; ri < rowsAfter.length; ri++) {
+          const cv = String((rowsAfter[ri] || [])[0] || (rowsAfter[ri] || [])[1] || '').toLowerCase().trim();
+          if (cv.startsWith('comment') || cv.startsWith('note')) { commentRowExcel = srA + ri; break; }
+        }
+        if (commentRowExcel) {
+          await fetch(
+            `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='B${commentRowExcel}')`,
+            { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+              body: JSON.stringify({ values: [[comments]] }) }
+          ).catch(() => {});
+        }
+      }
+    } catch(e) { context.log('[pdf] Comment write error:', e.message); }
   }
 }
 
