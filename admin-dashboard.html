@@ -1585,9 +1585,11 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       const res = await fetch('/api/inventory-read');
       if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Sheets read failed (${res.status}): ${errText.slice(0,300)}`);
-      }
+        // Inventory sheet not connected — continue with empty local state
+        ensureInventoryKeys();
+        const b = document.getElementById('sheets-error-banner');
+        if (b) b.style.display = 'none';
+      } else {
       const data = await res.json();
 
       // Merge inventory
@@ -1616,6 +1618,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const errBanner = document.getElementById('sheets-error-banner');
       if (errBanner) errBanner.style.display = 'none';
+      } // end else (res.ok)
 
     } catch(err) {
       console.error('Load failed:', err);
@@ -1952,20 +1955,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderLog() {
     const tbody = document.getElementById('log-body');
-    if (!activityLog.length) {
-      tbody.innerHTML='<tr><td colspan="6"><div class="empty-state">No activity yet.</div></td></tr>';
-      return;
-    }
-    const typeL={sent:'Kits Sent',sampled:'Sampled / Pending',received:'Kits Recv\'d',initial:'Initial Stock',adjust:'Adjustment',bottle_add:'Bottles Added',bottle_remove:'Bottles Used',assemble:'Kits Assembled',check_in:'COC Check-In',coc_batch:'COC Batch',report_sent:'Report Sent',report_saved:'Report Saved'};
-    const typeC={sent:'log-sent',sampled:'log-sampled',received:'log-received',initial:'log-initial',adjust:'log-adjust',bottle_add:'log-received',bottle_remove:'log-sampled',assemble:'log-initial',check_in:'log-received',coc_batch:'log-initial',report_sent:'log-sent',report_saved:'log-sampled'};
-    tbody.innerHTML = activityLog.slice(0,150).map(e=>`<tr>
-      <td>${fmtDate(e.date)}${e.time ? '<div style=\"font-size:11px;color:var(--slate);\">'+e.time+'</div>' : ''}</td>
-      <td>${clientName(e.client)||e.client}</td>
-      <td><span class="log-type ${typeC[e.type]||''}">${typeL[e.type]||e.type}</span></td>
-      <td class="r" style="font-weight:600;">${e.qty}</td>
-      <td style="color:var(--slate);font-size:12px;">${e.notes||'—'}</td>
-      <td style="color:var(--slate);font-size:12px;">${e.by ? (clientName(e.by)||e.by) : (e.client ? clientName(e.client)||'' : '—')}</td>
-    </tr>`).join('');
+    if (!tbody) return; // log-body replaced by sp-log-body in the new Activity Log tab
   }
 
   function renderCodes() {
