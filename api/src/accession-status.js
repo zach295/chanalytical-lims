@@ -159,6 +159,33 @@ app.http('accession-status', {
           }};
         }
 
+        // clients-full: returns all client fields including Radon Lic # for state report
+        if (action === 'clients-full') {
+          const siteId2 = process.env.SP_SITE_ID;
+          const token2  = await getToken();
+          const res2    = await fetch(
+            `${GRAPH}/sites/${siteId2}/lists/Clients/items?$expand=fields&$top=500`,
+            { headers: { Authorization: `Bearer ${token2}` } }
+          );
+          if (!res2.ok) return { status: 500, jsonBody: { error: 'Could not fetch clients' } };
+          const data2   = await res2.json();
+          const clients = (data2.value || []).map(item => {
+            const f = item.fields;
+            // Find Radon Lic # — try common internal name variants
+            const radonLic = f.Radon_x0020_Lic_x0020__x0023_
+              || f.RadonLic || f.Radon_x0020_Lic
+              || f.RW_x0020_Lic || f.radonLic || '';
+            return {
+              clientCode:  f.ClientCode  || f.Title || '',
+              clientName:  f.ClientName  || '',
+              radonLic:    radonLic,
+              billingZip:  (f.BillingAddress || '').match(/\d{5}/)?.[0] || '',
+              billingAddress: f.BillingAddress || '',
+            };
+          });
+          return { status: 200, jsonBody: { success: true, clients } };
+        }
+
         // all-intake: returns all Archived Intake rows for the lab tab
         if (action === 'all-intake') {
           const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
