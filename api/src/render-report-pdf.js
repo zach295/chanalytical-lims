@@ -113,7 +113,17 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
-  // Comments written AFTER row deletions so correct row is targeted — handled below
+  // ── Write comments BEFORE deletions using absolute cell address ─────────────
+  if (comments && commentsCell) {
+    await fetch(
+      `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${commentsCell}')`,
+      { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+        body: JSON.stringify({ values: [[comments]] }) }
+    ).catch(() => {});
+    // Protect comment row from deletion — convert absolute Excel row to array index
+    const ccRowExcel = parseInt((commentsCell.match(/\d+$/) || ['0'])[0], 10);
+    if (ccRowExcel > 0) toDelete = toDelete.filter(r => r !== ccRowExcel);
+  }
 
   if (attLbl) {
     const m             = meta || {};
@@ -194,7 +204,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     context.log(`[pdf] Row ${r}: col0="${(rows[r]||[])[0]}" col1="${(rows[r]||[])[1]}" col2="${(rows[r]||[])[2]}"`);
   }
 
-  const toDelete = [];
+  let toDelete = [];
 
   for (const [nameLow, ri] of Object.entries(pMap)) {
     // Match by exact name OR partial match (template may omit ", Total" suffix)
@@ -292,33 +302,6 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       }
       context.log(`[pdf] Re-applied borders to ${remainingRows.length} remaining rows`);
     }
-  }
-
-  // ── Write comment AFTER deletions — search for "comment"/"note" label row ──
-  if (comments) {
-    try {
-      const rrAfter = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,address`,
-        { headers: { Authorization: `Bearer ${token}`, 'workbook-session-id': sid } }
-      );
-      if (rrAfter.ok) {
-        const { values: rowsAfter, address: addrAfter } = await rrAfter.json();
-        const sm = (addrAfter || '').match(/[A-Z]+(\d+):/);
-        const srA = sm ? parseInt(sm[1]) : 1;
-        let commentRowExcel = null;
-        for (let ri = 0; ri < rowsAfter.length; ri++) {
-          const cv = String((rowsAfter[ri] || [])[0] || (rowsAfter[ri] || [])[1] || '').toLowerCase().trim();
-          if (cv.startsWith('comment') || cv.startsWith('note')) { commentRowExcel = srA + ri; break; }
-        }
-        if (commentRowExcel) {
-          await fetch(
-            `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='B${commentRowExcel}')`,
-            { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-              body: JSON.stringify({ values: [[comments]] }) }
-          ).catch(() => {});
-        }
-      }
-    } catch(e) { context.log('[pdf] Comment write error:', e.message); }
   }
 }
 
