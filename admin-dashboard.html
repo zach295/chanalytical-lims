@@ -828,14 +828,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
   <!-- ══ ACTIVITY LOG ══════════════════════════════════════════════════════ -->
   <div class="section" id="section-log">
-    <div class="section-hdr">
-      <div class="section-hdr-title">Activity Log</div>
-    </div>
-    <div class="card">
-      <table>
-        <thead><tr><th>Date</th><th>Client / Item</th><th>Type</th><th class="r">Qty</th><th>Notes</th><th>By</th></tr></thead>
-        <tbody id="log-body"></tbody>
-      </table>
+    <div style="max-width:1100px;margin:0 auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;">
+        <div>
+          <div style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:4px;">📋 Activity Log</div>
+          <div style="color:var(--slate);font-size:14px;">All lab activity from SharePoint</div>
+        </div>
+        <input id="log-search" type="text" placeholder="Search by lab ID, client, type..." oninput="filterActivityLog()"
+          style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:260px;font-family:var(--font-body);">
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:var(--off-white);border-bottom:2px solid var(--border);">
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Time</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Type</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Lab ID / Client</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Notes</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">By</th>
+            </tr>
+          </thead>
+          <tbody id="sp-log-body">
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="sp-log-count" style="margin-top:10px;font-size:12px;color:var(--slate);"></div>
     </div>
   </div>
 
@@ -1874,6 +1893,57 @@ document.addEventListener('DOMContentLoaded', function() {
     }).join('');
   }
 
+  // ── SharePoint Activity Log Tab ──────────────────────────────────────────────
+  let _spLogRows = [];
+
+  async function loadActivityLog() {
+    const tbody = document.getElementById('sp-log-body');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
+    // Load via accession-status API
+    const res  = await fetch('/api/accession-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'activity-log' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
+    _spLogRows = (data.items || []).sort((a, b) => {
+      const da = (a.date || '') + (a.time || '');
+      const db = (b.date || '') + (b.time || '');
+      return db.localeCompare(da);
+    });
+    filterActivityLog();
+  }
+
+  function filterActivityLog() {
+    const q     = (document.getElementById('log-search')?.value || '').toLowerCase().trim();
+    const tbody = document.getElementById('sp-log-body');
+    const count = document.getElementById('sp-log-count');
+    if (!tbody) return;
+    const rows  = q ? _spLogRows.filter(r =>
+      (r.title||'').toLowerCase().includes(q) ||
+      (r.client||'').toLowerCase().includes(q) ||
+      (r.type||'').toLowerCase().includes(q) ||
+      (r.notes||'').toLowerCase().includes(q) ||
+      (r.by||'').toLowerCase().includes(q)
+    ) : _spLogRows;
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
+      if (count) count.textContent = '';
+      return;
+    }
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr style="border-bottom:1px solid var(--border);background:${i%2===0?'white':'var(--off-white)'}">
+        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${r.date||'—'}</td>
+        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${r.time||'—'}</td>
+        <td style="padding:8px 12px;font-size:12px;font-weight:600;color:var(--navy);">${r.type||'—'}</td>
+        <td style="padding:8px 12px;font-size:12px;">${r.client||r.title||'—'}</td>
+        <td style="padding:8px 12px;font-size:12px;color:var(--slate);max-width:300px;">${r.notes||'—'}</td>
+        <td style="padding:8px 12px;font-size:12px;color:var(--slate);">${r.by||'—'}</td>
+      </tr>`).join('');
+    if (count) count.textContent = `Showing ${rows.length} of ${_spLogRows.length} entries`;
+  }
+
   function renderLog() {
     const tbody = document.getElementById('log-body');
     if (!activityLog.length) {
@@ -2275,6 +2345,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function showSection(id,btn) {
     if (id === 'statistics') loadStatistics();
     if (id === 'intake') { initMonthPicker(); loadIntake(); }
+    if (id === 'log') loadActivityLog();
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
     document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('active'));
     const sec = document.getElementById(`section-${id}`);
