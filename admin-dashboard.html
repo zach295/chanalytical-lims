@@ -5784,19 +5784,23 @@ document.addEventListener('DOMContentLoaded', function() {
     showToast('⏳ Generating radon state report...');
 
     try {
-      // Fetch billing data and clients
-      const [billingRes, clientsRes] = await Promise.all([
+      // Fetch billing, clients, and intake in parallel
+      const [billingRes, clientsRes, intakeRes] = await Promise.all([
         fetch('/api/billing-read'),
-        fetch('/api/accession-status', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'clients-full' }),
-        }),
+        fetch('/api/accession-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clients-full' }) }),
+        fetch('/api/accession-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'all-intake' }) }),
       ]);
 
       const billingData = await billingRes.json().catch(() => ({}));
       const clientsData = await clientsRes.json().catch(() => ({}));
+      const intakeData  = await intakeRes.json().catch(() => ({}));
       const billingRows = billingData.rows || [];
       const clients     = clientsData.clients || [];
+      const intakeRows  = intakeData.items || [];
+
+      // Build intake lookup by lab ID for city/town
+      const intakeMap = {};
+      for (const r of intakeRows) { if (r.labId) intakeMap[r.labId.trim()] = r; }
 
       // Build client lookup
       const clientMap = {};
@@ -5833,8 +5837,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const dataRows = rows.map(r => {
         const client    = clientMap[r.clientCode] || clientMap[(r.customer||'').toLowerCase().trim()] || {};
+        const intake    = intakeMap[r.labId] || {};
+        const town      = r.city || intake.city || '';
+        // Calculate report date as next business day from lab ID date
+        const labDate   = getDate(r);
         const reportDt  = toISO(r.reportDate || r.stmtDate || '');
-        const excelDate = reportDt ? toExcelDate(reportDt) : '';
+        const calcDate  = (() => {
+          if (reportDt) return reportDt;
+          if (!labDate) return '';
+          const d = new Date(labDate + 'T00:00:00');
+          d.setDate(d.getDate() + 1);
+          if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+          return d.toISOString().slice(0,10);
+        })();
+        const excelDate = calcDate ? toExcelDate(calcDate) : '';
         return [
           'LAB480', 'Water',
           client.radonLic || '',
@@ -5842,7 +5859,7 @@ document.addEventListener('DOMContentLoaded', function() {
           r.labId || '',
           parseFloat(r.rwResults) || r.rwResults,
           r.location || '',
-          r.city || '',
+          town,
           excelDate || '',
           '', '',
         ];
@@ -5851,6 +5868,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const headers  = ['ME_ID','Type','PRIME_REG','Billing_Zip','Sample_ID','RESULT','Address','TOWN','Report Date','Notes','MIT_SYS'];
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+      ws['!cols'] = [
+        { wch: 8 },  // ME_ID
+        { wch: 7 },  // Type
+        { wch: 10 }, // PRIME_REG
+        { wch: 12 }, // Billing_Zip
+        { wch: 14 }, // Sample_ID
+        { wch: 10 }, // RESULT
+        { wch: 35 }, // Address
+        { wch: 18 }, // TOWN
+        { wch: 13 }, // Report Date
+        { wch: 10 }, // Notes
+        { wch: 10 }, // MIT_SYS
+      ];
 
       // Format Report Date column (index 8) as date
       const dateColLetter = 'I';
