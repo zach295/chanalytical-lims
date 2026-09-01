@@ -5965,7 +5965,7 @@ document.addEventListener('DOMContentLoaded', function() {
         body: JSON.stringify({action:'clients-full'}),
       }).then(r=>r.json()).then(d=>{
         const clients = (d.clients||[])
-          .filter(c => c.clientName)
+          .filter(c => c.clientName && c.clientCode)
           .sort((a,b) => a.clientName.localeCompare(b.clientName));
         sel.innerHTML = '<option value="">All Companies</option>';
         for (const c of clients) {
