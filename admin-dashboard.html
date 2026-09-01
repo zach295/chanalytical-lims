@@ -5783,7 +5783,7 @@ document.addEventListener('DOMContentLoaded', function() {
     showToast('⏳ Generating radon state report...');
 
     try {
-      // Fetch billing data and clients in parallel
+      // Fetch billing data and clients
       const [billingRes, clientsRes] = await Promise.all([
         fetch('/api/billing-read'),
         fetch('/api/accession-status', {
@@ -5794,23 +5794,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const billingData = await billingRes.json().catch(() => ({}));
       const clientsData = await clientsRes.json().catch(() => ({}));
-
       const billingRows = billingData.rows || [];
       const clients     = clientsData.clients || [];
 
-      // Build client lookup: clientCode → { radonLic, billingZip }
+      // Build client lookup
       const clientMap = {};
       for (const c of clients) {
-        const code = (c.clientCode || c.ClientCode || '').trim();
-        if (code) {
-          clientMap[code] = {
-            radonLic:   c.radonLic   || c.RadonLic  || c.Radon_Lic || '',
-            billingZip: c.billingZip || c.BillingZip || (c.billingAddress || '').match(/\d{5}/)?.[0] || '',
-          };
-        }
+        if (c.clientCode) clientMap[c.clientCode.trim()] = c;
+        if (c.clientName) clientMap[c.clientName.toLowerCase().trim()] = c;
       }
 
-      // Filter billing rows: radon items with results in date range
       const toISO = d => {
         if (!d) return '';
         if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
@@ -5818,6 +5811,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
         return d.slice(0,10);
       };
+
       const getDate = r => {
         const id = (r.labId || '').slice(0,6);
         const mm = id.slice(0,2), dd = id.slice(2,4), yy = id.slice(4,6);
@@ -5825,45 +5819,35 @@ document.addEventListener('DOMContentLoaded', function() {
         return toISO(r.reportDate || r.stmtDate || '');
       };
 
+      // Filter: must have radon result and be in date range
       const rows = billingRows.filter(r => {
-        if (!r.rwResults) return false; // must have radon result
-        const isRadonSvc = (r.service || r.testTypeSKU || '').toLowerCase().includes('radon')
-          || (r.labId || '').toUpperCase().includes('RW');
-        if (!isRadonSvc) return false;
+        if (!r.rwResults) return false;
         const d = getDate(r);
         return d >= fromVal && d <= toVal;
       });
 
-      if (!rows.length) { showToast('No radon results found for this period.'); return; }
+      if (!rows.length) { showToast('No radon results found in billing for this period.'); return; }
 
-      // JS Date → Excel serial date
-      const toExcelDate = d => {
-        const msPerDay = 86400000;
-        return Math.floor((new Date(d + 'T00:00:00') - new Date('1899-12-30')) / msPerDay);
-      };
+      const toExcelDate = d => Math.floor((new Date(d + 'T00:00:00') - new Date('1899-12-30')) / 86400000);
 
-      // Build xlsx rows
-      const headers = ['ME_ID','Type','PRIME_REG','Billing_Zip','Sample_ID','RESULT','Address','TOWN','Report Date','Notes','MIT_SYS'];
       const dataRows = rows.map(r => {
-        const client    = clientMap[r.clientCode] || {};
+        const client    = clientMap[r.clientCode] || clientMap[(r.customer||'').toLowerCase().trim()] || {};
         const reportDt  = toISO(r.reportDate || r.stmtDate || '');
         const excelDate = reportDt ? toExcelDate(reportDt) : '';
         return [
-          'LAB480',
-          'Water',
+          'LAB480', 'Water',
           client.radonLic || '',
           client.billingZip || '',
           r.labId || '',
-          parseFloat(r.rwResults) || r.rwResults || '',
+          parseFloat(r.rwResults) || r.rwResults,
           r.location || '',
           r.city || '',
-          excelDate,
-          '',
-          '',
+          excelDate || '',
+          '', '',
         ];
       });
 
-      // Generate xlsx using SheetJS
+      const headers  = ['ME_ID','Type','PRIME_REG','Billing_Zip','Sample_ID','RESULT','Address','TOWN','Report Date','Notes','MIT_SYS'];
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
 
