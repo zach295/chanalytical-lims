@@ -706,6 +706,9 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">
           ☢️ Import Radon Results
         </button>
+        <button class="btn-ok" style="padding:10px 20px;background:#16a34a;" onclick="importBacteria(this)">
+          🧫 Import Bacteria Results
+        </button>
         <span id="import-status" style="font-size:13px;color:var(--slate);flex:1;"></span>
       </div>
     </div>
@@ -7216,6 +7219,29 @@ document.addEventListener('DOMContentLoaded', function() {
       if (resultEl) resultEl.textContent = '⚠️ Acid import failed: ' + err.message;
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = orig; }
+    }
+  }
+
+  async function importBacteria(btn) {
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Importing Bacteria...';
+    const statusEl = document.getElementById('import-status');
+    if (statusEl) statusEl.textContent = '';
+    try {
+      const res  = await fetch('/api/import-bacteria', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--success)'; }
+      showToast(msg);
+    } catch(e) {
+      const msg = `⚠️ Bacteria import failed: ${e.message}`;
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--error)'; }
+      showToast(msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
     }
   }
 
