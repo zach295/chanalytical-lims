@@ -159,6 +159,32 @@ app.http('accession-status', {
           }};
         }
 
+        // activity-log: returns all Activity Log entries from SharePoint
+        if (action === 'activity-log') {
+          const { getToken: _gtLog } = require('../shared/graph');
+          const _tokenLog = await _gtLog();
+          const _siteId   = process.env.SP_SITE_ID;
+          const _GRAPH    = 'https://graph.microsoft.com/v1.0';
+          let allItems = [], nextLink = `${_GRAPH}/sites/${_siteId}/lists/Activity Log/items?$expand=fields&$top=999&$orderby=fields/LogDate desc`;
+          while (nextLink) {
+            const r    = await fetch(nextLink, { headers: { Authorization: `Bearer ${_tokenLog}` } });
+            const data = await r.json();
+            allItems.push(...(data.value || []).map(i => i.fields || {}));
+            nextLink = data['@odata.nextLink'] || null;
+          }
+          const items = allItems.map(f => ({
+            title:  f.Title  || '',
+            client: f.Client || '',
+            type:   f.ActivityType || f.Type || '',
+            notes:  f.Notes  || '',
+            by:     f.By     || '',
+            date:   f.LogDate || '',
+            time:   f.LogTime || '',
+            qty:    f.Quantity || '',
+          }));
+          return { status: 200, jsonBody: { success: true, items } };
+        }
+
         // clients-full: returns all client fields including Radon Lic # for state report
         if (action === 'clients-full') {
           const allClients = await listItems('Clients', { top: 500 }).catch(e => {
@@ -171,7 +197,7 @@ app.http('accession-status', {
               || f.RW_x0020_Lic || f.radonLic || '';
             const radonKeys = Object.keys(f).filter(k => /radon/i.test(k));
             return {
-              clientCode:     f.ClientCode  || f.Title || '',
+              clientCode:     f.ClientCode  || '',
               clientName:     f.ClientName  || '',
               radonLic,
               radonKeys,
