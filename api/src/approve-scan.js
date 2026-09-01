@@ -507,7 +507,7 @@ async function writeReportsToBilled(siteId, token, params, context) {
     fields["Date Drawn"]         = fmtExcel(params.dateDrawn) || '';
     fields["Time Drawn"]         = params.timeDrawn || '';
     fields["Client Code"]        = params.clientCode || '';
-    fields["Report Date"]        = nextBusinessDay(params.receivedDate || params.dateDrawn);
+    // Report Date left blank — filled in when report is actually sent
     fields["Location"]           = params.location || '';
     fields["City/Town"]          = params.city || '';
     fields["Item/Service"]       = params.testName || '';
@@ -1267,7 +1267,7 @@ app.http('approve-scan', {
             body.timeDrawn  || '',
             body.customer   || '',
             body.clientCode || '',
-            reportDate,
+            '',
             l.fullId,
             body.location   || '',
             body.city       || '',
