@@ -25,7 +25,7 @@ app.http('billing-read', {
       if (!listId) return { status: 404, jsonBody: { error: 'Reports to be Billed list not found' } };
 
       // Fetch all items with fields expanded
-      let items = [], nextLink = `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=999`;
+      let items = [], nextLink = `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields($select=Title,Date_x0020_Rec_x0027_d,Time_x0020_Rec_x0027_d,Date_x0020_Drawn,Time_x0020_Drawn,Customer,Client_x0020_Code,Report_x0020_Date,Location,City_x002F_Town,State,Zip,Item_x002F_Service,Test_x0020_Type_x0020_SKU,RWResults,Qty,Rate,Amt,QB,Disc,Statement_x002F_Inv_x0020_Date,Pd,Amt_x0020_Pd,Date_x0020_Pd,QBO_x0020_Invoice_x0020__x0023_)&$top=999`;
       while (nextLink) {
         const r    = await fetch(nextLink, { headers: { Authorization: `Bearer ${token}` } });
         const data = await r.json();
