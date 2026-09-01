@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="date" id="radon-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
         <div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Company</div>
         <select id="radon-company" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;background:white;">
-          <option value="">All Companies</option>
+          <option value="" disabled selected>Select a company</option>
         </select>
         <button class="action-btn" onclick="generateRadonStateReport()" style="width:100%;padding:10px 8px;background:#2d6a4f;color:white;border-color:#2d6a4f;font-size:12px;text-align:center;box-sizing:border-box;">
           Generate Report
@@ -5811,6 +5811,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const toVal    = document.getElementById('radon-date-to')?.value;
     const company  = document.getElementById('radon-company')?.value || '';
     if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
+    if (!company) { showToast('Select a company first.'); return; }
 
     showToast('⏳ Generating radon state report...');
 
@@ -5931,8 +5932,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
       XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
 
-      const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}).replace(/\//g,'_');
-      const fileName = `Radon_Water_to_State_${fmtDate(fromVal)}_to_${fmtDate(toVal)}.xlsx`;
+      const fromDate  = new Date(fromVal + 'T00:00:00');
+      const yy        = String(fromDate.getFullYear()).slice(-2);
+      const mm        = String(fromDate.getMonth() + 1).padStart(2, '0');
+      const coName    = company
+        ? (clients.find(c => c.clientCode === company || c.clientName === company)?.clientName || company)
+        : 'All';
+      const coSlug    = coName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const fileName  = `${yy}_${mm}_Radon_Water_to_State_${coSlug}.xlsx`;
       XLSX.writeFile(wb, fileName);
       showToast(`✅ Downloaded ${fileName} — ${dataRows.length} rows`);
 
@@ -5968,7 +5975,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const clients = (d.clients||[])
           .filter(c => c.clientName && c.clientCode)
           .sort((a,b) => a.clientName.localeCompare(b.clientName));
-        sel.innerHTML = '<option value="">All Companies</option>';
+        sel.innerHTML = '<option value="" disabled selected>Select a company</option>';
         for (const c of clients) {
           const opt = document.createElement('option');
           opt.value = c.clientCode || c.clientName;
@@ -5984,6 +5991,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const toVal    = document.getElementById('radon-date-to')?.value;
     const company  = document.getElementById('radon-company')?.value || '';
     if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
+    if (!company) { showToast('Select a company first.'); return; }
     if (fromVal > toVal) { showToast('Start date must be before end date.'); return; }
     const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const monthLabel = fromVal === toVal ? fmtDate(fromVal) : `${fmtDate(fromVal)} – ${fmtDate(toVal)}`;
