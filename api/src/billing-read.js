@@ -45,7 +45,7 @@ app.http('billing-read', {
         clientCode:    f.Client_x0020_Code || f.ClientCode || f.Client_x0020_Code0 || '',
         reportDate:    f.Report_x0020_Date || f.ReportDate || '',
         location:      f.Location     || '',
-        city:          f.City_x002F_Town   || f.CityTown || f.City || '',
+        city:          f.City_x002f_Town   || f.City_x002F_Town || f.CityTown || f.City || '',
         state:         f.State        || '',
         zip:           f.Zip          || '',
         service:       f.Item_x002F_Service || f.ItemService || f.Item_x002F_Service0 || '',
