@@ -7,6 +7,51 @@ const { app } = require('@azure/functions');
 const { createItem, updateItem, deleteItem, findItem, listItems, getToken, LISTS } = require('../shared/graph');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SHEETS_ID = '15403E6ZaZFQuKNTtgJcb6-2jmlLnk02eq04BGPATqTw';
+const SHEETS_TAB = 'Form Responses';
+
+async function getSheetsToken() {
+  const sa = JSON.parse(process.env.GMAIL_SERVICE_ACCOUNT || '{}');
+  if (!sa.private_key) throw new Error('GMAIL_SERVICE_ACCOUNT missing');
+  const { SignJWT } = await import('jose');
+  const key = await import('jose').then(m => m.importPKCS8(sa.private_key, 'RS256'));
+  const jwt = await new SignJWT({ scope: 'https://www.googleapis.com/auth/spreadsheets' })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuer(sa.client_email)
+    .setAudience('https://oauth2.googleapis.com/token')
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(key);
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error('Sheets token failed: ' + JSON.stringify(data));
+  return data.access_token;
+}
+
+async function writeToGoogleSheet(rows, context) {
+  try {
+    const token = await getSheetsToken();
+    const range = encodeURIComponent(`${SHEETS_TAB}!A:M`);
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: rows }),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      context.log('[Sheets] Write failed:', err.slice(0, 200));
+    } else {
+      context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet');
+    }
+  } catch(e) { context.log('[Sheets] Error (non-fatal):', e.message); }
+}
 
 // Module-level cache for list IDs (avoids repeated lookups per approval)
 const _listIdCache = {};
@@ -508,6 +553,51 @@ async function writeReportsToBilled(siteId, token, params, context) {
 // ── Write to Radon Control Sheet on approval ──────────────────────────────────
 async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {
   const GRAPH = 'https://graph.microsoft.com/v1.0';
+const SHEETS_ID = '15403E6ZaZFQuKNTtgJcb6-2jmlLnk02eq04BGPATqTw';
+const SHEETS_TAB = 'Form Responses';
+
+async function getSheetsToken() {
+  const sa = JSON.parse(process.env.GMAIL_SERVICE_ACCOUNT || '{}');
+  if (!sa.private_key) throw new Error('GMAIL_SERVICE_ACCOUNT missing');
+  const { SignJWT } = await import('jose');
+  const key = await import('jose').then(m => m.importPKCS8(sa.private_key, 'RS256'));
+  const jwt = await new SignJWT({ scope: 'https://www.googleapis.com/auth/spreadsheets' })
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuer(sa.client_email)
+    .setAudience('https://oauth2.googleapis.com/token')
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(key);
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error('Sheets token failed: ' + JSON.stringify(data));
+  return data.access_token;
+}
+
+async function writeToGoogleSheet(rows, context) {
+  try {
+    const token = await getSheetsToken();
+    const range = encodeURIComponent(`${SHEETS_TAB}!A:M`);
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: rows }),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      context.log('[Sheets] Write failed:', err.slice(0, 200));
+    } else {
+      context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet');
+    }
+  } catch(e) { context.log('[Sheets] Error (non-fatal):', e.message); }
+}
   const MONTHS = ['January','February','March','April','May','June',
                   'July','August','September','October','November','December'];
   const baseId     = labId.split(' ')[0].trim();
@@ -1154,6 +1244,45 @@ app.http('approve-scan', {
           context.log('[RCS] Error:', e.message);
         }
       }
+
+      // ── Write to Google Sheet ────────────────────────────────────────────────
+      try {
+        const now = new Date();
+        const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const pad = n => String(n).padStart(2, '0');
+        const reportDate = (() => {
+          const d = new Date(etNow); d.setDate(d.getDate() + 1);
+          if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+          return `${pad(d.getMonth()+1)}/${pad(d.getDate())}/${String(d.getFullYear()).slice(-2)}`;
+        })();
+        const dateRec  = body.receivedDate || `${pad(etNow.getMonth()+1)}/${pad(etNow.getDate())}/${String(etNow.getFullYear()).slice(-2)}`;
+        const timeRec  = body.receivedTime || `${pad(etNow.getHours())}:${pad(etNow.getMinutes())}`;
+        const sheetRows = labItems
+          .filter(l => !l.isRejected)
+          .map(l => [
+            dateRec,
+            timeRec,
+            body.dateDrawn  || '',
+            body.timeDrawn  || '',
+            body.customer   || '',
+            body.clientCode || '',
+            reportDate,
+            l.fullId,
+            body.location   || '',
+            body.city       || '',
+            body.state      || 'ME',
+            body.zip        || '',
+            l.service       || body.tests?.join(', ') || '',
+          ]);
+        if (sheetRows.length) {
+          // Fire-and-forget with 8s timeout — never blocks billing or activity log
+          Promise.race([
+            writeToGoogleSheet(sheetRows, context),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Sheets timeout')), 8000)),
+          ]).catch(e => context.log('[Sheets] Non-fatal:', e.message));
+        }
+      } catch(e) { context.log('[Sheets] Row build error:', e.message); }
 
       // ── Write Approval to Activity Log ────────────────────────────────────────
       try {
