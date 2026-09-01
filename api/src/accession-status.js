@@ -159,16 +159,22 @@ app.http('accession-status', {
           }};
         }
 
+        // billing-fields: returns raw field names from one billing row for debugging
+        if (action === 'billing-fields') {
+          const rows = await listItems('Reports to be Billed', { top: 1 }).catch(() => []);
+          return { status: 200, jsonBody: { success: true, fields: rows[0] ? Object.keys(rows[0]).filter(k => /rw|radon|result/i.test(k)) : [], sample: rows[0] } };
+        }
+
         // clients-full: returns all client fields including Radon Lic # for state report
         if (action === 'clients-full') {
           const allClients = await listItems('Clients', { top: 500 }).catch(e => {
             throw new Error('Clients fetch failed: ' + e.message);
           });
           const clients = allClients.map(f => {
-            const radonLic = f.Radon_x0020_Lic_x0020__x0023_
-              || f.RadonLic_x0020__x0023_ || f.RadonLic
-              || f.Radon_x0020_Lic || f.RW_x0020_Lic
-              || f['Radon Lic #'] || f.radonLic || '';
+            const radonLic = f.RadonLic_x0023_
+              || f.Radon_x0020_Lic_x0020__x0023_
+              || f.RadonLic || f.Radon_x0020_Lic
+              || f.RW_x0020_Lic || f.radonLic || '';
             const radonKeys = Object.keys(f).filter(k => /radon/i.test(k));
             return {
               clientCode:     f.ClientCode  || f.Title || '',
