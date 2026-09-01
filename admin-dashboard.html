@@ -6013,6 +6013,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (count) count.textContent = `Showing ${filtered.length} of ${_intakeRows.length} samples`;
   }
 
+  function deleteFHAReport() {
+    if (!currentReportData) return;
+    currentReportData.needsFHA  = false;
+    currentReportData.fhaParams = [];
+    currentReportData._cachedPdfBase64 = null;
+    currentReportData._cachedFileName  = null;
+    currentReportData._pdfStale        = true;
+    renderEditableReport(currentReportData);
+  }
+
   function deleteReportRow(paramName) {
     if (!currentReportData?.activeParams) return;
     currentReportData.activeParams = currentReportData.activeParams.filter(p => p.name !== paramName);
@@ -6507,7 +6517,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (needsFHA) {
       bodyHtml += `
         <div style="margin-top:32px;padding-top:24px;border-top:3px solid #003A5C;">
-          <h3 style="text-align:center;font-size:18px;color:#003A5C;margin-bottom:12px;">Certificate of Analysis — FHA</h3>
+          <div style="display:flex;align-items:center;justify-content:center;margin-bottom:12px;position:relative;">
+            <h3 style="text-align:center;font-size:18px;color:#003A5C;margin:0;">Certificate of Analysis — FHA</h3>
+            <button onclick="deleteFHAReport()" title="Remove FHA report"
+              style="position:absolute;right:0;background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;line-height:1;padding:2px 6px;"
+              onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='#ccc'">✕</button>
+          </div>
           <div style="font-size:13px;margin-bottom:10px;"><strong>Sample Type:</strong> Potability (FHA)</div>
           ${buildParamTable(fhaParams, resultsMap, data)}
         </div>`;
