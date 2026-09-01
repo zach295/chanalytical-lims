@@ -50,7 +50,7 @@ app.http('billing-read', {
         zip:           f.Zip          || '',
         service:       f.Item_x002F_Service || '',
         testTypeSKU:   f.Test_x0020_Type_x0020_SKU || '',
-        rwResults:     f.RW_x0020_Results  || '',
+        rwResults:     f.RWResults  || '',
         qty:           parseFloat(f.Qty || 1),
         rate:          parseFloat(f.Rate || 0),
         amt:           parseFloat(f.Amt  || 0),
