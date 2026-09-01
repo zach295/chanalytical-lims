@@ -159,12 +159,6 @@ app.http('accession-status', {
           }};
         }
 
-        // billing-fields: returns raw field names from one billing row for debugging
-        if (action === 'billing-fields') {
-          const rows = await listItems('Reports to be Billed', { top: 1 }).catch(() => []);
-          return { status: 200, jsonBody: { success: true, fields: rows[0] ? Object.keys(rows[0]).filter(k => /rw|radon|result/i.test(k)) : [], sample: rows[0] } };
-        }
-
         // clients-full: returns all client fields including Radon Lic # for state report
         if (action === 'clients-full') {
           const allClients = await listItems('Clients', { top: 500 }).catch(e => {
