@@ -5855,9 +5855,10 @@ document.addEventListener('DOMContentLoaded', function() {
         return toISO(r.reportDate || r.stmtDate || '');
       };
 
-      // Filter: must have radon result, be in date range, and match company if selected
+      // Filter: must have radon result, be in date range, Maine only, and match company if selected
       const rows = billingRows.filter(r => {
         if (!r.rwResults) return false;
+        if ((r.state || '').toUpperCase() !== 'ME') return false;
         const d = getDate(r);
         if (d < fromVal || d > toVal) return false;
         if (company) {
@@ -5893,7 +5894,7 @@ document.addEventListener('DOMContentLoaded', function() {
           client.radonLic || '',
           client.billingZip || '',
           r.labId || '',
-          parseFloat(r.rwResults) || r.rwResults,
+          (() => { const n = parseFloat(r.rwResults); return isNaN(n) ? r.rwResults : n < 100 ? '<100' : Math.round(n / 100) * 100; })(),
           r.location || '',
           town,
           excelDate || '',
