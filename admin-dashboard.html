@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="date" id="radon-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
         <div style="font-size:12px;font-weight:600;color:var(--slate);margin-bottom:6px;">Company</div>
         <select id="radon-company" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;background:white;">
-          <option value="">All ME Companies</option>
+          <option value="">All Companies</option>
         </select>
         <button class="action-btn" onclick="generateRadonStateReport()" style="width:100%;padding:10px 8px;background:#2d6a4f;color:white;border-color:#2d6a4f;font-size:12px;text-align:center;box-sizing:border-box;">
           Generate Report
@@ -5957,7 +5957,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const rToEl   = document.getElementById('radon-date-to');
     if (rFromEl && !rFromEl.value) { rFromEl.value = first; rToEl.value = today; }
 
-    // Populate Maine companies dropdown for radon report
+    // Populate companies dropdown for radon report
     const sel = document.getElementById('radon-company');
     if (sel && sel.options.length <= 1) {
       fetch('/api/accession-status', {
@@ -5965,16 +5965,16 @@ document.addEventListener('DOMContentLoaded', function() {
         body: JSON.stringify({action:'clients-full'}),
       }).then(r=>r.json()).then(d=>{
         const clients = (d.clients||[])
-          .filter(c => /ME/.test(c.billingAddress || '') || /maine/i.test(c.billingAddress || ''))
           .filter(c => c.clientName)
           .sort((a,b) => a.clientName.localeCompare(b.clientName));
+        sel.innerHTML = '<option value="">All Companies</option>';
         for (const c of clients) {
           const opt = document.createElement('option');
           opt.value = c.clientCode || c.clientName;
           opt.textContent = c.clientName;
           sel.appendChild(opt);
         }
-      }).catch(()=>{});
+      }).catch(e => console.warn('[radon dropdown]', e));
     }
   }
 
