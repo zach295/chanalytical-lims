@@ -161,25 +161,21 @@ app.http('accession-status', {
 
         // clients-full: returns all client fields including Radon Lic # for state report
         if (action === 'clients-full') {
-          const siteId2 = process.env.SP_SITE_ID;
-          const token2  = await getToken();
-          const res2    = await fetch(
-            `${GRAPH}/sites/${siteId2}/lists/Clients/items?$expand=fields&$top=500`,
-            { headers: { Authorization: `Bearer ${token2}` } }
-          );
-          if (!res2.ok) return { status: 500, jsonBody: { error: 'Could not fetch clients' } };
-          const data2   = await res2.json();
-          const clients = (data2.value || []).map(item => {
-            const f = item.fields;
-            // Find Radon Lic # — try common internal name variants
+          const allClients = await listItems('Clients', { top: 500 }).catch(e => {
+            throw new Error('Clients fetch failed: ' + e.message);
+          });
+          const clients = allClients.map(f => {
             const radonLic = f.Radon_x0020_Lic_x0020__x0023_
-              || f.RadonLic || f.Radon_x0020_Lic
-              || f.RW_x0020_Lic || f.radonLic || '';
+              || f.RadonLic_x0020__x0023_ || f.RadonLic
+              || f.Radon_x0020_Lic || f.RW_x0020_Lic
+              || f['Radon Lic #'] || f.radonLic || '';
+            const radonKeys = Object.keys(f).filter(k => /radon/i.test(k));
             return {
-              clientCode:  f.ClientCode  || f.Title || '',
-              clientName:  f.ClientName  || '',
-              radonLic:    radonLic,
-              billingZip:  (f.BillingAddress || '').match(/\d{5}/)?.[0] || '',
+              clientCode:     f.ClientCode  || f.Title || '',
+              clientName:     f.ClientName  || '',
+              radonLic,
+              radonKeys,
+              billingZip:     (f.BillingAddress || '').match(/\d{5}/)?.[0] || '',
               billingAddress: f.BillingAddress || '',
             };
           });
