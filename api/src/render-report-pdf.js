@@ -113,17 +113,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   // ── Left-side fields — handled via direct writes (E24, J24, I10) ─────────
   // Attention block — client name, billing address, report email
   const attLbl = findLabel(rows, 'attention');
-  // ── Write comments BEFORE deletions using absolute cell address ─────────────
-  if (comments && commentsCell) {
-    await fetch(
-      `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${commentsCell}')`,
-      { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
-        body: JSON.stringify({ values: [[comments]] }) }
-    ).catch(() => {});
-    // Protect comment row from deletion — convert absolute Excel row to array index
-    const ccRowExcel = parseInt((commentsCell.match(/\d+$/) || ['0'])[0], 10);
-    if (ccRowExcel > 0) toDelete = toDelete.filter(r => r !== ccRowExcel);
-  }
+  // Comments written AFTER loop — handled below
 
   if (attLbl) {
     const m             = meta || {};
@@ -231,6 +221,17 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     const resp = await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
     const errs = resp.filter(r => parseInt(r.status) >= 400);
     if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
+  }
+
+  // ── Write comment and protect its row before deletions ───────────────────────
+  if (comments && commentsCell) {
+    const ccRowExcel = parseInt((commentsCell.match(/\d+$/) || ['0'])[0], 10);
+    if (ccRowExcel > 0) toDelete = toDelete.filter(r => r !== ccRowExcel);
+    await fetch(
+      `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${commentsCell}')`,
+      { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+        body: JSON.stringify({ values: [[comments]] }) }
+    ).catch(e => context.log('[pdf] Comment write error:', e.message));
   }
 
   // Delete unused rows (bottom to top), then re-apply borders to all remaining param rows
