@@ -189,7 +189,7 @@ app.http('accession-status', {
               || f.RW_x0020_Lic || f.radonLic || '';
             const radonKeys = Object.keys(f).filter(k => /radon/i.test(k));
             return {
-              clientCode:     f.ClientCode  || '',
+              clientCode:     f.ClientCode  || f.Title || '',
               clientName:     f.ClientName  || '',
               radonLic,
               radonKeys,
