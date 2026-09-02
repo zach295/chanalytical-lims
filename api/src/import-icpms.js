@@ -327,33 +327,28 @@ app.http('import-icpms', {
       const mi     = rawFolder.indexOf(marker);
       const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
-      // Step 1: Get Results Cache — find IDs needing ICP-MS data
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      // Always process all rows — find ones missing ANY element data
-      // Results Cache "Lab ID" column may have internal name LabID OR Lab_x0020_ID
-      const getLabId = r => String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
-      // Always process all IDs — overwrite existing data so corrections take effect
-      const needsIcpms = cacheItems.filter(r => {
-        if (/\bREJ\b/i.test(r.LabID || '')) return false;
-        return !!getLabId(r);
-      });
-
-      if (!needsIcpms.length) {
+      // Step 1: Load Results Cache items for the selected date only
+      if (!dateFilter) return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ error: 'Select a date first' }) };
+      let rcRaw = [], rcNext2 = `${GRAPH}/sites/${siteId}/drive`; // placeholder
+      const cacheItems = await (async () => {
+        let items = [], next = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
+        while (next) {
+          const r    = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
+          const data = await r.json();
+          items.push(...(data.value || []));
+          next = data['@odata.nextLink'] || null;
+        }
+        return items.filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
+      })();
+      if (!cacheItems.length) {
         return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ success: true, message: 'No Results Cache entries found', updated: 0 }) };
+          body: JSON.stringify({ success: true, message: `No Results Cache items for ${dateFilter}`, created: 0, updated: 0, errors: 0, log: [], diag: diagInfo }) };
       }
-
-      // Group IDs by date portion (MMDDYY)
-      const byDate = {};
-      for (const item of needsIcpms) {
-        const baseId   = getLabId(item).split(' ')[0].trim();
-        const datePart = getDatePart(baseId);
-        if (!datePart) continue;
-        if (dateFilter && datePart !== dateFilter) continue;
-        if (!byDate[datePart]) byDate[datePart] = new Set();
-        byDate[datePart].add(baseId);
-      }
-
+      const needsIcpms = cacheItems;
+      const byDate = { [dateFilter]: new Set(cacheItems.map(i => {
+        const labId = String(i.fields?.LabID || '').trim();
+        return labId.replace(/ RW$/i, '').trim().slice(0, 10);
+      }).filter(Boolean)) };
       context.log(`[import-icpms] Dates to process: ${Object.keys(byDate).join(', ')}`);
 
       // Step 2: For each date group, look in month subfolder then flat folder
