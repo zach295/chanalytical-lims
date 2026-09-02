@@ -563,9 +563,17 @@ app.http('render-report-pdf', {
       return { status: 500, jsonBody: { error: e.message } };
     }
 
-    // ── Step 10: Delete temp file ───────────────────────────────────────────
-    await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
-    context.log('[pdf] Temp file deleted');
+    // ── Step 10: Close session then delete temp file ───────────────────────
+    // Close workbook session first so the file isn't locked
+    await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}).catch(() => {});
+    // Retry delete up to 3 times with a small delay
+    let deleted = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const delRes = await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => null);
+      if (delRes !== null) { deleted = true; break; }
+      await new Promise(r => setTimeout(r, attempt * 1000));
+    }
+    context.log('[pdf] Temp file', deleted ? 'deleted' : 'delete failed — will be caught by orphan cleanup');
 
     // Build pretty filename: [address]_[abbrev]_[labId] Report.pdf
     const safe = s => (s || '').trim().replace(/[<>:"/\\|?*]/g, '').trim();
