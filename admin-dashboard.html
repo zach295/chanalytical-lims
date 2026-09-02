@@ -5302,7 +5302,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!sel) return;
     sel.innerHTML = '<option value="">⏳ Loading...</option>';
     try {
-      const res  = await fetch('/api/accession-status');
+      const res  = await fetch('/api/accession-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pending-reports' }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       _pendingLabIds = data.pending || [];
