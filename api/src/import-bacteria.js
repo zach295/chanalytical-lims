@@ -72,7 +72,8 @@ app.http('import-bacteria', {
   authLevel: 'anonymous',
   handler:   async (request, context) => {
     try {
-      const body    = await request.json().catch(() => ({}));
+      const body      = await request.json().catch(() => ({}));
+      const dateFilter = body.datePrefix ? String(body.datePrefix).trim() : '';
       const debug   = body.debug === true;
       const siteId  = process.env.SP_SITE_ID;
       const token   = await getToken();
