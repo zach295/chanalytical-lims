@@ -114,13 +114,16 @@ app.http('import-acid', {
   handler: async (request, context) => {
     try {
       if (!XLSX) return { status: 500, jsonBody: { error: 'xlsx not installed' } };
-      const body = await request.json().catch(() => ({}));
+      const body       = await request.json().catch(() => ({}));
+      const dateFilter = body.datePrefix ? String(body.datePrefix).trim() : '';
       const { debug, all: importAll } = body;
 
       const cacheItems = await listItems('Results Cache', { top: 500 });
       const needsAcid = cacheItems.filter(r => {
-        // Always process all IDs — overwrite existing data so corrections take effect
-        return !!String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
+        const labId = String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
+        if (!labId) return false;
+        if (dateFilter && !labId.startsWith(dateFilter)) return false;
+        return true;
       });
 
       if (!needsAcid.length) {
