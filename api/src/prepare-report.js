@@ -452,6 +452,26 @@ app.http('prepare-report', {
       if (!dlR.ok) throw new Error(`Template download failed (${dlR.status})`);
       tmplBuffer = Buffer.from(await dlR.arrayBuffer());
       context.log('[prepare] Template downloaded:', tmplBuffer.length, 'bytes');
+
+      // ── Orphan cleanup: delete * Report.xlsx files older than 30 minutes ──
+      try {
+        const cleanupRes = await fetch(
+          `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}:/children?$select=id,name,lastModifiedDateTime&$top=100`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (cleanupRes.ok) {
+          const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+          const staleFiles   = ((await cleanupRes.json()).value || []).filter(f =>
+            /\s+Report\.xlsx$/i.test(f.name) && new Date(f.lastModifiedDateTime) < thirtyMinAgo
+          );
+          for (const f of staleFiles) {
+            await fetch(`${GRAPH}/sites/${siteId}/drive/items/${f.id}`,
+              { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+            context.log('[prepare] Cleaned up stale:', f.name);
+          }
+        }
+      } catch(e) { context.log('[prepare] Orphan cleanup error (non-fatal):', e.message); }
+
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
     // ── Step 2: Upload as named copy (delete existing first to avoid lock) ──
