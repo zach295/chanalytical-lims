@@ -112,18 +112,18 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { clients } };
         }
 
-        // pending-reports: returns all approved samples from Results Cache as pending lab IDs
+        // pending-reports: returns approved samples from Archived Intake for the report dropdown
         if (action === 'pending-reports') {
-          const rcItems = await listItems('Results Cache', { top: 2000 }).catch(() => []);
-          const pending = rcItems
-            .filter(r => r.LabID && !/\bREJ\b/i.test(r.LabID))
+          const intakeItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
+          const pending = intakeItems
+            .filter(r => r.field_1 && !/\bREJ\b/i.test(String(r.field_1 || '')))
             .map(r => {
-              const labId    = String(r.LabID || '').trim();
-              const baseId   = labId.replace(/ RW\s*$/i, '').trim();
-              const tests    = [r.Title ? 'pH' : null, r.field_2 ? 'Bacteria' : null,
-                               r.Arsenic_x0028_As75_x0029_ ? 'ICP-MS' : null].filter(Boolean);
-              return { baseId, fullId: labId, customer: r.Customer || r.customer || '', tests };
+              const fullId  = String(r.field_1 || '').trim();
+              const baseId  = fullId.replace(/ RW\s*$/i, '').trim().split(' ')[0];
+              const tests   = (r.field_2 || '').split(',').map(t => t.trim()).filter(Boolean);
+              return { baseId, fullId, customer: fmtName(r.field_3 || ''), tests };
             })
+            .filter(r => r.baseId)
             .sort((a, b) => b.baseId.localeCompare(a.baseId));
           return { status: 200, jsonBody: { success: true, pending } };
         }
