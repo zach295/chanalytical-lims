@@ -129,60 +129,25 @@ app.http('import-radon', {
       const siteId  = process.env.SP_SITE_ID;
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load ALL Results Cache rows — overwrite existing radon results ──────
+      // ── 1. Load Results Cache rows for selected date only ─────────────────────
+      if (!dateFilter) return { status: 200, jsonBody: { success: true, updated: 0, log: ['Select a date first'] } };
       const rcListId = await getListId(siteId, 'Results Cache', token);
       if (!rcListId) throw new Error('Results Cache list not found');
-
-      const rcRes   = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$top=2000`,
-        { headers: authHdr }
-      );
-      const rcItems = ((await rcRes.json()).value || [])
-        .filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
-
-      if (!rcItems.length) {
-              // ── Activity Log ─────────────────────────────────────────────────────────
-      try {
-        const _now = new Date();
-        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-        await createItem('Activity Log', {
-          Title: `${_ld} Radon Import`, Client: 'Import',
-          ActivityType: 'Radon Import', Notes: `Updated: ${updated}, Not found: ${notFound}, Errors: ${errors}`,
-          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
-        }).catch(()=>{});
-      } catch(e) {}
-
-      return { status: 200, jsonBody: { success: true, message: 'No pending radon samples found', updated: 0 } };
+      const authHdrRc = { Authorization: `Bearer ${token}` };
+      let rcRaw = [], rcNextUrl = `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
+      while (rcNextUrl) {
+        const rr   = await fetch(rcNextUrl, { headers: authHdrRc });
+        const dd   = await rr.json();
+        rcRaw.push(...(dd.value || []));
+        rcNextUrl  = dd['@odata.nextLink'] || null;
       }
+      const byPrefix = {
+        [dateFilter]: rcRaw
+          .map(i => i.fields)
+          .filter(f => f?.LabID && !/\bREJ\b/i.test(f.LabID))
+      };
 
-      // ── 2. Group by MMDDYY prefix ─────────────────────────────────────────────
-      const byPrefix = {};
-      for (const item of rcItems) {
-        const labId  = String(item.fields.LabID || '').trim();
-        const prefix = labId.slice(0, 6); // MMDDYY
-        if (!prefix.match(/^\d{6}$/)) continue;
-        if (!byPrefix[prefix]) byPrefix[prefix] = [];
-        byPrefix[prefix].push(item);
-      }
-
-      // ── 3. Get RTB list ID for RW Results update ──────────────────────────────
-      const rtbListId = await getListId(siteId, 'Reports to be Billed', token);
-
-      // ── 4. Load control folder path ───────────────────────────────────────────
-      const controlFolder = process.env.SP_CONTROL_FOLDER ||
-        '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
-      const marker   = 'Shared Documents/';
-      const mIdx     = controlFolder.indexOf(marker);
-      const relPath  = mIdx >= 0
-        ? controlFolder.slice(mIdx + marker.length)
-        : controlFolder.replace(/^\/+/, '');
-
-      let totalUpdated = 0;
-      const log = [];
-
-      // ── 5. Process each MMDDYY prefix ────────────────────────────────────────
-      for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
+            for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
         const monthFolder = getMonthFolder(prefix);
         const rcsName     = `RCS_${prefix}.xlsx`;
         const rcsPath     = `${relPath}/${monthFolder}/${rcsName}`;
