@@ -118,12 +118,11 @@ app.http('import-acid', {
       const dateFilter = body.datePrefix ? String(body.datePrefix).trim() : '';
       const { debug, all: importAll } = body;
 
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      const needsAcid = cacheItems.filter(r => {
+      if (!dateFilter) return { status: 400, jsonBody: { error: 'Select a date first' } };
+      const allCache  = await listItems('Results Cache', { top: 2000 });
+      const needsAcid = allCache.filter(r => {
         const labId = String(r.LabID || r['Lab_x0020_ID'] || r['Lab ID'] || '').trim();
-        if (!labId) return false;
-        if (dateFilter && !labId.startsWith(dateFilter)) return false;
-        return true;
+        return labId && labId.startsWith(dateFilter) && !/\bREJ\b/i.test(labId);
       });
 
       if (!needsAcid.length) {
