@@ -129,25 +129,16 @@ app.http('import-radon', {
       const siteId  = process.env.SP_SITE_ID;
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load Results Cache rows for selected date only ─────────────────────
+      // ── 1. Load Results Cache rows for selected date ────────────────────────────
       if (!dateFilter) return { status: 200, jsonBody: { success: true, updated: 0, log: ['Select a date first'] } };
-      const rcListId = await getListId(siteId, 'Results Cache', token);
-      if (!rcListId) throw new Error('Results Cache list not found');
-      const authHdrRc = { Authorization: `Bearer ${token}` };
-      let rcRaw = [], rcNextUrl = `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
-      while (rcNextUrl) {
-        const rr   = await fetch(rcNextUrl, { headers: authHdrRc });
-        const dd   = await rr.json();
-        rcRaw.push(...(dd.value || []));
-        rcNextUrl  = dd['@odata.nextLink'] || null;
-      }
-      const byPrefix = {
-        [dateFilter]: rcRaw
-          .map(i => i.fields)
-          .filter(f => f?.LabID && !/\bREJ\b/i.test(f.LabID))
-      };
+      const allRc = await listItems('Results Cache', { top: 2000 }).catch(() => []);
+      const dateRcItems = allRc.filter(f => {
+        const id = String(f.LabID || '').trim();
+        return id && id.startsWith(dateFilter) && !/\bREJ\b/i.test(id);
+      });
+      const byPrefix = { [dateFilter]: dateRcItems };
 
-            for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
+          for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
         const monthFolder = getMonthFolder(prefix);
         const rcsName     = `RCS_${prefix}.xlsx`;
         const rcsPath     = `${relPath}/${monthFolder}/${rcsName}`;
