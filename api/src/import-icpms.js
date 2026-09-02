@@ -327,29 +327,25 @@ app.http('import-icpms', {
       const mi     = rawFolder.indexOf(marker);
       const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
-      // Step 1: Load Results Cache items for the selected date only
-      if (!dateFilter) return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ error: 'Select a date first' }) };
-      let rcRaw = [], rcNext2 = `${GRAPH}/sites/${siteId}/drive`; // placeholder
-      const cacheItems = await (async () => {
-        let items = [], next = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
-        while (next) {
-          const r    = await fetch(next, { headers: { Authorization: `Bearer ${token}` } });
-          const data = await r.json();
-          items.push(...(data.value || []));
-          next = data['@odata.nextLink'] || null;
-        }
-        return items.filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
-      })();
-      if (!cacheItems.length) {
+      // Step 1: Get Results Cache — find IDs needing ICP-MS data
+      const cacheItems = await listItems('Results Cache', { top: 2000 });
+      const needsIcpms = cacheItems.filter(r => {
+        if (/\bREJ\b/i.test(r.LabID || '')) return false;
+        if (dateFilter && !String(r.LabID || '').startsWith(dateFilter)) return false;
+        return !!getLabId(r);
+      });
+      if (!needsIcpms.length) {
         return { status: 200, headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ success: true, message: `No Results Cache items for ${dateFilter}`, created: 0, updated: 0, errors: 0, log: [], diag: diagInfo }) };
+          body: JSON.stringify({ success: true, message: 'No Results Cache entries found', created: 0, updated: 0, errors: 0, log: [], diag: diagInfo }) };
       }
-      const needsIcpms = cacheItems;
-      const byDate = { [dateFilter]: new Set(cacheItems.map(i => {
-        const labId = String(i.fields?.LabID || '').trim();
-        return labId.replace(/ RW$/i, '').trim().slice(0, 10);
-      }).filter(Boolean)) };
-      context.log(`[import-icpms] Dates to process: ${Object.keys(byDate).join(', ')}`);
+      for (const r of needsIcpms) {
+        const labId   = getLabId(r);
+        const datePart = labId.slice(0, 6);
+        if (!datePart) continue;
+        if (!byDate[datePart]) byDate[datePart] = new Set();
+        byDate[datePart].add(labId.split(' ')[0]);
+      }
+            context.log(`[import-icpms] Dates to process: ${Object.keys(byDate).join(', ')}`);
 
       // Step 2: For each date group, look in month subfolder then flat folder
       const MONTHS_LIST = ['January','February','March','April','May','June',
