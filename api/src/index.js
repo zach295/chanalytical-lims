@@ -33,9 +33,8 @@ require('./import-icpms');
 require('./import-control');
 require('./import-radon');
 require('./import-acid');
-require('./import-bacteria');
-require('./import-ph');
+// require('./import-bacteria');
+// require('./import-ph');
 require('./sync-results-cache');
 require('./billing-read');
 require('./billing-update');
- 
