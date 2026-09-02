@@ -317,7 +317,8 @@ app.http('import-icpms', {
   handler: async (request, context) => {
     try {
       if (!XLSX) return { status: 500, body: JSON.stringify({ error: 'xlsx not installed' }) };
-      const body = await request.json().catch(() => ({}));
+      const body       = await request.json().catch(() => ({}));
+      const dateFilter = body.datePrefix ? String(body.datePrefix).trim() : '';
       const { debug, all: importAll } = body;
 
       const rawFolder = process.env.SP_ICPMS_FOLDER ||
@@ -348,6 +349,7 @@ app.http('import-icpms', {
         const baseId   = getLabId(item).split(' ')[0].trim();
         const datePart = getDatePart(baseId);
         if (!datePart) continue;
+        if (dateFilter && datePart !== dateFilter) continue;
         if (!byDate[datePart]) byDate[datePart] = new Set();
         byDate[datePart].add(baseId);
       }
