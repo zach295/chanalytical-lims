@@ -129,37 +129,16 @@ app.http('import-radon', {
       const siteId  = process.env.SP_SITE_ID;
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load Results Cache — find rows with empty Radon field ──────────────
+      // ── 1. Load ALL Results Cache rows — overwrite existing radon results ──────
       const rcListId = await getListId(siteId, 'Results Cache', token);
       if (!rcListId) throw new Error('Results Cache list not found');
 
-      // Load Archived Intake to find Radon Water base IDs
-      const aiListId = await getListId(siteId, 'Archived Intake', token);
-      const radonBaseIds = new Set();
-      if (aiListId) {
-        const aiRes = await fetch(
-          `${GRAPH}/sites/${siteId}/lists/${aiListId}/items?$expand=fields($select=field_1,field_2)&$top=2000`,
-          { headers: authHdr }
-        );
-        if (aiRes.ok) {
-          const aiData = await aiRes.json();
-          (aiData.value || []).forEach(i => {
-            if ((i.fields?.field_2 || '').toLowerCase().includes('radon water')) {
-              const baseId = (i.fields?.field_1 || '').split(' ')[0].trim();
-              if (baseId) radonBaseIds.add(baseId);
-            }
-          });
-        }
-      }
-      context.log(`[Radon] Found ${radonBaseIds.size} Radon Water base IDs in Archived Intake`);
-
-      // Load Results Cache — only Radon Water entries without results
-      const rcRes  = await fetch(
+      const rcRes   = await fetch(
         `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$top=2000`,
         { headers: authHdr }
       );
       const rcItems = ((await rcRes.json()).value || [])
-        .filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID) && radonBaseIds.has(i.fields.LabID.trim()));
+        .filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
 
       if (!rcItems.length) {
               // ── Activity Log ─────────────────────────────────────────────────────────
@@ -286,7 +265,16 @@ app.http('import-radon', {
             );
             if (rtbSearch.ok) {
               const rtbItems = (await rtbSearch.json()).value || [];
-              const rtbMatch = rtbItems.find(i => String(i.fields?.Title || '').trim() === labId);
+              // Strip any suffix (e.g. " RW") from labId to match RTB Title
+              const baseLabId = labId.replace(/\s+RW\s*$/i, '').trim();
+              const rtbMatch  = rtbItems.find(i =>
+                String(i.fields?.Title || '').trim() === labId ||
+                String(i.fields?.Title || '').trim() === baseLabId
+              );
+              if (!rtbMatch) {
+                const rtbSample = rtbItems.slice(0,3).map(i => i.fields?.Title);
+                log.push(`⚠️ ${labId}: no RTB match (searching as "${labId}" / "${baseLabId}"; RTB sample: ${JSON.stringify(rtbSample)})`);
+              }
               if (rtbMatch) {
                 // Get internal name for RW Results using colMap
                 const colsRes  = await fetch(
