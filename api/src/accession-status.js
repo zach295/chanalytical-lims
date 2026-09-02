@@ -112,22 +112,6 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { clients } };
         }
 
-        // pending-reports: returns approved samples from Archived Intake for the report dropdown
-        if (action === 'pending-reports') {
-          const intakeItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
-          const pending = intakeItems
-            .filter(r => r.field_1 && !/\bREJ\b/i.test(String(r.field_1 || '')))
-            .map(r => {
-              const fullId  = String(r.field_1 || '').trim();
-              const baseId  = fullId.replace(/ RW\s*$/i, '').trim().split(' ')[0];
-              const tests   = (r.field_2 || '').split(',').map(t => t.trim()).filter(Boolean);
-              return { baseId, fullId, customer: fmtName(r.field_3 || ''), tests };
-            })
-            .filter(r => r.baseId)
-            .sort((a, b) => b.baseId.localeCompare(a.baseId));
-          return { status: 200, jsonBody: { success: true, pending } };
-        }
-
         // today-approved
         if (action === 'today-approved') {
           const now      = new Date();
