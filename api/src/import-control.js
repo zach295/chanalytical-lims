@@ -194,23 +194,15 @@ app.http('import-control', {
       const mi     = rawFolder.indexOf(marker);
       const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
 
-      // Step 1: Get Results Cache IDs needing control data
-      const cacheItems = await listItems('Results Cache', { top: 500 });
+      // Step 1: Load Results Cache items for selected date only
+      if (!dateFilter) return { status: 400, jsonBody: { error: 'Select a date first' } };
+      const allCache   = await listItems('Results Cache', { top: 2000 });
+      const cacheItems = allCache.filter(r => {
+        const labId = String(r.LabID || '').trim();
+        return labId && labId.startsWith(dateFilter) && !/\bREJ\b/i.test(labId);
+      });
       // Process rows missing pH (Title) OR coliform OR any Gallery chemistry
-      const needsControl = cacheItems.filter(r => {
-        const hasId = !!(r.LabID || '').trim();
-        if (/\bREJ\b/i.test(r.LabID || '')) return false; // skip rejected samples
-        if (!hasId) return false;
-        const hasPH       = !!(r.Title   || '').toString().trim();
-        const hasColiform = !!(r.field_2  || '').toString().trim();
-        const hasChloride = !!(r.field_6  || '').toString().trim();
-        const allFilled   = hasPH && hasColiform && hasChloride;
-        return importAll || !allFilled;
-      }); // no cap — process all pending
-
-      if (!needsControl.length) {
-        return { status: 200, jsonBody: { success: true, message: 'All Results Cache entries already have control data', updated: 0 } };
-      }
+      if (!cacheItems.length) return { status: 200, jsonBody: { success: true, updated: 0, log: [`No Results Cache items for ${dateFilter}`] } };
 
       // Group by date portion
       const byDate = {};
