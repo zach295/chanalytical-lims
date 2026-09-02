@@ -13,15 +13,19 @@ const SHEETS_TAB = 'Form Responses';
 async function getSheetsToken() {
   const sa = JSON.parse(process.env.GMAIL_SERVICE_ACCOUNT || '{}');
   if (!sa.private_key) throw new Error('GMAIL_SERVICE_ACCOUNT missing');
-  const { SignJWT } = await import('jose');
-  const key = await import('jose').then(m => m.importPKCS8(sa.private_key, 'RS256'));
-  const jwt = await new SignJWT({ scope: 'https://www.googleapis.com/auth/spreadsheets' })
-    .setProtectedHeader({ alg: 'RS256' })
-    .setIssuer(sa.client_email)
-    .setAudience('https://oauth2.googleapis.com/token')
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(key);
+  const crypto = require('crypto');
+  const now    = Math.floor(Date.now() / 1000);
+  const header  = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600,
+  })).toString('base64url');
+  const sign    = crypto.createSign('RSA-SHA256');
+  sign.update(`${header}.${payload}`);
+  const sig = sign.sign(sa.private_key, 'base64url');
+  const jwt = `${header}.${payload}.${sig}`;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -559,15 +563,19 @@ const SHEETS_TAB = 'Form Responses';
 async function getSheetsToken() {
   const sa = JSON.parse(process.env.GMAIL_SERVICE_ACCOUNT || '{}');
   if (!sa.private_key) throw new Error('GMAIL_SERVICE_ACCOUNT missing');
-  const { SignJWT } = await import('jose');
-  const key = await import('jose').then(m => m.importPKCS8(sa.private_key, 'RS256'));
-  const jwt = await new SignJWT({ scope: 'https://www.googleapis.com/auth/spreadsheets' })
-    .setProtectedHeader({ alg: 'RS256' })
-    .setIssuer(sa.client_email)
-    .setAudience('https://oauth2.googleapis.com/token')
-    .setIssuedAt()
-    .setExpirationTime('1h')
-    .sign(key);
+  const crypto = require('crypto');
+  const now    = Math.floor(Date.now() / 1000);
+  const header  = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now, exp: now + 3600,
+  })).toString('base64url');
+  const sign    = crypto.createSign('RSA-SHA256');
+  sign.update(`${header}.${payload}`);
+  const sig = sign.sign(sa.private_key, 'base64url');
+  const jwt = `${header}.${payload}.${sig}`;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
