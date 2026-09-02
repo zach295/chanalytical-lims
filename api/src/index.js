@@ -1,13 +1,41 @@
-const { app } = require('@azure/functions');
-
-app.http('health', {
-  methods: ['GET'],
-  authLevel: 'anonymous',
-  handler: async (request, context) => {
-    context.log('Health function reached');
-    return {
-      status: 200,
-      jsonBody: { ok: true, service: 'chanalytical-api' }
-    };
-  }
-});
+// Register all Azure Functions
+require('./health');
+require('./clients-read');
+require('./get-scan-queue');
+require('./accession-status');
+require('./clients-write');
+require('./users-manage');
+require('./reject-sample');
+require('./get-rejections');
+require('./cache-results');
+require('./approve-scan');
+require('./mark-scan-processed');
+require('./test-types');
+require('./inventory-read');
+require('./inventory-write');
+require('./setup-lists');
+require('./scan-folder');
+require('./generate-report');
+require('./prepare-report');
+require('./export-pdf');
+require('./patch-report-cell');
+require('./control-sheet');
+require('./update-sample');
+require('./send-report');
+require('./render-report-pdf');
+require('./update-inventory');
+require('./sync-to-sheets');
+require('./auth-role');
+require('./approve-scan-debug');
+require('./ms-token-exchange');
+require('./labid-search');
+require('./list-columns');
+require('./import-icpms');
+require('./import-control');
+require('./import-radon');
+require('./import-acid');
+// require('./import-bacteria');
+// require('./import-ph');
+require('./sync-results-cache');
+require('./billing-read');
+require('./billing-update');
