@@ -6492,6 +6492,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return null;
   
       case 'Arsenic, Total':
+      case 'Arsenic, III':
+      case 'Arsenic, V':
         // green: <1 (string) OR <10;  red: >=10
         if (rl || (num && n < 10))  return '#00CC44';
         if (num && n >= 10)          return '#FF0000';
