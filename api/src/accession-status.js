@@ -112,6 +112,22 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { clients } };
         }
 
+        // pending-reports: returns all approved samples from Results Cache as pending lab IDs
+        if (action === 'pending-reports') {
+          const rcItems = await listItems('Results Cache', { top: 2000 }).catch(() => []);
+          const pending = rcItems
+            .filter(r => r.LabID && !/\bREJ\b/i.test(r.LabID))
+            .map(r => {
+              const labId    = String(r.LabID || '').trim();
+              const baseId   = labId.replace(/ RW\s*$/i, '').trim();
+              const tests    = [r.Title ? 'pH' : null, r.field_2 ? 'Bacteria' : null,
+                               r.Arsenic_x0028_As75_x0029_ ? 'ICP-MS' : null].filter(Boolean);
+              return { baseId, fullId: labId, customer: r.Customer || r.customer || '', tests };
+            })
+            .sort((a, b) => b.baseId.localeCompare(a.baseId));
+          return { status: 200, jsonBody: { success: true, pending } };
+        }
+
         // today-approved
         if (action === 'today-approved') {
           const now      = new Date();
