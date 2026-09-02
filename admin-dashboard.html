@@ -695,7 +695,12 @@ document.addEventListener('DOMContentLoaded', function() {
     <!-- Import buttons -->
     <div class="card" style="margin-bottom:16px;">
       <div class="card-header"><div class="card-title">📥 Import Lab Results</div></div>
-      <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <div style="padding:16px 16px 8px;display:flex;align-items:center;gap:10px;">
+        <label style="font-size:13px;font-weight:600;color:var(--navy);">Import Date:</label>
+        <input type="date" id="import-date" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
+        <span style="font-size:12px;color:var(--slate);">Only imports results for samples received on this date</span>
+      </div>
+      <div style="padding:8px 16px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
         <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
           ⚗️ Import ICP-MS Results
         </button>
@@ -2340,6 +2345,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function showSection(id,btn) {
     if (id === 'statistics') loadStatistics();
     if (id === 'intake') { initMonthPicker(); loadIntake(); }
+    if (id === 'labtool') initImportDate();
     if (id === 'log') loadActivityLog();
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
     document.querySelectorAll('.sb-btn').forEach(t=>t.classList.remove('active'));
@@ -7214,6 +7220,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function initImportDate() {
+    const el = document.getElementById('import-date');
+    if (!el || el.value) return;
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    el.value = y.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // YYYY-MM-DD
+  }
+
+  function getImportDatePrefix() {
+    const el  = document.getElementById('import-date');
+    const val = el?.value; // YYYY-MM-DD
+    if (!val) return '';
+    const [yr, mo, da] = val.split('-');
+    return `${mo}${da}${yr.slice(-2)}`; // MMDDYY
+  }
+
   async function importPH(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
@@ -7221,7 +7242,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-ph', { method: 'POST' });
+      const res  = await fetch('/api/import-ph', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ datePrefix: getImportDatePrefix() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ pH import complete — ${data.updated} sample(s) updated`;
@@ -7244,7 +7265,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-bacteria', { method: 'POST' });
+      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ datePrefix: getImportDatePrefix() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
@@ -7267,7 +7288,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-radon', { method: 'POST' });
+      const res  = await fetch('/api/import-radon', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ datePrefix: getImportDatePrefix() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Radon import complete — ${data.updated} sample(s) updated`;
