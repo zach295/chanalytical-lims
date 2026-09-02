@@ -1,0 +1,9 @@
+try {
+  console.log("Testing API initialization...");
+  require('./src/index.js');
+  console.log("✅ Boot successful! No top-level initialization crashes.");
+} catch (error) {
+  console.error("❌ CRASH DETECTED during module initialization:");
+  console.error(error);
+  process.exit(1);
+}
