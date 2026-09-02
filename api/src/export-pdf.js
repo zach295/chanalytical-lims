@@ -29,6 +29,7 @@ app.http('export-pdf', {
       if (body.cleanupOnly) {
         const siteId2 = process.env.SP_SITE_ID;
         const token2  = await getToken();
+        // Just delete on cleanup — orphaned sessions don't need archiving
         await fetch(`${GRAPH}/sites/${siteId2}/drive/items/${tempId}`,
           { method: 'DELETE', headers: { Authorization: `Bearer ${token2}` } }).catch(() => {});
         context.log('[export-pdf] Cleanup only — deleted tempId:', tempId);
@@ -60,13 +61,33 @@ app.http('export-pdf', {
       const pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
       context.log(`[export-pdf] PDF size: ${pdfBase64.length} chars`);
 
-      // ── Delete temp file unless keepTemp is set ──────────────────────────
+      // ── Delete temp Excel and save PDF copy to Archive ───────────────────────
       if (!keepTemp) {
-        await fetch(
-          `${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
+        // Delete the temp Excel file
+        await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
           { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
         ).catch(e => context.log('[export-pdf] Delete failed (non-fatal):', e.message));
-        context.log('[export-pdf] Temp file deleted');
+        context.log('[export-pdf] Temp Excel deleted');
+
+        // Save PDF copy to Archive folder
+        try {
+          const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
+            '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
+          const archiveMarker = 'Shared Documents/';
+          const archiveIdx    = SCAN_ARCHIVE.indexOf(archiveMarker);
+          const archiveRel    = archiveIdx >= 0
+            ? SCAN_ARCHIVE.slice(archiveIdx + archiveMarker.length)
+            : SCAN_ARCHIVE.replace(/^\/+/, '');
+          const pdfName    = isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`;
+          const uploadPath = `${archiveRel}/${encodeURIComponent(pdfName)}`;
+          const pdfBytes   = Buffer.from(pdfBase64, 'base64');
+          await fetch(
+            `${GRAPH}/sites/${siteId}/drive/root:/${uploadPath}:/content`,
+            { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/pdf' },
+              body: pdfBytes }
+          ).catch(e => context.log('[export-pdf] PDF archive save failed (non-fatal):', e.message));
+          context.log('[export-pdf] PDF copy saved to Archive:', pdfName);
+        } catch(e) { context.log('[export-pdf] PDF archive error (non-fatal):', e.message); }
       } else {
         context.log('[export-pdf] Temp file kept (keepTemp=true)');
       }
