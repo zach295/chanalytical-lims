@@ -136,8 +136,9 @@ app.http('import-ph', {
       const token   = await getToken();
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load Results Cache items ─────────────────────────────────────────
-      let rcItems = [], rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$top=999`;
+      // ── 1. Load Results Cache items for selected date only ──────────────────
+      if (!dateFilter) return { status: 400, jsonBody: { error: 'Select a date first' } };
+      let rcItems = [], rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
       while (rcNext) {
         const r    = await fetch(rcNext, { headers: authHdr });
         const data = await r.json();
@@ -145,18 +146,8 @@ app.http('import-ph', {
         rcNext = data['@odata.nextLink'] || null;
       }
       const cacheItems = rcItems.filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
-      if (!cacheItems.length) return { status: 200, jsonBody: { success: true, updated: 0, log: ['No Results Cache items'] } };
-
-      // Group by MMDDYY prefix
-      const byPrefix = {};
-      for (const item of cacheItems) {
-        const labId  = String(item.fields.LabID || '').trim();
-        const prefix = labId.slice(0, 6);
-        if (/^\d{6}$/.test(prefix)) {
-          if (!byPrefix[prefix]) byPrefix[prefix] = [];
-          byPrefix[prefix].push(item);
-        }
-      }
+      if (!cacheItems.length) return { status: 200, jsonBody: { success: true, updated: 0, log: [`No Results Cache items found for ${dateFilter}`] } };
+      const byPrefix = { [dateFilter]: cacheItems };
 
       // ── 2. Resolve folder path ───────────────────────────────────────────────
       const controlFolder = process.env.SP_CONTROL_FOLDER ||
