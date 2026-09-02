@@ -1,11 +1,10 @@
 {
   "name": "chanalytical-api",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Chanalytical LIMS Azure Functions API",
   "main": "src/index.js",
   "scripts": {
-    "start": "func start",
-    "build": "npm install --production"
+    "start": "func start"
   },
   "dependencies": {
     "@azure/functions": "^4.5.0",
