@@ -7,6 +7,7 @@
  */
 const { app }      = require('@azure/functions');
 const { getToken, createItem, listItems } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 const GRAPH  = 'https://graph.microsoft.com/v1.0';
 
@@ -169,6 +170,7 @@ app.http('import-radon', {
 
       let totalUpdated = 0;
       const log = [];
+      const importedSamples = [];
 
       // ── 2. Process the selected day's RCS file ─────────────────────────────
       for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
@@ -287,12 +289,19 @@ app.http('import-radon', {
 
           totalUpdated++;
           log.push(`✅ ${labId}: ${rcsRow.result} pCi/L`);
+          importedSamples.push({ labId, notes: `Radon Water=${rcsRow.result} pCi/L | Date tested: ${rcsRow.dateTested || '—'} | Time tested: ${rcsRow.timeTested || '—'} | Source: ${rcsName}` });
         }
       }
 
+      const actor = body.importedBy || body.updatedBy || 'Lab Staff';
+      const auditWarnings = [];
+      for (const sample of importedSamples) {
+        const audit = await writeActivityLog({ labId: sample.labId, type: 'Results Imported - Radon', notes: sample.notes, by: actor, context });
+        if (!audit.success) auditWarnings.push(`${sample.labId}: ${audit.error}`);
+      }
       return {
         status: 200,
-        jsonBody: { success: true, updated: totalUpdated, log },
+        jsonBody: { success: true, updated: totalUpdated, log, auditWarnings },
       };
 
     } catch(e) {

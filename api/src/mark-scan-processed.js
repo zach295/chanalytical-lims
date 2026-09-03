@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { updateItem, deleteItem, getToken, LISTS } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -85,7 +86,7 @@ app.http('mark-scan-processed', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { fileId, outcome, reviewQueueRow, rowIndex } = await request.json();
+      const { fileId, outcome, reviewQueueRow, rowIndex, processedBy, labId, fileName } = await request.json();
       const row = reviewQueueRow || rowIndex;
       if (!row) return { status: 400, body: JSON.stringify({ error: 'rowIndex required' }) };
 
@@ -115,10 +116,22 @@ app.http('mark-scan-processed', {
         }
       }
 
+      let auditWarning = null;
+      if (outcome === 'discarded') {
+        const audit = await writeActivityLog({
+          labId: labId || fileName || `Scan ${row}`,
+          type: 'Scan Discarded',
+          notes: `Review Queue row ${row} discarded${fileName ? ` | File: ${fileName}` : ''}${fileId ? ` | File ID: ${fileId}` : ''}${fileId ? ' | Underlying file deletion requested' : ''}`,
+          by: processedBy || 'Lab Staff',
+          context,
+        });
+        if (!audit.success) auditWarning = audit.error;
+      }
+
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, driveDeleted: !!fileId, row, outcome }),
+        body: JSON.stringify({ success: true, driveDeleted: !!fileId, row, outcome, auditWarning }),
       };
     } catch(e) {
       context.log('[mark-scan-processed] Error:', e.message);

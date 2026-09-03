@@ -8,6 +8,7 @@ function hashPassword(pw) {
 }
 const WELCOME_HASH = '-tlew818'; // hash of W3lcom3!
 const { listItems, createItem, updateItem, LISTS } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 // SharePoint internal field name mapping (discovered via debug)
 // field_1=name, field_2=role, field_4=regCode, field_5=createdBy,
@@ -36,18 +37,14 @@ const mapUser = r => ({
   active:    r.field_9 !== false && r.field_9 !== 'FALSE',
 });
 
-async function logUserActivity(action, email, details, by) {
-  try {
-    const { createItem } = require('../shared/graph');
-    const now     = new Date();
-    const logDate = now.toLocaleDateString('en-US',{ timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-    const logTime = now.toLocaleTimeString('en-US',{ timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-    await createItem('Activity Log', {
-      Title: `${logDate} ${email}`, Client: email,
-      ActivityType: action, Notes: (details || '').slice(0, 3000),
-      By: by || 'Admin', LogDate: logDate, LogTime: logTime, Quantity: 0,
-    });
-  } catch(e) {}
+async function logUserActivity(action, email, details, by, context) {
+  return writeActivityLog({
+    labId: email,
+    type: action,
+    notes: details || '',
+    by: by || 'Admin',
+    context,
+  });
 }
 
 app.http('users-manage', {
@@ -91,7 +88,7 @@ app.http('users-manage', {
           field_7: true,
           field_9: true,
         });
-        await logUserActivity('User Created', email, `New account created in Users list.\nRole: ${role || 'lab'} | Created by: ${createdBy || 'Admin'}`, createdBy);
+        await logUserActivity('User Created', email, `New account created in Users list.\nRole: ${role || 'lab'} | Created by: ${createdBy || 'Admin'}`, createdBy, context);
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -108,7 +105,7 @@ app.http('users-manage', {
         // Update email (Title) if a new one was provided and it differs
         if (newEmail && newEmail !== email) updates.Title = newEmail.trim().toLowerCase();
         await updateItem(LISTS.USERS, user._id, updates);
-        await logUserActivity('User Edited', email, `User account updated in Users list.\nNew email: ${newEmail || email} | Name: ${name || '—'} | Role: ${role || '—'}`, 'Admin');
+        await logUserActivity('User Edited', email, `User account updated in Users list.\nNew email: ${newEmail || email} | Name: ${name || '—'} | Role: ${role || '—'}`, body.updatedBy || 'Admin', context);
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -118,7 +115,7 @@ app.http('users-manage', {
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { field_2: role });
         const { email: srEmail, role: srRole } = body;
-        await logUserActivity('Role Changed', srEmail, `Role updated in Users list.\nNew role: ${srRole || '—'}`, 'Admin');
+        await logUserActivity('Role Changed', srEmail, `Role: "${user.field_2 || ''}" → "${srRole || '—'}"`, body.updatedBy || 'Admin', context);
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }
 
@@ -127,7 +124,8 @@ app.http('users-manage', {
         const user = await findUserByEmail(email);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { field_2: 'deactivated', field_9: false });
-        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+        const audit = await logUserActivity('User Deactivated', email, `Role: "${user.field_2 || ''}" → "deactivated" | Active: true → false`, body.updatedBy || 'Admin', context);
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true, auditWarning: audit.success ? null : audit.error }) };
       }
 
       if (action === 'login') {
@@ -196,8 +194,10 @@ app.http('users-manage', {
         const hashed = hashPassword(newPw || '');
         await updateItem(LISTS.USERS, user._id, { field_8: hashed, field_7: false, field_9: true });
         const mapped = mapUser(user);
+        const audit = await logUserActivity('Password Changed', pwEmail, 'Password changed. Password value/hash intentionally not recorded.', body.updatedBy || mapped.name || 'User', context);
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
           success: true,
+          auditWarning: audit.success ? null : audit.error,
           user: { email: mapped.email, name: mapped.name, role: mapped.role, clientKey: mapped.clientKey },
         })};
       }
@@ -208,7 +208,8 @@ app.http('users-manage', {
         const user = await findUserByEmail(pwEmail);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         await updateItem(LISTS.USERS, user._id, { field_8: WELCOME_HASH, field_7: true, field_9: true });
-        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
+        const audit = await logUserActivity('Password Reset', pwEmail, 'Password reset to temporary welcome credential; user must change it on next login. Password value/hash intentionally not recorded.', body.updatedBy || 'Admin', context);
+        return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true, auditWarning: audit.success ? null : audit.error }) };
       }
 
       return { status: 400, body: JSON.stringify({ error: 'Unknown action: ' + action }) };

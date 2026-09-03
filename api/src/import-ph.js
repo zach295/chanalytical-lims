@@ -18,6 +18,7 @@
  */
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 const GRAPH  = 'https://graph.microsoft.com/v1.0';
 const MONTHS = ['January','February','March','April','May','June',
@@ -160,6 +161,7 @@ app.http('import-ph', {
 
       let totalUpdated = 0;
       const log = [];
+      const importedSamples = [];
 
       for (const [prefix, items] of Object.entries(byPrefix)) {
         const monthFolder = getMonthFolder(prefix);
@@ -214,13 +216,20 @@ app.http('import-ph', {
           if (patch.ok) {
             totalUpdated++;
             log.push(`✅ ${labId}: pH=${result.ph}`);
+            importedSamples.push({ labId, notes: `pH=${result.ph} | Analysis date/time: ${toMilitaryDT(result.dt)}` });
           } else {
             log.push(`⚠️ ${labId}: update failed (${patch.status})`);
           }
         }
       }
 
-      return { status: 200, jsonBody: { success: true, updated: totalUpdated, log } };
+      const actor = body.importedBy || body.updatedBy || 'Lab Staff';
+      const auditWarnings = [];
+      for (const sample of importedSamples) {
+        const audit = await writeActivityLog({ labId: sample.labId, type: 'Results Imported - pH', notes: sample.notes, by: actor, context });
+        if (!audit.success) auditWarnings.push(`${sample.labId}: ${audit.error}`);
+      }
+      return { status: 200, jsonBody: { success: true, updated: totalUpdated, log, auditWarnings } };
 
     } catch(e) {
       context.log('[import-ph] Error:', e.message);
