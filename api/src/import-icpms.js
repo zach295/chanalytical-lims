@@ -11,6 +11,8 @@ const { listFolder, downloadFile, listItems, createItem, updateItem, getToken } 
 let XLSX;
 try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-icpms] xlsx not available:', e.message); }
 
+function getLabId(r) { return String(r.LabID || r.fields?.LabID || '').trim(); }
+
 // Convert any date/time value to military time "MM/DD/YY HH:MM"
 function toMilitaryDT(val) {
   if (!val && val !== 0) return '';
