@@ -390,14 +390,24 @@ app.http('update-sample', {
                   { headers: authHdr }
                 );
                 if (pRes2.ok) {
-                  const tLow  = newTest.toLowerCase().trim();
-                  const sLow  = newSuffix.toLowerCase().trim();
-                  const pMatch = ((await pRes2.json()).value||[]).find(i => {
-                    const svc  = (i.fields?.Service||'').toLowerCase().trim();
-                    const abbr = (i.fields?.CoreAbbr_x002f_Symbol||'').toLowerCase().trim();
-                    return svc === tLow || abbr === sLow || svc.includes(tLow) || tLow.includes(svc);
-                  });
-                  if (pMatch) rate = parseFloat(String(pMatch.fields?.[priceCol]||'').replace(/[$,]/g,'')) || 0;
+                  const pricingRows = (await pRes2.json()).value || [];
+                  const testParts   = newTest.split(/\s*\|\s*/).map(v => v.trim()).filter(Boolean);
+                  const suffixParts = newSuffix.split(/\s*,\s*/).map(v => v.trim()).filter(Boolean);
+                  let totalRate = 0;
+                  for (let idx = 0; idx < Math.max(testParts.length, 1); idx++) {
+                    const testName = testParts[idx] || newTest;
+                    const suffix   = suffixParts[idx] || (testParts.length === 1 ? newSuffix : '');
+                    const tLow = testName.toLowerCase();
+                    const sLow = suffix.toLowerCase();
+                    let pMatch = pricingRows.find(i => (i.fields?.Service || '').toLowerCase().trim() === tLow);
+                    if (!pMatch && sLow) pMatch = pricingRows.find(i => (i.fields?.CoreAbbr_x002f_Symbol || '').toLowerCase().trim() === sLow);
+                    if (!pMatch) pMatch = pricingRows.find(i => {
+                      const svc = (i.fields?.Service || '').toLowerCase().trim();
+                      return svc && tLow && (svc.includes(tLow) || tLow.includes(svc));
+                    });
+                    totalRate += pMatch ? (parseFloat(String(pMatch.fields?.[priceCol] || '').replace(/[$,]/g, '')) || 0) : 0;
+                  }
+                  rate = parseFloat(totalRate.toFixed(2));
                 }
               } catch(rateErr) { log.push(`ℹ️ Rate lookup failed: ${rateErr.message}`); }
               const amt = rate ? parseFloat((1 * rate).toFixed(2)) : null;

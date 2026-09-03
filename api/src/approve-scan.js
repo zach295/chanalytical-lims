@@ -470,14 +470,32 @@ async function writeReportsToBilled(siteId, token, params, context) {
         { headers: authHdr });
       if (pRes.ok) {
         const pData  = await pRes.json();
-        const tLow   = (params.testName||'').toLowerCase().trim();
-        const sLow   = (params.suffix||'').toLowerCase().trim();
-        const match  = (pData.value||[]).find(i => {
-          const svc = (i.fields?.Service||'').toLowerCase().trim();
-          const abbr = (i.fields?.CoreAbbr_x002f_Symbol||'').toLowerCase().trim();
-          return svc === tLow || abbr === sLow || svc.includes(tLow) || tLow.includes(svc);
-        });
-        if (match) rate = parseFloat(String(match.fields?.[priceCol]||'').replace(/[$,]/g,'')) || 0;
+        // A single Lab ID can contain multiple separately ordered elements, e.g.
+        // "Iron, Total | Manganese, Total | Total Hardness". Price EACH component
+        // and sum them instead of accidentally matching only one element.
+        const testParts   = String(params.testName || '').split(/\s*\|\s*/).map(v => v.trim()).filter(Boolean);
+        const suffixParts = String(params.suffix || '').split(/\s*,\s*/).map(v => v.trim()).filter(Boolean);
+        const pricingRows = pData.value || [];
+        let totalRate = 0;
+        const priced = [];
+        for (let idx = 0; idx < Math.max(testParts.length, 1); idx++) {
+          const testName = testParts[idx] || String(params.testName || '').trim();
+          const suffix   = suffixParts[idx] || (testParts.length === 1 ? String(params.suffix || '').trim() : '');
+          const tLow = testName.toLowerCase();
+          const sLow = suffix.toLowerCase();
+          // Prefer exact service/SKU matches. Only use contains matching as a final fallback.
+          let match = pricingRows.find(i => (i.fields?.Service || '').toLowerCase().trim() === tLow);
+          if (!match && sLow) match = pricingRows.find(i => (i.fields?.CoreAbbr_x002f_Symbol || '').toLowerCase().trim() === sLow);
+          if (!match) match = pricingRows.find(i => {
+            const svc = (i.fields?.Service || '').toLowerCase().trim();
+            return svc && tLow && (svc.includes(tLow) || tLow.includes(svc));
+          });
+          const componentRate = match ? (parseFloat(String(match.fields?.[priceCol] || '').replace(/[$,]/g, '')) || 0) : 0;
+          totalRate += componentRate;
+          priced.push(`${testName}=$${componentRate.toFixed(2)}`);
+        }
+        rate = parseFloat(totalRate.toFixed(2));
+        if (context) context.log(`[RTB] Pricing ${params.labId || ''}: ${priced.join(' + ')} = $${rate.toFixed(2)}`);
       }
     } catch(e) { if(context) context.log('[RTB] Rate lookup failed:', e.message); }
 

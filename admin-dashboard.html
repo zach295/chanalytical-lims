@@ -5862,13 +5862,11 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       const getDate = r => {
-        // Try explicit date fields first
-        const d = toISO(r.reportDate || r.stmtDate || r.dateRec || r.datePaid || '');
-        if (d) return d;
-        // Fall back to labId prefix: MMDDYY-NNN → 2026-MM-DD
+        // Statistics are based on accession date. The Lab ID prefix is authoritative:
+        // MMDDYY-NNN → YYYY-MM-DD. Fall back to received date only for legacy rows.
         const m = (r.labId || '').match(/^(\d{2})(\d{2})(\d{2})-/);
         if (m) return `20${m[3]}-${m[1]}-${m[2]}`;
-        return '';
+        return toISO(r.dateRec || r.reportDate || r.stmtDate || r.datePaid || '');
       };
 
       // Week start = most recent Monday
@@ -5882,17 +5880,29 @@ document.addEventListener('DOMContentLoaded', function() {
       const monthISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
       const yearISO  = `${now.getFullYear()}-01-01`;
 
+      const baseLabId = r => {
+        const raw = String(r.labId || '').trim();
+        const m = raw.match(/(\d{6}-\d{3})/);
+        return m ? m[1] : raw;
+      };
       const calc = subset => {
-        const income = subset.reduce((s, r) => s + (parseFloat(r.amt) || 0), 0);
-        const kits   = subset.length;
+        // Revenue is the sum of ALL billing lines; kit count is UNIQUE accession IDs.
+        // This keeps FE + MN + HRD on one Lab ID as one kit while counting all revenue.
+        const income = subset.reduce((sum, r) => sum + (parseFloat(r.amt) || 0), 0);
+        const kits   = new Set(subset.map(baseLabId).filter(Boolean)).size;
         return { income, kits, avg: kits > 0 ? income / kits : 0 };
       };
 
       const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-      const ws = calc(rows.filter(r => getDate(r) >= weekISO));
-      const ms = calc(rows.filter(r => getDate(r) >= monthISO));
-      const ys = calc(rows.filter(r => getDate(r) >= yearISO));
+      const todayISO = toISO(fmt(now));
+      const inRange = (r, start) => {
+        const d = getDate(r);
+        return d && d >= start && d <= todayISO;
+      };
+      const ws = calc(rows.filter(r => inRange(r, weekISO)));
+      const ms = calc(rows.filter(r => inRange(r, monthISO)));
+      const ys = calc(rows.filter(r => inRange(r, yearISO)));
 
       console.log('[stats] total rows:', rows.length, 'week:', ws.kits, 'month:', ms.kits, 'year:', ys.kits);
       console.log('[stats] sample dates:', rows.slice(0,3).map(r => getDate(r)));
