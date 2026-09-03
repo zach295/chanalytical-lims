@@ -1,7 +1,6 @@
 // Register all Azure Functions.
 // Load each module independently so one bad entry point cannot prevent
 // every HTTP function (including /api/health) from registering.
-
 const modules = [
   './health',
   './clients-read',
@@ -38,8 +37,8 @@ const modules = [
   './import-control',
   './import-radon',
   './import-acid',
-  // './import-bacteria',
-  // './import-ph',
+  './import-bacteria',
+  './import-ph',
   './sync-results-cache',
   './billing-read',
   './billing-update',
