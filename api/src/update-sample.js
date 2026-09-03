@@ -292,19 +292,28 @@ app.http('update-sample', {
       if (updates.coaTest) {
         const newTest   = updates.coaTest.trim();
         const newSuffix = getSuffix(newTest);
+        const selectedTests = newTest.split(/[|;]/).map(t => t.trim()).filter(Boolean);
+        const preserveRows = selectedTests.length === archivedItems.length && archivedItems.length > 1;
 
         try {
-          for (const item of archivedItems) {
+          for (let idx = 0; idx < archivedItems.length; idx++) {
+            const item = archivedItems[idx];
             const currentFullId = item.field_1 || '';
             const rowBase = currentFullId.split(' ')[0].trim();
             if (rowBase !== baseId) continue;
-            const newFullId = `${rowBase} ${newSuffix}`;
+            // Individual-element samples are stored as one Archived Intake row per test.
+            // Keep those rows individual instead of overwriting every row with the combined test string.
+            const rowTest = preserveRows ? selectedTests[idx] : newTest;
+            const rowSuffix = getSuffix(rowTest);
+            const newFullId = `${rowBase} ${rowSuffix}`;
             if (listId) await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
               { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field_1: newFullId, field_2: newTest }) });
+                body: JSON.stringify({ field_1: newFullId, field_2: rowTest }) });
             rowsUpdated++;
           }
-          log.push(`Test type updated to ${newTest} (${newSuffix})`);
+          log.push(preserveRows
+            ? `Test types preserved across ${selectedTests.length} individual row(s): ${selectedTests.join(' | ')}`
+            : `Test type updated to ${newTest} (${newSuffix})`);
           log.push(`Note: update control sheet lab ID manually if suffix changed`);
 
           // ── If previously rejected — restore status to Approved ─────────────
@@ -332,12 +341,16 @@ app.http('update-sample', {
               );
               const accItems = ((await accItemsRes.json()).value || [])
                 .filter(i => String(i.fields?.field_1 || '').split(' ')[0].trim() === baseId);
-              const newFullId = `${baseId} ${newSuffix}`;
-              for (const item of accItems) {
+              const preserveAccRows = selectedTests.length === accItems.length && accItems.length > 1;
+              for (let idx = 0; idx < accItems.length; idx++) {
+                const item = accItems[idx];
+                const rowTest = preserveAccRows ? selectedTests[idx] : newTest;
+                const rowSuffix = getSuffix(rowTest);
+                const newFullId = `${baseId} ${rowSuffix}`;
                 await fetch(
                   `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,
                   { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ field_2: newFullId, field_3: newTest, field_4: newSuffix }) }
+                    body: JSON.stringify({ field_2: newFullId, field_3: rowTest, field_4: rowSuffix }) }
                 );
               }
               if (accItems.length) log.push(`✅ Accession Log updated (${accItems.length} row(s))`);
