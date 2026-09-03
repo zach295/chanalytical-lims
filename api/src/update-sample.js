@@ -160,7 +160,7 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
                   'July','August','September','October','November','December'];
   const monthName = months[parseInt(mm) - 1] || mm;
   const radonFolder = `${relPath}/${monthName} Radon ${year}`;
-  const fileName    = `C_${datePrefix}.xlsx`; // same naming as control sheet
+  const fileName    = `RCS_${datePrefix}.xlsx`; // radon control sheet naming
   const filePath    = `${radonFolder}/${fileName}`.split('/').map(encodeURIComponent).join('/');
   const authHdr     = { Authorization: `Bearer ${token}` };
 
