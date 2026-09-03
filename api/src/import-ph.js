@@ -140,14 +140,17 @@ app.http('import-ph', {
 
       // ── 1. Load Results Cache items for selected date only ──────────────────
       if (!dateFilter) return { status: 400, jsonBody: { error: 'Select a date first' } };
-      let rcItems = [], rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$filter=startsWith(fields/LabID,'${dateFilter}')&$top=999`;
+      let rcItems = [], rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$top=999`;
       while (rcNext) {
         const r    = await fetch(rcNext, { headers: authHdr });
         const data = await r.json();
         rcItems.push(...(data.value || []));
         rcNext = data['@odata.nextLink'] || null;
       }
-      const cacheItems = rcItems.filter(i => i.fields?.LabID && !/\bREJ\b/i.test(i.fields.LabID));
+      const cacheItems = rcItems.filter(i => {
+        const id = String(i.fields?.LabID || '').trim();
+        return id.startsWith(dateFilter) && !/\bREJ\b/i.test(id);
+      });
       if (!cacheItems.length) return { status: 200, jsonBody: { success: true, updated: 0, log: [`No Results Cache items found for ${dateFilter}`] } };
       const byPrefix = { [dateFilter]: cacheItems };
 
