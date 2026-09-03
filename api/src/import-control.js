@@ -206,7 +206,7 @@ app.http('import-control', {
 
       // Group by date portion
       const byDate = {};
-      for (const item of needsControl) {
+      for (const item of cacheItems) {
         const baseId   = String(item.LabID || '').split(' ')[0].trim();
         const datePart = getDatePart(baseId);
         if (!datePart) continue;

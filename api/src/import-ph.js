@@ -132,6 +132,8 @@ app.http('import-ph', {
   authLevel: 'anonymous',
   handler:   async (request, context) => {
     try {
+      const body = await request.json().catch(() => ({}));
+      const dateFilter = String(body.datePrefix || body.dateFilter || '').trim();
       const siteId  = process.env.SP_SITE_ID;
       const token   = await getToken();
       const authHdr = { Authorization: `Bearer ${token}` };

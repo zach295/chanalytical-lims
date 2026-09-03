@@ -132,7 +132,7 @@ app.http('import-radon', {
       // ── 1. Read requested date and load matching Results Cache rows ───────
       let reqBody = {};
       try { reqBody = await request.json(); } catch (_) {}
-      const rawDateFilter = String(reqBody.dateFilter || '').trim();
+      const rawDateFilter = String(reqBody.datePrefix || reqBody.dateFilter || '').trim();
       const dateFilter = /^\d{6}$/.test(rawDateFilter) ? rawDateFilter : '';
       if (!dateFilter) {
         return { status: 400, jsonBody: { error: 'Select a valid date before importing radon results' } };

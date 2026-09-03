@@ -704,8 +704,8 @@ document.addEventListener('DOMContentLoaded', function() {
           📋 Import Control Sheet
         </button>
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--slate);">
-          Radon Date
-          <input type="date" id="radon-import-date" aria-label="Radon import date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
+          Import Date
+          <input type="date" id="import-date-filter" aria-label="Import results date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
         </label>
         <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">
           ☢️ Import Radon Results
@@ -7218,6 +7218,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function getImportDatePrefix() {
+    const dateInput = document.getElementById('import-date-filter');
+    let selectedDate = dateInput?.value || '';
+    if (!selectedDate) {
+      selectedDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      if (dateInput) dateInput.value = selectedDate;
+    }
+    const ymd = selectedDate.split('-');
+    const prefix = ymd.length === 3 ? `${ymd[1]}${ymd[2]}${ymd[0].slice(-2)}` : '';
+    if (!/^\d{6}$/.test(prefix)) throw new Error('Select a valid import date');
+    return prefix;
+  }
+
   async function importPH(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
@@ -7225,7 +7238,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-ph', { method: 'POST' });
+      const datePrefix = getImportDatePrefix();
+      const res  = await fetch('/api/import-ph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ pH import complete — ${data.updated} sample(s) updated`;
@@ -7248,7 +7262,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-bacteria', { method: 'POST' });
+      const datePrefix = getImportDatePrefix();
+      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
@@ -7271,15 +7286,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const dateInput = document.getElementById('radon-import-date');
-      let selectedDate = dateInput?.value || '';
-      if (!selectedDate) {
-        selectedDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        if (dateInput) dateInput.value = selectedDate;
-      }
-      const ymd = selectedDate.split('-');
-      const dateFilter = ymd.length === 3 ? `${ymd[1]}${ymd[2]}${ymd[0].slice(-2)}` : '';
-      if (!dateFilter) throw new Error('Select a valid radon date');
+      const dateFilter = getImportDatePrefix();
       const res  = await fetch('/api/import-radon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -7312,7 +7319,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/import-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadedBy: getAdminName() }),
+        body: JSON.stringify({ uploadedBy: getAdminName(), datePrefix: getImportDatePrefix() }),
       });
       const text = await res.text();
       let data;
@@ -7366,7 +7373,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ all: true }),
+        body: JSON.stringify({ all: true, datePrefix: getImportDatePrefix() }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
