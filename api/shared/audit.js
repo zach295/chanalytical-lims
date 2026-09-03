@@ -6,8 +6,10 @@ function easternStamp() {
     date: now.toLocaleDateString('en-US', {
       timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: '2-digit',
     }),
+    // Always store Activity Log time as 24-hour military time (HH:MM).
+    // hourCycle h23 guarantees midnight is 00:xx rather than 24:xx.
     time: now.toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     }),
   };
 }
