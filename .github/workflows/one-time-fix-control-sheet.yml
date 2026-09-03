@@ -24,18 +24,71 @@ jobs:
           from pathlib import Path
           p = Path('api/src/approve-scan.js')
           s = p.read_text()
-          old1 = "        const csFolder   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';\n        const csMk       = 'Shared Documents/';\n        const csIdx      = csFolder.indexOf(csMk);\n        const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\\/+/, '');\n        const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');\n"
-          new1 = "        const csFolder   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';\n        const csMk       = 'Shared Documents/';\n        const csIdx      = csFolder.indexOf(csMk);\n        const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\\/+/, '');\n        // Store daily control sheets in the same month folders used by import-control.\n        const monthName  = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'long' });\n        const year4      = now.toLocaleDateString('en-US', { timeZone:'America/New_York', year:'numeric' });\n        const csMonthRel = `${csRel}/${monthName} ${year4}`;\n        const csEncPath  = `${csMonthRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');\n"
-          if old1 not in s:
-              raise SystemExit('control-sheet path block not found; refusing to patch')
-          s = s.replace(old1, new1, 1)
-          old2 = "          if (tmplRes.ok) {\n            const tmplId  = (await tmplRes.json()).id;\n            const folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csRel}?$select=id`,\n              { headers: { Authorization:`Bearer ${_token}` } });\n            if (folderR.ok) {\n              const folderId = (await folderR.json()).id;\n              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {\n                method: 'POST',\n                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },\n                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),\n              });\n              if (copyRes.ok || copyRes.status === 202) {\n                // Wait for copy to complete\n                await new Promise(r => setTimeout(r, 3000));\n                const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,\n                  { headers: { Authorization:`Bearer ${_token}` } });\n                if (newR.ok) {\n                  csFileId = (await newR.json()).id;\n                  context.log(`[CS] Created ${csFileName} from template`);\n                }\n              }\n            }\n          }\n"
-          new2 = "          if (tmplRes.ok) {\n            const tmplId = (await tmplRes.json()).id;\n            const csMonthEnc = csMonthRel.split('/').map(encodeURIComponent).join('/');\n            let folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,\n              { headers: { Authorization:`Bearer ${_token}` } });\n            if (!folderR.ok) {\n              const parentEnc = csRel.split('/').map(encodeURIComponent).join('/');\n              const parentR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${parentEnc}?$select=id`,\n                { headers: { Authorization:`Bearer ${_token}` } });\n              if (parentR.ok) {\n                const parentId = (await parentR.json()).id;\n                const mkR = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${parentId}/children`, {\n                  method:'POST',\n                  headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },\n                  body:JSON.stringify({ name:`${monthName} ${year4}`, folder:{}, '@microsoft.graph.conflictBehavior':'fail' }),\n                });\n                if (mkR.ok || mkR.status === 409) {\n                  folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,\n                    { headers: { Authorization:`Bearer ${_token}` } });\n                }\n              }\n            }\n            if (folderR.ok) {\n              const folderId = (await folderR.json()).id;\n              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {\n                method: 'POST',\n                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },\n                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),\n              });\n              if (copyRes.ok || copyRes.status === 202) {\n                for (let attempt = 0; attempt < 10 && !csFileId; attempt++) {\n                  await new Promise(r => setTimeout(r, 1500));\n                  const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,\n                    { headers: { Authorization:`Bearer ${_token}` } });\n                  if (newR.ok) csFileId = (await newR.json()).id;\n                }\n                if (csFileId) context.log(`[CS] Created ${csFileName} from template in ${monthName} ${year4}`);\n              }\n            }\n          }\n"
-          if old2 not in s:
-              raise SystemExit('control-sheet creation block not found; refusing to patch')
-          s = s.replace(old2, new2, 1)
+
+          marker = "        const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');"
+          if marker not in s:
+              raise SystemExit('control-sheet path marker not found; refusing to patch')
+          replacement = """        // Store daily control sheets in the same month folders used by import-control.
+        const monthName  = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'long' });
+        const year4      = now.toLocaleDateString('en-US', { timeZone:'America/New_York', year:'numeric' });
+        const csMonthRel = `${csRel}/${monthName} ${year4}`;
+        const csEncPath  = `${csMonthRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');"""
+          s = s.replace(marker, replacement, 1)
+
+          anchor = s.index("          // Auto-create today's control sheet from template")
+          start = s.index("          if (tmplRes.ok) {", anchor)
+          end = s.index("          if (!csFileId) {", start)
+          newblock = """          if (tmplRes.ok) {
+            const tmplId = (await tmplRes.json()).id;
+
+            // Ensure the monthly folder exists. import-control reads from this same folder layout.
+            const csMonthEnc = csMonthRel.split('/').map(encodeURIComponent).join('/');
+            let folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (!folderR.ok) {
+              const parentEnc = csRel.split('/').map(encodeURIComponent).join('/');
+              const parentR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${parentEnc}?$select=id`,
+                { headers: { Authorization:`Bearer ${_token}` } });
+              if (parentR.ok) {
+                const parentId = (await parentR.json()).id;
+                const mkR = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${parentId}/children`, {
+                  method:'POST',
+                  headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                  body:JSON.stringify({ name:`${monthName} ${year4}`, folder:{}, '@microsoft.graph.conflictBehavior':'fail' }),
+                });
+                if (mkR.ok || mkR.status === 409) {
+                  folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                }
+              }
+            }
+
+            if (folderR.ok) {
+              const folderId = (await folderR.json()).id;
+              const copyRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
+                method:'POST',
+                headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                body:JSON.stringify({ parentReference:{ id:folderId }, name:csFileName }),
+              });
+              if (copyRes.ok || copyRes.status === 202) {
+                // Graph copy is asynchronous; poll for up to 15 seconds.
+                for (let attempt = 0; attempt < 10 && !csFileId; attempt++) {
+                  await new Promise(r => setTimeout(r, 1500));
+                  const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                  if (newR.ok) csFileId = (await newR.json()).id;
+                }
+                if (csFileId) context.log(`[CS] Created ${csFileName} from template in ${monthName} ${year4}`);
+              }
+            }
+          }
+"""
+          s = s[:start] + newblock + s[end:]
           p.write_text(s)
           PY
+
+      - name: Validate JavaScript
+        run: node --check api/src/approve-scan.js
 
       - name: Commit fix
         run: |
