@@ -1,0 +1,68 @@
+name: Fix radon date filter
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-radon-date-filter.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore radon date selector and backend date handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # ---- admin-dashboard.html ----
+          p = Path('admin-dashboard.html')
+          s = p.read_text()
+          old_btn = '''        <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">\n          ☢️ Import Radon Results\n        </button>'''
+          new_btn = '''        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--slate);">\n          Radon Date\n          <input type="date" id="radon-import-date" aria-label="Radon import date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">\n        </label>\n        <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">\n          ☢️ Import Radon Results\n        </button>'''
+          if old_btn not in s:
+              raise SystemExit('radon button block not found')
+          s = s.replace(old_btn, new_btn, 1)
+
+          old_fetch = "      const res  = await fetch('/api/import-radon', { method: 'POST' });"
+          new_fetch = '''      const dateInput = document.getElementById('radon-import-date');\n      let selectedDate = dateInput?.value || '';\n      if (!selectedDate) {\n        selectedDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });\n        if (dateInput) dateInput.value = selectedDate;\n      }\n      const ymd = selectedDate.split('-');\n      const dateFilter = ymd.length === 3 ? `${ymd[1]}${ymd[2]}${ymd[0].slice(-2)}` : '';\n      if (!dateFilter) throw new Error('Select a valid radon date');\n      const res  = await fetch('/api/import-radon', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ dateFilter }),\n      });'''
+          if old_fetch not in s:
+              raise SystemExit('radon fetch line not found')
+          s = s.replace(old_fetch, new_fetch, 1)
+          p.write_text(s)
+
+          # ---- api/src/import-radon.js ----
+          p = Path('api/src/import-radon.js')
+          s = p.read_text()
+          start_marker = '      // ── 1. Load Results Cache rows for selected date'
+          loop_marker = 'for (const [prefix, cacheItems] of Object.entries(byPrefix)) {'
+          start = s.index(start_marker)
+          loop = s.index(loop_marker, start)
+          replacement = '''      // ── 1. Read requested date and load matching Results Cache rows ───────\n      let reqBody = {};\n      try { reqBody = await request.json(); } catch (_) {}\n      const rawDateFilter = String(reqBody.dateFilter || '').trim();\n      const dateFilter = /^\\d{6}$/.test(rawDateFilter) ? rawDateFilter : '';\n      if (!dateFilter) {\n        return { status: 400, jsonBody: { error: 'Select a valid date before importing radon results' } };\n      }\n\n      const rcListId = await getListId(siteId, 'Results Cache', token);\n      if (!rcListId) throw new Error('Results Cache list not found');\n\n      let rcItems = [];\n      let rcNextUrl = `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$top=999`;\n      while (rcNextUrl) {\n        const rr = await fetch(rcNextUrl, { headers: authHdr });\n        if (!rr.ok) throw new Error(`Results Cache read failed (${rr.status})`);\n        const dd = await rr.json();\n        rcItems.push(...(dd.value || []));\n        rcNextUrl = dd['@odata.nextLink'] || null;\n      }\n\n      const dateRcItems = rcItems.filter(i => {\n        const id = String(i.fields?.LabID || '').trim();\n        return id.startsWith(dateFilter) && !/\\bREJ\\b/i.test(id);\n      });\n      const byPrefix = { [dateFilter]: dateRcItems };\n\n      const rtbListId = await getListId(siteId, 'Reports to be Billed', token);\n\n      const controlFolder = process.env.SP_CONTROL_FOLDER ||\n        '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';\n      const marker = 'Shared Documents/';\n      const mIdx = controlFolder.indexOf(marker);\n      const relPath = mIdx >= 0\n        ? controlFolder.slice(mIdx + marker.length)\n        : controlFolder.replace(/^\\/+/, '');\n\n      let totalUpdated = 0;\n      const log = [];\n\n      // ── 2. Process the selected day's RCS file ─────────────────────────────\n      '''
+          s = s[:start] + replacement + s[loop:]
+          p.write_text(s)
+          PY
+
+      - name: Validate files
+        run: |
+          node --check api/src/import-radon.js
+          grep -q 'id="radon-import-date"' admin-dashboard.html
+          grep -q 'JSON.stringify({ dateFilter })' admin-dashboard.html
+          grep -q "const dateFilter =" api/src/import-radon.js
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add admin-dashboard.html api/src/import-radon.js
+          git diff --cached --check
+          git commit -m "Restore radon import date filter"
+          git push origin main
