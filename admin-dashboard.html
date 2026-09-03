@@ -3248,7 +3248,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Uncheck all first
     document.querySelectorAll('.sc-test-cb').forEach(cb => cb.checked = false);
     if (!coaTest) return;
-    const tests = coaTest.split(/[|,]/).map(t => t.trim()).filter(Boolean);
+    const tests = coaTest.split(/[|;]/).map(t => t.trim()).filter(Boolean);
     tests.forEach(t => {
       const cb = [...document.querySelectorAll('.sc-test-cb')].find(el => el.value === t);
       if (cb) cb.checked = true;
