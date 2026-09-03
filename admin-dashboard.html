@@ -7246,7 +7246,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ pH import complete — ${data.updated} sample(s) updated`;
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--success)'; }
+      if (statusEl) { statusEl.innerHTML = msg + (data.log?.length ? `<br><span style="font-size:11px;color:var(--slate);">${data.log.join(' | ')}</span>` : ''); statusEl.style.color = 'var(--success)'; }
       showToast(msg);
     } catch(e) {
       const msg = `⚠️ pH import failed: ${e.message}`;
@@ -7270,7 +7270,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--success)'; }
+      if (statusEl) { statusEl.innerHTML = msg + (data.log?.length ? `<br><span style="font-size:11px;color:var(--slate);">${data.log.join(' | ')}</span>` : ''); statusEl.style.color = 'var(--success)'; }
       showToast(msg);
     } catch(e) {
       const msg = `⚠️ Bacteria import failed: ${e.message}`;
