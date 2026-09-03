@@ -1,41 +1,54 @@
-// Register all Azure Functions
-require('./health');
-require('./clients-read');
-require('./get-scan-queue');
-require('./accession-status');
-require('./clients-write');
-require('./users-manage');
-require('./reject-sample');
-require('./get-rejections');
-require('./cache-results');
-require('./approve-scan');
-require('./mark-scan-processed');
-require('./test-types');
-require('./inventory-read');
-require('./inventory-write');
-require('./setup-lists');
-require('./scan-folder');
-require('./generate-report');
-require('./prepare-report');
-require('./export-pdf');
-require('./patch-report-cell');
-require('./control-sheet');
-require('./update-sample');
-require('./send-report');
-require('./render-report-pdf');
-require('./update-inventory');
-require('./sync-to-sheets');
-require('./auth-role');
-require('./approve-scan-debug');
-require('./ms-token-exchange');
-require('./labid-search');
-require('./list-columns');
-require('./import-icpms');
-require('./import-control');
-require('./import-radon');
-require('./import-acid');
-// require('./import-bacteria');
-// require('./import-ph');
-require('./sync-results-cache');
-require('./billing-read');
-require('./billing-update');
+// Register all Azure Functions.
+// Load each module independently so one bad entry point cannot prevent
+// every HTTP function (including /api/health) from registering.
+
+const modules = [
+  './health',
+  './clients-read',
+  './get-scan-queue',
+  './accession-status',
+  './clients-write',
+  './users-manage',
+  './reject-sample',
+  './get-rejections',
+  './cache-results',
+  './approve-scan',
+  './mark-scan-processed',
+  './test-types',
+  './inventory-read',
+  './inventory-write',
+  './setup-lists',
+  './scan-folder',
+  './generate-report',
+  './prepare-report',
+  './export-pdf',
+  './patch-report-cell',
+  './control-sheet',
+  './update-sample',
+  './send-report',
+  './render-report-pdf',
+  './update-inventory',
+  './sync-to-sheets',
+  './auth-role',
+  './approve-scan-debug',
+  './ms-token-exchange',
+  './labid-search',
+  './list-columns',
+  './import-icpms',
+  './import-control',
+  './import-radon',
+  './import-acid',
+  // './import-bacteria',
+  // './import-ph',
+  './sync-results-cache',
+  './billing-read',
+  './billing-update',
+];
+
+for (const modulePath of modules) {
+  try {
+    require(modulePath);
+  } catch (err) {
+    console.error(`[function-entry] Failed loading ${modulePath}:`, err?.stack || err);
+  }
+}
