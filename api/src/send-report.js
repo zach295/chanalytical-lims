@@ -249,6 +249,30 @@ app.http('send-report', {
 
       context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
 
+      // Save report PDF to Archive immediately after confirmed send
+      try {
+        const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
+          '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
+        const archiveDate  = new Date();
+        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' });
+        const dayFolder    = archiveDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', timeZone: 'America/New_York' }).replace(/\//g, '-');
+        const archiveMarker = 'Shared Documents/';
+        const archiveMi    = SCAN_ARCHIVE.indexOf(archiveMarker);
+        const archiveRel   = archiveMi >= 0 ? SCAN_ARCHIVE.slice(archiveMi + archiveMarker.length) : SCAN_ARCHIVE.replace(/^\/+/, '');
+        const destPath     = `${archiveRel}/${monthFolder}/${dayFolder}/${pdfFileName}`;
+        const encDestPath  = destPath.split('/').map(encodeURIComponent).join('/');
+        const pdfBytes     = Buffer.from(pdfBase64, 'base64');
+        const uploadRes    = await fetch(
+          `${GRAPH}/sites/${siteId}/drive/root:/${encDestPath}:/content`,
+          { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/pdf' }, body: pdfBytes }
+        );
+        if (uploadRes.ok) {
+          context.log(`[send-report] Report PDF archived: ${pdfFileName}`);
+        } else {
+          context.log(`[send-report] Report PDF archive failed: ${uploadRes.status}`);
+        }
+      } catch(e) { context.log('[send-report] Archive save (non-fatal):', e.message); }
+
       // Write Report Date to Reports to be Billed when report is sent
       try {
         const siteId4   = process.env.SP_SITE_ID;
