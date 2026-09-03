@@ -695,18 +695,20 @@ document.addEventListener('DOMContentLoaded', function() {
     <!-- Import buttons -->
     <div class="card" style="margin-bottom:16px;">
       <div class="card-header"><div class="card-title">📥 Import Lab Results</div></div>
-      <div style="padding:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-        <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
-          ⚗️ Import ICP-MS Results
-        </button>
-        
-        <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
-          📋 Import Control Sheet
-        </button>
+      <div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px;">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--slate);">
           Import Date
           <input type="date" id="import-date-filter" aria-label="Import results date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
         </label>
+        <span style="font-size:12px;color:var(--slate);">Select date before importing</span>
+      </div>
+      <div style="padding:12px 16px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-ok" style="padding:10px 20px;background:var(--teal);" onclick="runImport('icpms', this)">
+          ⚗️ Import ICP-MS Results
+        </button>
+        <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
+          📋 Import Control Sheet
+        </button>
         <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">
           ☢️ Import Radon Results
         </button>
@@ -7222,7 +7224,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const dateInput = document.getElementById('import-date-filter');
     let selectedDate = dateInput?.value || '';
     if (!selectedDate) {
-      selectedDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      selectedDate = y.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       if (dateInput) dateInput.value = selectedDate;
     }
     const ymd = selectedDate.split('-');
