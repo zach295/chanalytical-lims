@@ -1,0 +1,36 @@
+name: Fix control sheet copy typo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-control-copy-typo.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Fix Graph copy parentReference typo
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('api/src/approve-scan.js')
+          s = p.read_text()
+          old = "body:JSON.stringify({ parentReferenc:{ id:folderId }, name:csFileName }),"
+          new = "body:JSON.stringify({ parentReference:{ id:folderId }, name:csFileName }),"
+          if old not in s:
+              raise SystemExit('target typo not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/src/approve-scan.js
+          git commit -m 'Fix Graph control sheet copy destination'
+          git push origin main
