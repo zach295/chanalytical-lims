@@ -129,16 +129,49 @@ app.http('import-radon', {
       const siteId  = process.env.SP_SITE_ID;
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load Results Cache rows for selected date ────────────────────────────
-      if (!dateFilter) return { status: 200, jsonBody: { success: true, updated: 0, log: ['Select a date first'] } };
-      const allRc = await listItems('Results Cache', { top: 2000 }).catch(() => []);
-      const dateRcItems = allRc.filter(f => {
-        const id = String(f.LabID || '').trim();
-        return id && id.startsWith(dateFilter) && !/\bREJ\b/i.test(id);
+      // ── 1. Read requested date and load matching Results Cache rows ───────
+      let reqBody = {};
+      try { reqBody = await request.json(); } catch (_) {}
+      const rawDateFilter = String(reqBody.dateFilter || '').trim();
+      const dateFilter = /^\d{6}$/.test(rawDateFilter) ? rawDateFilter : '';
+      if (!dateFilter) {
+        return { status: 400, jsonBody: { error: 'Select a valid date before importing radon results' } };
+      }
+
+      const rcListId = await getListId(siteId, 'Results Cache', token);
+      if (!rcListId) throw new Error('Results Cache list not found');
+
+      let rcItems = [];
+      let rcNextUrl = `${GRAPH}/sites/${siteId}/lists/${rcListId}/items?$expand=fields&$top=999`;
+      while (rcNextUrl) {
+        const rr = await fetch(rcNextUrl, { headers: authHdr });
+        if (!rr.ok) throw new Error(`Results Cache read failed (${rr.status})`);
+        const dd = await rr.json();
+        rcItems.push(...(dd.value || []));
+        rcNextUrl = dd['@odata.nextLink'] || null;
+      }
+
+      const dateRcItems = rcItems.filter(i => {
+        const id = String(i.fields?.LabID || '').trim();
+        return id.startsWith(dateFilter) && !/\bREJ\b/i.test(id);
       });
       const byPrefix = { [dateFilter]: dateRcItems };
 
-          for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
+      const rtbListId = await getListId(siteId, 'Reports to be Billed', token);
+
+      const controlFolder = process.env.SP_CONTROL_FOLDER ||
+        '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+      const marker = 'Shared Documents/';
+      const mIdx = controlFolder.indexOf(marker);
+      const relPath = mIdx >= 0
+        ? controlFolder.slice(mIdx + marker.length)
+        : controlFolder.replace(/^\/+/, '');
+
+      let totalUpdated = 0;
+      const log = [];
+
+      // ── 2. Process the selected day's RCS file ─────────────────────────────
+      for (const [prefix, cacheItems] of Object.entries(byPrefix)) {
         const monthFolder = getMonthFolder(prefix);
         const rcsName     = `RCS_${prefix}.xlsx`;
         const rcsPath     = `${relPath}/${monthFolder}/${rcsName}`;

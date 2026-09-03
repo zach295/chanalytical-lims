@@ -703,6 +703,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <button class="btn-ok" style="padding:10px 20px;background:var(--navy);" onclick="runImport('control', this)">
           📋 Import Control Sheet
         </button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--slate);">
+          Radon Date
+          <input type="date" id="radon-import-date" aria-label="Radon import date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:var(--font-body);">
+        </label>
         <button class="btn-ok" style="padding:10px 20px;background:#0891b2;" onclick="importRadon(this)">
           ☢️ Import Radon Results
         </button>
@@ -7267,7 +7271,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusEl = document.getElementById('import-status');
     if (statusEl) statusEl.textContent = '';
     try {
-      const res  = await fetch('/api/import-radon', { method: 'POST' });
+      const dateInput = document.getElementById('radon-import-date');
+      let selectedDate = dateInput?.value || '';
+      if (!selectedDate) {
+        selectedDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        if (dateInput) dateInput.value = selectedDate;
+      }
+      const ymd = selectedDate.split('-');
+      const dateFilter = ymd.length === 3 ? `${ymd[1]}${ymd[2]}${ymd[0].slice(-2)}` : '';
+      if (!dateFilter) throw new Error('Select a valid radon date');
+      const res  = await fetch('/api/import-radon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateFilter }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Radon import complete — ${data.updated} sample(s) updated`;
