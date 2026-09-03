@@ -1095,7 +1095,11 @@ app.http('approve-scan', {
         const csMk       = 'Shared Documents/';
         const csIdx      = csFolder.indexOf(csMk);
         const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\/+/,'');
-        const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
+        // Store daily control sheets in the same month folders used by import-control.
+        const monthName  = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'long' });
+        const year4      = now.toLocaleDateString('en-US', { timeZone:'America/New_York', year:'numeric' });
+        const csMonthRel = `${csRel}/${monthName} ${year4}`;
+        const csEncPath  = `${csMonthRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
 
         const csFileRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`, { headers: { Authorization:`Bearer ${_token}` } });
         let csFileId;
@@ -1109,25 +1113,46 @@ app.http('approve-scan', {
           const tmplRes    = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csTmplEnc}?$select=id`,
             { headers: { Authorization:`Bearer ${_token}` } });
           if (tmplRes.ok) {
-            const tmplId  = (await tmplRes.json()).id;
-            const folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csRel}?$select=id`,
+            const tmplId = (await tmplRes.json()).id;
+
+            // Ensure the monthly folder exists. import-control reads from this same folder layout.
+            const csMonthEnc = csMonthRel.split('/').map(encodeURIComponent).join('/');
+            let folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
               { headers: { Authorization:`Bearer ${_token}` } });
+            if (!folderR.ok) {
+              const parentEnc = csRel.split('/').map(encodeURIComponent).join('/');
+              const parentR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${parentEnc}?$select=id`,
+                { headers: { Authorization:`Bearer ${_token}` } });
+              if (parentR.ok) {
+                const parentId = (await parentR.json()).id;
+                const mkR = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${parentId}/children`, {
+                  method:'POST',
+                  headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                  body:JSON.stringify({ name:`${monthName} ${year4}`, folder:{}, '@microsoft.graph.conflictBehavior':'fail' }),
+                });
+                if (mkR.ok || mkR.status === 409) {
+                  folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                }
+              }
+            }
+
             if (folderR.ok) {
               const folderId = (await folderR.json()).id;
-              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
-                method: 'POST',
-                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
-                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),
+              const copyRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
+                method:'POST',
+                headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                body:JSON.stringify({ parentReference:{ id:folderId }, name:csFileName }),
               });
               if (copyRes.ok || copyRes.status === 202) {
-                // Wait for copy to complete
-                await new Promise(r => setTimeout(r, 3000));
-                const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
-                  { headers: { Authorization:`Bearer ${_token}` } });
-                if (newR.ok) {
-                  csFileId = (await newR.json()).id;
-                  context.log(`[CS] Created ${csFileName} from template`);
+                // Graph copy is asynchronous; poll for up to 15 seconds.
+                for (let attempt = 0; attempt < 10 && !csFileId; attempt++) {
+                  await new Promise(r => setTimeout(r, 1500));
+                  const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                  if (newR.ok) csFileId = (await newR.json()).id;
                 }
+                if (csFileId) context.log(`[CS] Created ${csFileName} from template in ${monthName} ${year4}`);
               }
             }
           }
