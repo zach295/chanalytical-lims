@@ -4,7 +4,7 @@
  * with Google Service Account domain-wide delegation
  */
 const { app }      = require('@azure/functions');
-const { getToken, createItem } = require('../shared/graph');
+const { getToken, createItem, listItems, LISTS } = require('../shared/graph');
 const crypto       = require('crypto');
 
 const GRAPH      = 'https://graph.microsoft.com/v1.0';
@@ -182,8 +182,29 @@ app.http('send-report', {
         } catch(e) { context.log('[send-report] Name lookup (non-fatal):', e.message); }
       }
 
-      // Build attachments — use pretty filename if provided
-      const pdfFileName = bodyFileName || body.fileName || (isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`);
+      // If this sample is already marked Reported in Archived Intake, this is a revised report.
+      // Use the status before this send so the original first report keeps its normal filename.
+      let alreadyReported = false;
+      try {
+        const reportBaseId = String(labId).match(/(\d{6}-\d{3})/)?.[1] || String(labId).split(' ')[0].trim();
+        if (reportBaseId) {
+          const intakeRows = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
+          alreadyReported = intakeRows.some(r =>
+            String(r.field_1 || '').split(' ')[0].trim() === reportBaseId &&
+            String(r.field_14 || '').trim().toLowerCase() === 'reported'
+          );
+        }
+      } catch (e) {
+        context.log('[send-report] Reported-status lookup (non-fatal):', e.message);
+      }
+
+      // Build attachments — use pretty filename if provided. Re-reports get "Revised" before .pdf.
+      const basePdfFileName = bodyFileName || body.fileName || (isRadon ? `${labId} RW Report.pdf` : `${labId} Report.pdf`);
+      const pdfFileName = alreadyReported && !/\brevised\b/i.test(basePdfFileName)
+        ? (basePdfFileName.toLowerCase().endsWith('.pdf')
+            ? `${basePdfFileName.slice(0, -4)} Revised.pdf`
+            : `${basePdfFileName} Revised.pdf`)
+        : basePdfFileName;
       const attachments = [{
         name:         pdfFileName,
         contentType:  'application/pdf',
