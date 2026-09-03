@@ -1,0 +1,131 @@
+name: One-time fix control sheet creation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-time-fix-control-sheet.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch daily control sheet creation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('api/src/approve-scan.js')
+          s = p.read_text()
+
+          old1 = """        const csFolder   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+        const csMk       = 'Shared Documents/';
+        const csIdx      = csFolder.indexOf(csMk);
+        const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\\/+/, '');
+        const csEncPath  = `${csRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
+"""
+          new1 = """        const csFolder   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+        const csMk       = 'Shared Documents/';
+        const csIdx      = csFolder.indexOf(csMk);
+        const csRel      = csIdx >= 0 ? csFolder.slice(csIdx + csMk.length) : csFolder.replace(/^\\/+/, '');
+        // Store daily control sheets in the same month folders used by import-control.
+        const monthName  = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'long' });
+        const year4      = now.toLocaleDateString('en-US', { timeZone:'America/New_York', year:'numeric' });
+        const csMonthRel = `${csRel}/${monthName} ${year4}`;
+        const csEncPath  = `${csMonthRel}/${csFileName}`.split('/').map(encodeURIComponent).join('/');
+"""
+          if old1 not in s:
+              raise SystemExit('control-sheet path block not found; refusing to patch')
+          s = s.replace(old1, new1, 1)
+
+          old2 = """          if (tmplRes.ok) {
+            const tmplId  = (await tmplRes.json()).id;
+            const folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csRel}?$select=id`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (folderR.ok) {
+              const folderId = (await folderR.json()).id;
+              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
+                method: 'POST',
+                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),
+              });
+              if (copyRes.ok || copyRes.status === 202) {
+                // Wait for copy to complete
+                await new Promise(r => setTimeout(r, 3000));
+                const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
+                  { headers: { Authorization:`Bearer ${_token}` } });
+                if (newR.ok) {
+                  csFileId = (await newR.json()).id;
+                  context.log(`[CS] Created ${csFileName} from template`);
+                }
+              }
+            }
+          }
+"""
+          new2 = """          if (tmplRes.ok) {
+            const tmplId = (await tmplRes.json()).id;
+
+            // Ensure the month folder exists before copying the first sheet of the month.
+            const csMonthEnc = csMonthRel.split('/').map(encodeURIComponent).join('/');
+            let folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (!folderR.ok) {
+              const parentEnc = csRel.split('/').map(encodeURIComponent).join('/');
+              const parentR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${parentEnc}?$select=id`,
+                { headers: { Authorization:`Bearer ${_token}` } });
+              if (parentR.ok) {
+                const parentId = (await parentR.json()).id;
+                const mkR = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${parentId}/children`, {
+                  method:'POST',
+                  headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                  body:JSON.stringify({ name:`${monthName} ${year4}`, folder:{}, '@microsoft.graph.conflictBehavior':'fail' }),
+                });
+                if (mkR.ok || mkR.status === 409) {
+                  folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                }
+              }
+            }
+
+            if (folderR.ok) {
+              const folderId = (await folderR.json()).id;
+              const copyRes  = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
+                method: 'POST',
+                headers: { Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
+                body: JSON.stringify({ parentReference: { id: folderId }, name: csFileName }),
+              });
+              if (copyRes.ok || copyRes.status === 202) {
+                // Graph copy is asynchronous. Poll instead of assuming it finishes in 3 seconds.
+                for (let attempt = 0; attempt < 10 && !csFileId; attempt++) {
+                  await new Promise(r => setTimeout(r, 1500));
+                  const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
+                    { headers: { Authorization:`Bearer ${_token}` } });
+                  if (newR.ok) csFileId = (await newR.json()).id;
+                }
+                if (csFileId) context.log(`[CS] Created ${csFileName} from template in ${monthName} ${year4}`);
+              }
+            }
+          }
+"""
+          if old2 not in s:
+              raise SystemExit('control-sheet creation block not found; refusing to patch')
+          s = s.replace(old2, new2, 1)
+
+          p.write_text(s)
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/src/approve-scan.js
+          git diff --cached --check
+          git commit -m "Fix daily control sheet auto-creation"
+          git push origin main
