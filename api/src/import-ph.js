@@ -3,13 +3,14 @@
  * POST /api/import-ph
  * Reads pH_MMDDYY-NN.xlsx files from Control Sheets month folders.
  * Headers at row 10. Columns:
- *   Col 0: Analyst Code (S1, S1 D, S2, S2 D, ...)
- *   Col 1: Sample (Lab ID)
- *   Col 2: pH result
- *   Col 3: Temp C
- *   Col 4: Date/Time
- *   Col 5: QC (Pass/Fail)
- *   Col 6: Comments
+ *   Col 0: Analyst
+ *   Col 1: Code (S1, S1 D, S2, S2 D, ...)
+ *   Col 2: Sample (Lab ID)
+ *   Col 3: pH result
+ *   Col 4: Temp C
+ *   Col 5: Date/Time
+ *   Col 6: QC (Pass/Fail)
+ *   Col 7: Comments
  *
  * Logic: for each sample, take pH + Date/Time from the S# row,
  * but only use it if the S# D (duplicate) row QC = "pass".
@@ -71,16 +72,16 @@ async function readSheetValues(siteId, fileId, token) {
 
 function parsePHFile(rows) {
   // Headers at row 10 (index 9), data starts at row 11 (index 10)
-  const HEADER_ROW = 9;
   const DATA_START = 10;
-  const COL_CODE   = 0; // Analyst Code (S1, S1 D, S2, S2 D...)
-  const COL_SAMPLE = 1; // Lab ID
-  const COL_PH     = 2; // pH result
-  const COL_DT     = 4; // Date/Time
-  const COL_QC     = 5; // QC (Pass/Fail)
+  const COL_ANALYST = 0;
+  const COL_CODE    = 1; // S1, S1 D, S2, S2 D...
+  const COL_SAMPLE  = 2; // Lab ID
+  const COL_PH      = 3; // pH result
+  const COL_TEMP    = 4; // Temp C (not imported)
+  const COL_DT      = 5; // Date/Time
+  const COL_QC      = 6; // QC (Pass/Fail)
+  const COL_COMMENT = 7; // Comments (not imported)
 
-  // Group rows by sample ID, collecting S# and S# D pairs
-  // Key: labId → { measurements: [{code, ph, dt}], duplicates: [{code, qc}] }
   const sampleMap = {};
 
   for (let r = DATA_START; r < rows.length; r++) {
@@ -89,7 +90,6 @@ function parsePHFile(rows) {
     const sample = String(row[COL_SAMPLE] || '').trim();
     if (!code || !sample) continue;
 
-    // Extract base lab ID
     const baseMatch = sample.match(/^(\d{6}-\d{3})/);
     const labId     = baseMatch ? baseMatch[1] : sample;
 
@@ -101,7 +101,6 @@ function parsePHFile(rows) {
     if (isDuplicate) {
       const qcRaw = row[COL_QC];
       const qcStr = String(qcRaw ?? '').toLowerCase().trim();
-      // Graph API returns raw formula values: true/false, 1/0, or "pass"/"fail"
       const passed = qcStr === 'pass' || qcStr === 'true' || qcStr === '1' || qcRaw === true || qcRaw === 1;
       sampleMap[labId].duplicates[baseCode] = passed;
     } else {
@@ -112,17 +111,14 @@ function parsePHFile(rows) {
     }
   }
 
-  // For each sample, find measurements where the duplicate passed QC
   const results = {};
   for (const [labId, data] of Object.entries(sampleMap)) {
     for (const [code, measurement] of Object.entries(data.measurements)) {
-      const duplicatePassed = data.duplicates[code]; // true/false/undefined
+      const duplicatePassed = data.duplicates[code];
       if (duplicatePassed === true && measurement.ph != null) {
-        // Use this measurement — duplicate passed QC
         if (!results[labId]) {
           results[labId] = { ph: measurement.ph, dt: measurement.dt };
         }
-        // If multiple passing codes, last one wins (or keep first)
       }
     }
   }
@@ -141,7 +137,6 @@ app.http('import-ph', {
       const token   = await getToken();
       const authHdr = { Authorization: `Bearer ${token}` };
 
-      // ── 1. Load Results Cache items for selected date only ──────────────────
       if (!dateFilter) return { status: 400, jsonBody: { error: 'Select a date first' } };
       let rcItems = [], rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$top=999`;
       while (rcNext) {
@@ -157,7 +152,6 @@ app.http('import-ph', {
       if (!cacheItems.length) return { status: 200, jsonBody: { success: true, updated: 0, log: [`No Results Cache items found for ${dateFilter}`] } };
       const byPrefix = { [dateFilter]: cacheItems };
 
-      // ── 2. Resolve folder path ───────────────────────────────────────────────
       const controlFolder = process.env.SP_CONTROL_FOLDER ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
       const marker  = 'Shared Documents/';
@@ -167,13 +161,11 @@ app.http('import-ph', {
       let totalUpdated = 0;
       const log = [];
 
-      // ── 3. Process each date prefix ─────────────────────────────────────────
       for (const [prefix, items] of Object.entries(byPrefix)) {
         const monthFolder = getMonthFolder(prefix);
         const folderPath  = `${relPath}/${monthFolder}`;
         const encFolder   = folderPath.split('/').map(encodeURIComponent).join('/');
 
-        // List all pH files for this date prefix (handles multiple files: pH_083126-01, -02, etc.)
         const folderRes = await fetch(
           `${GRAPH}/sites/${siteId}/drive/root:/${encFolder}:/children?$select=id,name&$top=200`,
           { headers: authHdr }
@@ -194,20 +186,17 @@ app.http('import-ph', {
           continue;
         }
 
-        // Merge results from all pH files for this date
         const mergedResults = {};
         for (const file of phFiles) {
-          const rows    = await readSheetValues(siteId, file.id, token);
-          // Debug: log first 5 data rows raw
+          const rows = await readSheetValues(siteId, file.id, token);
           for (let i = 10; i < Math.min(15, rows.length); i++) {
-            context.log(`[ph-debug] row ${i}:`, JSON.stringify(rows[i]?.slice(0, 7)));
+            context.log(`[ph-debug] row ${i}:`, JSON.stringify(rows[i]?.slice(0, 8)));
           }
           const results = parsePHFile(rows);
           context.log(`[ph] ${file.name}: ${Object.keys(results).length} valid results`);
           Object.assign(mergedResults, results);
         }
 
-        // ── 4. Update Results Cache ────────────────────────────────────────────
         for (const item of items) {
           const labId  = String(item.fields.LabID || '').trim();
           const baseId = labId.replace(/\s+RW\s*$/i, '').trim();
