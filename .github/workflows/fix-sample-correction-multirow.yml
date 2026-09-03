@@ -1,0 +1,45 @@
+name: Fix multi-row sample correction
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-sample-correction-multirow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Preserve individual tests across Archived Intake rows
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('api/src/update-sample.js')
+          s = p.read_text()
+          old = """      if (updates.coaTest) {\n        const newTest   = updates.coaTest.trim();\n        const newSuffix = getSuffix(newTest);\n\n        try {\n          for (const item of archivedItems) {\n            const currentFullId = item.field_1 || '';\n            const rowBase = currentFullId.split(' ')[0].trim();\n            if (rowBase !== baseId) continue;\n            const newFullId = `${rowBase} ${newSuffix}`;\n            if (listId) await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,\n              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },\n                body: JSON.stringify({ field_1: newFullId, field_2: newTest }) });\n            rowsUpdated++;\n          }\n          log.push(`Test type updated to ${newTest} (${newSuffix})`);\n"""
+          new = """      if (updates.coaTest) {\n        const newTest   = updates.coaTest.trim();\n        const newSuffix = getSuffix(newTest);\n        const selectedTests = newTest.split(/[|;]/).map(t => t.trim()).filter(Boolean);\n        const preserveRows = selectedTests.length === archivedItems.length && archivedItems.length > 1;\n\n        try {\n          for (let idx = 0; idx < archivedItems.length; idx++) {\n            const item = archivedItems[idx];\n            const currentFullId = item.field_1 || '';\n            const rowBase = currentFullId.split(' ')[0].trim();\n            if (rowBase !== baseId) continue;\n            // Individual-element samples are stored as one Archived Intake row per test.\n            // Keep those rows individual instead of overwriting every row with the combined test string.\n            const rowTest = preserveRows ? selectedTests[idx] : newTest;\n            const rowSuffix = getSuffix(rowTest);\n            const newFullId = `${rowBase} ${rowSuffix}`;\n            if (listId) await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,\n              { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },\n                body: JSON.stringify({ field_1: newFullId, field_2: rowTest }) });\n            rowsUpdated++;\n          }\n          log.push(preserveRows\n            ? `Test types preserved across ${selectedTests.length} individual row(s): ${selectedTests.join(' | ')}`\n            : `Test type updated to ${newTest} (${newSuffix})`);\n"""
+          if old not in s:
+              raise SystemExit('Archived Intake test update block not found')
+          s = s.replace(old, new, 1)
+
+          old2 = """              const newFullId = `${baseId} ${newSuffix}`;\n              for (const item of accItems) {\n                await fetch(\n                  `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,\n                  { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },\n                    body: JSON.stringify({ field_2: newFullId, field_3: newTest, field_4: newSuffix }) }\n                );\n              }\n"""
+          new2 = """              const preserveAccRows = selectedTests.length === accItems.length && accItems.length > 1;\n              for (let idx = 0; idx < accItems.length; idx++) {\n                const item = accItems[idx];\n                const rowTest = preserveAccRows ? selectedTests[idx] : newTest;\n                const rowSuffix = getSuffix(rowTest);\n                const newFullId = `${baseId} ${rowSuffix}`;\n                await fetch(\n                  `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,\n                  { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },\n                    body: JSON.stringify({ field_2: newFullId, field_3: rowTest, field_4: rowSuffix }) }\n                );\n              }\n"""
+          if old2 not in s:
+              raise SystemExit('Accession Log test update block not found')
+          s = s.replace(old2, new2, 1)
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add api/src/update-sample.js
+          git commit -m "Fix Sample Correction multi-element preservation"
+          git push origin main
