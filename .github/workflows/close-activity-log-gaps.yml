@@ -1,0 +1,36 @@
+name: Close Activity Log Gaps
+
+on:
+  push:
+    paths:
+      - '.github/workflows/close-activity-log-gaps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply audit patches
+        run: python3 .github/scripts/close_activity_log_gaps.py
+      - name: Validate JavaScript
+        run: |
+          node --check api/src/users-manage.js
+          node --check api/src/mark-scan-processed.js
+          node --check api/src/import-ph.js
+          node --check api/src/import-bacteria.js
+          node --check api/src/import-radon.js
+          git diff --check
+      - name: Commit changes
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add api/src/users-manage.js api/src/mark-scan-processed.js api/src/import-ph.js api/src/import-bacteria.js api/src/import-radon.js
+          git commit -m "Close Activity Log audit gaps"
+          git push origin main
