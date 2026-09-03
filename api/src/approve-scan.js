@@ -1107,15 +1107,52 @@ app.http('approve-scan', {
           csFileId = (await csFileRes.json()).id;
           context.log(`[CS] Found existing ${csFileName}`);
         } else {
-          // Auto-create today's control sheet from template
-          const csTmplPath = process.env.SP_CONTROL_TEMPLATE || `${csRel}/C_Template.xlsx`;
-          const csTmplEnc  = csTmplPath.split('/').map(encodeURIComponent).join('/');
-          const tmplRes    = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csTmplEnc}?$select=id`,
-            { headers: { Authorization:`Bearer ${_token}` } });
-          if (tmplRes.ok) {
-            const tmplId = (await tmplRes.json()).id;
+          // Auto-create today's control sheet from template.
+          // SP_CONTROL_TEMPLATE may be a full SharePoint server-relative path, so normalize it.
+          let tmplId = null;
+          const tmplCandidates = [];
+          const configuredTemplate = String(process.env.SP_CONTROL_TEMPLATE || '').trim();
+          const normalizeDrivePath = raw => {
+            const value = String(raw || '').trim();
+            if (!value) return '';
+            const markerIdx = value.indexOf(csMk);
+            return markerIdx >= 0 ? value.slice(markerIdx + csMk.length) : value.replace(/^\/+/, '');
+          };
+          if (configuredTemplate) tmplCandidates.push(normalizeDrivePath(configuredTemplate));
+          tmplCandidates.push(`${csRel}/C_Template.xlsx`);
+          tmplCandidates.push(`${csRel}/Control Sheet Template.xlsx`);
 
-            // Ensure the monthly folder exists. import-control reads from this same folder layout.
+          for (const tmplPath of [...new Set(tmplCandidates.filter(Boolean))]) {
+            const tmplEnc = tmplPath.split('/').map(encodeURIComponent).join('/');
+            const tmplRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${tmplEnc}?$select=id,name`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (tmplRes.ok) {
+              tmplId = (await tmplRes.json()).id;
+              context.log(`[CS] Template found at ${tmplPath}`);
+              break;
+            }
+            context.log(`[CS] Template candidate not found: ${tmplPath} (${tmplRes.status})`);
+          }
+
+          if (!tmplId) {
+            const parentEnc = csRel.split('/').map(encodeURIComponent).join('/');
+            const childrenRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${parentEnc}:/children?$select=id,name,file&$top=200`,
+              { headers: { Authorization:`Bearer ${_token}` } });
+            if (childrenRes.ok) {
+              const children = (await childrenRes.json()).value || [];
+              const found = children.find(f => /template/i.test(f.name || '') && /\.xlsx?$/i.test(f.name || ''));
+              if (found) {
+                tmplId = found.id;
+                context.log(`[CS] Auto-discovered template: ${found.name}`);
+              } else {
+                context.log(`[CS] No Excel template file found in ${csRel}`);
+              }
+            } else {
+              context.log(`[CS] Could not list template folder ${csRel}: ${childrenRes.status}`);
+            }
+          }
+
+          if (tmplId) {
             const csMonthEnc = csMonthRel.split('/').map(encodeURIComponent).join('/');
             let folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
               { headers: { Authorization:`Bearer ${_token}` } });
@@ -1133,7 +1170,11 @@ app.http('approve-scan', {
                 if (mkR.ok || mkR.status === 409) {
                   folderR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csMonthEnc}?$select=id`,
                     { headers: { Authorization:`Bearer ${_token}` } });
+                } else {
+                  context.log(`[CS] Month folder create failed: ${mkR.status}`);
                 }
+              } else {
+                context.log(`[CS] Parent control folder not found: ${parentR.status}`);
               }
             }
 
@@ -1142,17 +1183,18 @@ app.http('approve-scan', {
               const copyRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
                 method:'POST',
                 headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
-                body:JSON.stringify({ parentReference:{ id:folderId }, name:csFileName }),
+                body:JSON.stringify({ parentReferenc:{ id:folderId }, name:csFileName }),
               });
+              context.log(`[CS] Template copy request: ${copyRes.status}`);
               if (copyRes.ok || copyRes.status === 202) {
-                // Graph copy is asynchronous; poll for up to 15 seconds.
-                for (let attempt = 0; attempt < 10 && !csFileId; attempt++) {
+                for (let attempt = 0; attempt < 12 && !csFileId; attempt++) {
                   await new Promise(r => setTimeout(r, 1500));
                   const newR = await fetch(`${GRAPH}/sites/${_siteId}/drive/root:/${csEncPath}?$select=id`,
                     { headers: { Authorization:`Bearer ${_token}` } });
                   if (newR.ok) csFileId = (await newR.json()).id;
                 }
                 if (csFileId) context.log(`[CS] Created ${csFileName} from template in ${monthName} ${year4}`);
+                else context.log(`[CS] Copy accepted but ${csFileName} did not appear within 18 seconds`);
               }
             }
           }
