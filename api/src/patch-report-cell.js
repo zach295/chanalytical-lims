@@ -2,7 +2,7 @@
  * patch-report-cell.js — Phase 4
  */
 const { app }      = require('@azure/functions');
-const { getToken } = require('../shared/graph');
+const { getToken, createItem } = require('../shared/graph');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
 function calcColor(paramName, displayVal) {
@@ -254,6 +254,26 @@ app.http('patch-report-cell', {
         } catch(e) { context.log('[patch-report-cell] RC update (non-fatal):', e.message); }
       }
       context.log('[patch-report-cell] OK — ' + paramName + ' ' + field + ' = ' + value);
+
+      // ── Log result edit to Activity Log ───────────────────────────────────
+      const { labId: logLabId, changedBy } = body;
+      if (field === 'value' && logLabId && changedBy) {
+        try {
+          const now     = new Date();
+          const logDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+          const logTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+          await createItem('Activity Log', {
+            Title:        `${logDate} ${logLabId}`,
+            Client:       logLabId,
+            ActivityType: 'Result Edited',
+            Notes:        `${paramName} changed to "${value}"`,
+            By:           changedBy,
+            LogDate:      logDate,
+            LogTime:      logTime,
+            Quantity:     0,
+          }).catch(() => {});
+        } catch(e) { context.log('[patch-report-cell] ActivityLog (non-fatal):', e.message); }
+      }
 
       return { status: 200, jsonBody: { success: true, paramName, field, value, newHex, hardnessUpdate } };
 
