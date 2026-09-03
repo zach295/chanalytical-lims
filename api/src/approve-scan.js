@@ -39,7 +39,7 @@ async function getSheetsToken() {
 async function writeToGoogleSheet(rows, context) {
   try {
     const token = await getSheetsToken();
-    const range = encodeURIComponent(`${SHEETS_TAB}!A:M`);
+    const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
     const res = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
       {
@@ -1308,12 +1308,13 @@ app.http('approve-scan', {
               formalName || customer || '',
               clientCode || '',
               reportDate,
-              l.fullId,
+              l.baseId,
               location   || '',
               city       || '',
               state      || 'ME',
               zip        || '',
               coaTestName,
+              1,
             ]);
           });
         if (sheetRows.length) {
