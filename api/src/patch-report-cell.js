@@ -149,7 +149,7 @@ app.http('patch-report-cell', {
       var newHex = null;
       if (field === 'value' && colResult > 0) {
         newHex = calcColor(paramName, value);
-        if (newHex) patchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult - 1) + (targetRow + 1) + '\')/format/fill', body: { color: newHex } });
+        if (newHex) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult - 1) + (targetRow + 1) + '\')/format/fill', body: { color: newHex } });
       }
 
         if (field === 'value' && (paramName === 'Calcium, Total' || paramName === 'Magnesium, Total')) {
@@ -200,6 +200,56 @@ app.http('patch-report-cell', {
       }
 
       await gReq('POST', '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/closeSession', token, {}, sid).catch(function(){});
+
+      // ── Update Results Cache with edited value ────────────────────────────
+      const { labId, cacheField } = body;
+      // Fallback mapping: parameter display name → Results Cache field name
+      const PARAM_TO_CACHE = {
+        'pH Electrometric':             'Title',
+        'pH':                           'Title',
+        'Total Coliform':               'field_2',
+        'E. Coli':                      'field_3',
+        'Chloride, Total':              'field_6',
+        'Fluoride, Total':              'field_8',
+        'Fluoride':                     'field_8',
+        'Nitrite-Nitrogen, Total':      'field_10',
+        'Nitrite':                      'field_10',
+        'Nitrate-Nitrogen, Total':      'field_12',
+        'Nitrate':                      'field_12',
+        'Alkalinity':                   'field_14',
+        'Sulfate':                      'field_16',
+        'Tannins':                      'field_18',
+        'Total Dissolved Solids (TDS)': 'field_20',
+        'Bromide':                      'field_22',
+        'Radon Water':                  'Radon',
+      };
+      const resolvedCacheField = cacheField || PARAM_TO_CACHE[paramName] || '';
+      if (field === 'value' && labId && resolvedCacheField) {
+        try {
+          const baseId = String(labId).split(' ')[0].trim();
+          let rcNext = `${GRAPH}/sites/${siteId}/lists/Results Cache/items?$expand=fields($select=id,LabID)&$top=999`;
+          let rcItem = null;
+          while (rcNext && !rcItem) {
+            const rcRes = await fetch(rcNext, { headers: { Authorization: `Bearer ${token}` } });
+            if (!rcRes.ok) break;
+            const rcData = await rcRes.json();
+            rcItem = (rcData.value || []).find(i =>
+              String(i.fields?.LabID || '').split(' ')[0].trim() === baseId
+            );
+            rcNext = rcData['@odata.nextLink'] || null;
+          }
+          if (rcItem) {
+            await fetch(
+              `${GRAPH}/sites/${siteId}/lists/Results Cache/items/${rcItem.id}/fields`,
+              { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [resolvedCacheField]: String(value || '') }) }
+            );
+            context.log(`[patch-report-cell] RC updated: ${baseId} ${resolvedCacheField} = ${value}`);
+          } else {
+            context.log(`[patch-report-cell] RC item not found for ${baseId}`);
+          }
+        } catch(e) { context.log('[patch-report-cell] RC update (non-fatal):', e.message); }
+      }
       context.log('[patch-report-cell] OK — ' + paramName + ' ' + field + ' = ' + value);
 
       return { status: 200, jsonBody: { success: true, paramName, field, value, newHex, hardnessUpdate } };
