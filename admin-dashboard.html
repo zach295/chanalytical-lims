@@ -5715,6 +5715,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sheetType:  patch.sheetType,
             labId:      currentReportData.labId,
             cacheField: paramMeta?.cacheField || '',
+            changedBy:  getAdminName(),
           }),
         });
         const d = await r.json();
@@ -6409,7 +6410,7 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
               const r = await fetch('/api/patch-report-cell', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType }),
+                body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType, labId: currentReportData.labId, changedBy: getAdminName() }),
               });
               const d = await r.json();
               if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
