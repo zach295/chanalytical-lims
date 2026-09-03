@@ -2,7 +2,8 @@
  * patch-report-cell.js — Phase 4
  */
 const { app }      = require('@azure/functions');
-const { getToken, createItem } = require('../shared/graph');
+const { getToken } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
 function calcColor(paramName, displayVal) {
@@ -265,25 +266,19 @@ app.http('patch-report-cell', {
 
       // ── Log result edit to Activity Log ───────────────────────────────────
       const { labId: logLabId, changedBy } = body;
+      let auditWarning = null;
       if (field === 'value' && logLabId && changedBy) {
-        try {
-          const now     = new Date();
-          const logDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-          const logTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-          await createItem('Activity Log', {
-            Title:        `${logDate} ${logLabId}`,
-            Client:       logLabId,
-            ActivityType: 'Result Edited',
-            Notes:        `${paramName} changed from "${oldValue ?? ''}" to "${value}"`,
-            By:           changedBy,
-            LogDate:      logDate,
-            LogTime:      logTime,
-            Quantity:     0,
-          }).catch(() => {});
-        } catch(e) { context.log('[patch-report-cell] ActivityLog (non-fatal):', e.message); }
+        const audit = await writeActivityLog({
+          labId: logLabId,
+          type: 'Result Edited',
+          notes: `${paramName} changed from "${oldValue ?? ''}" to "${value}"`,
+          by: changedBy,
+          context,
+        });
+        if (!audit.success) auditWarning = audit.error || 'Activity Log write failed';
       }
 
-      return { status: 200, jsonBody: { success: true, paramName, field, value, newHex, hardnessUpdate } };
+      return { status: 200, jsonBody: { success: true, paramName, field, value, newHex, hardnessUpdate, auditWarning } };
 
     } catch(e) {
       context.log('[patch-report-cell] Error:', e.message);

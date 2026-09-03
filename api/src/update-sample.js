@@ -551,9 +551,23 @@ app.http('update-sample', {
         const fieldLabels = { coaTest:'Test Type', customer:'Customer', dateDrawn:'Date Drawn',
           timeDrawn:'Time Drawn', receivedDate:'Date Received', receivedTime:'Time Received',
           location:'Address', city:'City', state:'State', zip:'Zip', notes:'Notes' };
+        const firstOld = archivedItems[0] || {};
+        const oldValues = {
+          coaTest: [...new Set(archivedItems.map(r => r.field_2).filter(Boolean))].join(' | '),
+          customer: firstOld.field_3 || '',
+          dateDrawn: firstOld.field_4 || '',
+          timeDrawn: firstOld.field_5 || '',
+          receivedDate: firstOld.field_6 || '',
+          receivedTime: firstOld.field_7 || '',
+          location: firstOld.field_8 || '',
+          city: firstOld.field_9 || '',
+          state: firstOld.field_10 || '',
+          zip: firstOld.field_11 || '',
+          notes: firstOld.field_13 || '',
+        };
         const changes = Object.entries(updates)
           .filter(([,v]) => v !== undefined && v !== '')
-          .map(([k,v]) => `${fieldLabels[k] || k} → ${v}`)
+          .map(([k,v]) => `${fieldLabels[k] || k}: "${oldValues[k] ?? ''}" → "${v}"`)
           .join('; ');
         // Combine what changed with where it was written
         const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');

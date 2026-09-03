@@ -213,12 +213,12 @@ app.http('reject-sample', {
       const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
       try {
         const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
-        const fullNotes = [`Reason: ${reason.trim()}`, updateResults && `Updates: ${updateResults}`]
+        const fullNotes = [`Rejection Type: ${rejectionType}`, `Reason: ${reason.trim()}`, updateResults && `Updates: ${updateResults}`]
           .filter(Boolean).join('\n');
         await createItem('Activity Log', {
           Title:        `${dateStr} ${labId}`,
           Client:       labId,
-          ActivityType: rejectionType,
+          ActivityType: 'Sample Rejected',
           Notes:        fullNotes.slice(0, 3000),
           By:           rejectedBy || 'Lab Staff',
           LogDate:      dateStr,

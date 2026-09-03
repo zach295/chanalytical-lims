@@ -11,15 +11,20 @@ app.http('inventory-write', {
 
       if (action === 'log_activity') {
         const entry = body.payload?.entry || body.entry || body.payload || body;
+        const now = new Date();
+        const serverDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
+        const serverTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
+        const logDate = entry.date || serverDate;
+        const logTime = entry.time || serverTime;
         await createItem(LISTS.ACTIVITY_LOG, {
-          Title:        `${entry.date || ''} ${entry.client || ''}`.trim(),
-          LogDate:         entry.date   || '',
-          LogTime:         entry.time   || '',
+          Title:        `${logDate} ${entry.client || ''}`.trim(),
+          LogDate:      logDate,
+          LogTime:      logTime,
           Client:       entry.client || '',
           ActivityType: entry.type   || '',
           Quantity: Number(entry.qty) || 0,
           Notes:        entry.notes  || '',
-          By:           entry.by     || '',
+          By:           entry.by     || 'Lab Staff',
         });
         return { status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ success: true }) };
       }

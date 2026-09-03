@@ -5,6 +5,7 @@
  */
 const { app }      = require('@azure/functions');
 const { getToken, createItem, listItems, LISTS } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 const crypto       = require('crypto');
 
 const GRAPH      = 'https://graph.microsoft.com/v1.0';
@@ -325,32 +326,24 @@ app.http('send-report', {
 
       // Results Cache kept as permanent record for report regeneration
 
-      // Log to Activity Log
-      try {
-        const now     = new Date();
-        const logDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-        const logTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-        const action  = body.saveOnly ? 'Report Saved' : 'Report Emailed';
-        const details = body.saveOnly
-          ? `PDF saved to SharePoint Archive`
-          : `Emailed to: ${toEmail} | COC attached: ${coc ? 'Yes' : 'No'} | Report type: ${body.isRadon ? 'RW' : 'COA'}`;
-        await createItem('Activity Log', {
-          Title:        `${logDate} ${labId}`,
-          Client:       labId,
-          ActivityType: action,
-          Notes:        details,
-          By:           body.authorizedBy || 'Lab Staff',
-          LogDate:      logDate,
-          LogTime:      logTime,
-          Quantity:     0,
-        }).catch(() => {});
-      } catch(e) { context.log('[send-report] ActivityLog error:', e.message); }
+      // Log to Activity Log — include revision state and exact archived filename.
+      const revisionLabel = alreadyReported ? 'Revised' : 'Original';
+      const details = `Emailed to: ${toEmail} | Revision: ${revisionLabel} | PDF: ${pdfFileName} | COC attached: ${coc ? 'Yes' : 'No'} | Report type: ${body.isRadon ? 'RW' : 'COA'}`;
+      const audit = await writeActivityLog({
+        labId,
+        type: 'Report Emailed',
+        notes: details,
+        by: body.authorizedBy || 'Lab Staff',
+        context,
+      });
+      const auditWarning = audit.success ? null : (audit.error || 'Activity Log write failed');
 
       return { status: 200, jsonBody: {
         success:     true,
         sentTo:      toEmail,
         attachments: attachments.map(a => a.name),
         hasCOC:      attachments.length > 1,
+        auditWarning,
       }};
 
     } catch (err) {
