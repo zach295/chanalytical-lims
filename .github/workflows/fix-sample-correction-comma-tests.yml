@@ -1,0 +1,39 @@
+name: Fix Sample Correction comma test parsing
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-sample-correction-comma-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Preserve commas inside test names
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('admin-dashboard.html')
+          s = p.read_text()
+          old = "const tests = coaTest.split(/[|,]/).map(t => t.trim()).filter(Boolean);"
+          new = "const tests = coaTest.split(/[|;]/).map(t => t.trim()).filter(Boolean);"
+          if old not in s:
+              raise SystemExit('Expected scSetCheckboxes split expression not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add admin-dashboard.html
+          git commit -m "Fix Sample Correction comma-delimited test names"
+          git push origin main
