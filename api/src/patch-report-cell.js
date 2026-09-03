@@ -97,6 +97,7 @@ app.http('patch-report-cell', {
       var allPatchReqs = [];
       var newHex = null;
       var hardnessUpdate = null;
+      var oldValue = null; // original result value captured before any workbook write
 
       for (var si = 0; si < targetSheets.length; si++) {
         var sheet = targetSheets[si];
@@ -138,6 +139,13 @@ app.http('patch-report-cell', {
 
 
         if (targetRow < 0) continue; // param not in this sheet, skip
+
+        // Capture the original value before patching. Use the first matching sheet as
+        // the audit source so Lab Report/FHA duplicate rows do not overwrite it.
+        if (field === 'value' && oldValue === null && colResult >= 0) {
+          const originalCell = (rows[targetRow] || [])[colResult];
+          oldValue = originalCell === undefined || originalCell === null ? '' : String(originalCell);
+        }
 
         // Build writes for this sheet
         var sheetPatchReqs = [];
@@ -266,7 +274,7 @@ app.http('patch-report-cell', {
             Title:        `${logDate} ${logLabId}`,
             Client:       logLabId,
             ActivityType: 'Result Edited',
-            Notes:        `${paramName} changed to "${value}"`,
+            Notes:        `${paramName} changed from "${oldValue ?? ''}" to "${value}"`,
             By:           changedBy,
             LogDate:      logDate,
             LogTime:      logTime,
