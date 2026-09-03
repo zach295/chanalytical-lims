@@ -17,6 +17,8 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      - name: Fix patch matcher
+        run: python3 .github/scripts/fix_gap_patch.py
       - name: Apply audit patches
         run: python3 .github/scripts/close_activity_log_gaps.py
       - name: Validate JavaScript
