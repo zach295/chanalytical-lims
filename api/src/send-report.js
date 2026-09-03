@@ -36,7 +36,7 @@ async function getGmailToken() {
   const res  = await fetch('https://oauth2.googleapis.com/token', {
     method:  'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    body:    `grant_type=urn%3Aietf%3Aparams%3Aoauth-grant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
   const data = await res.json();
   if (!data.access_token) throw new Error(`Token error: ${JSON.stringify(data)}`);
@@ -253,9 +253,15 @@ app.http('send-report', {
       try {
         const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
           '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
-        const archiveDate  = new Date();
-        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' });
-        const dayFolder    = archiveDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', timeZone: 'America/New_York' }).replace(/\//g, '-');
+        // Archive by the accession date encoded in the Lab ID (MMDDYY), not by send date.
+        const datePrefix = String(labId).match(/(\d{6})-\d{3}/)?.[1];
+        if (!datePrefix) throw new Error(`Cannot determine archive date from Lab ID: ${labId}`);
+        const mm = parseInt(datePrefix.slice(0, 2), 10);
+        const dd = parseInt(datePrefix.slice(2, 4), 10);
+        const yy = parseInt(datePrefix.slice(4, 6), 10);
+        const archiveDate = new Date(Date.UTC(2000 + yy, mm - 1, dd, 12, 0, 0));
+        const monthFolder = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        const dayFolder = `${datePrefix.slice(0, 2)}-${datePrefix.slice(2, 4)}-${datePrefix.slice(4, 6)}`;
         const archiveMarker = 'Shared Documents/';
         const archiveMi    = SCAN_ARCHIVE.indexOf(archiveMarker);
         const archiveRel   = archiveMi >= 0 ? SCAN_ARCHIVE.slice(archiveMi + archiveMarker.length) : SCAN_ARCHIVE.replace(/^\/+/, '');
