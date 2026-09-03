@@ -14,7 +14,14 @@ app.http('inventory-write', {
         const now = new Date();
         const serverDate = now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
         const serverTime = now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-        const logDate = entry.date || serverDate;
+        const rawDate = String(entry.date || serverDate).trim();
+        const isoMatch = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const usMatch  = rawDate.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+        const logDate = isoMatch
+          ? `${isoMatch[2]}/${isoMatch[3]}/${isoMatch[1].slice(-2)}`
+          : usMatch
+            ? `${String(usMatch[1]).padStart(2,'0')}/${String(usMatch[2]).padStart(2,'0')}/${String(usMatch[3]).slice(-2)}`
+            : serverDate;
         const logTime = entry.time || serverTime;
         await createItem(LISTS.ACTIVITY_LOG, {
           Title:        `${logDate} ${entry.client || ''}`.trim(),

@@ -289,7 +289,7 @@ app.http('import-control', {
         await createItem('Activity Log', {
           Title: `${_ld} Control Sheet Import`, Client: 'Import',
           ActivityType: 'Control Sheet Import', Notes: `Updated: ${updated}, Created: ${created}, Errors: ${errors} | Files: ${filesUsed.join(", ")}`,
-          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+          By: body.importedBy || body.uploadedBy || 'Lab Staff', LogDate: _ld, LogTime: _lt, Quantity: 0,
         }).catch(()=>{});
       } catch(e) {}
 

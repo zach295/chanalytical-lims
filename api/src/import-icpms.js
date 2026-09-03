@@ -524,7 +524,7 @@ app.http('import-icpms', {
         await createItem('Activity Log', {
           Title: `${_ld} ICP-MS Import`, Client: 'Import',
           ActivityType: 'ICP-MS Import', Notes: `Updated: ${updated}, Created: ${created}, Errors: ${errors} | Files: ${filesUsed.join(", ")}`,
-          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+          By: body.importedBy || body.uploadedBy || 'Lab Staff', LogDate: _ld, LogTime: _lt, Quantity: 0,
         }).catch(()=>{});
       } catch(e) {}
 

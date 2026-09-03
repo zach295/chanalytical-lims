@@ -173,7 +173,7 @@ app.http('import-acid', {
         await createItem('Activity Log', {
           Title: `${_ld} Acid Sheet Import`, Client: 'Import',
           ActivityType: 'Acid Sheet Import', Notes: `Updated: ${updated}, Not found: ${notFound}, Errors: ${errors}`,
-          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
+          By: body.importedBy || body.uploadedBy || 'Lab Staff', LogDate: _ld, LogTime: _lt, Quantity: 0,
         }).catch(()=>{});
       } catch(e) {}
 

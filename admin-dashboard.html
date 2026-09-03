@@ -1975,6 +1975,16 @@ document.addEventListener('DOMContentLoaded', function() {
     return `${String(hour).padStart(2, '0')}:${minute}`;
   }
 
+  function formatActivityDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '—';
+    let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return `${String(m[2]).padStart(2,'0')}/${String(m[3]).padStart(2,'0')}/${m[1].slice(-2)}`;
+    m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+    if (m) return `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/${String(m[3]).slice(-2)}`;
+    return raw;
+  }
+
   function filterActivityLog() {
     const q     = (document.getElementById('log-search')?.value || '').toLowerCase().trim();
     const tbody = document.getElementById('sp-log-body');
@@ -1995,7 +2005,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     tbody.innerHTML = rows.map((r, i) => `
       <tr style="border-bottom:1px solid var(--border);background:${i%2===0?'white':'var(--off-white)'}">
-        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${r.date||'—'}</td>
+        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${formatActivityDate(r.date)}</td>
         <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;font-family:monospace;">${formatActivityMilitaryTime(r.time)}</td>
         <td style="padding:8px 12px;font-size:12px;font-weight:600;color:var(--navy);">${r.type||'—'}</td>
         <td style="padding:8px 12px;font-size:12px;">${r.client||r.title||'—'}</td>
@@ -7304,7 +7314,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (statusEl) statusEl.textContent = '';
     try {
       const datePrefix = getImportDatePrefix();
-      const res  = await fetch('/api/import-ph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
+      const res  = await fetch('/api/import-ph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix, importedBy: getAdminName() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ pH import complete — ${data.updated} sample(s) updated`;
@@ -7328,7 +7338,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (statusEl) statusEl.textContent = '';
     try {
       const datePrefix = getImportDatePrefix();
-      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
+      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix, importedBy: getAdminName() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
@@ -7355,7 +7365,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch('/api/import-radon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dateFilter }),
+        body: JSON.stringify({ dateFilter, importedBy: getAdminName() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
@@ -7384,7 +7394,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/import-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadedBy: getAdminName(), datePrefix: getImportDatePrefix() }),
+        body: JSON.stringify({ uploadedBy: getAdminName(), importedBy: getAdminName(), datePrefix: getImportDatePrefix() }),
       });
       const text = await res.text();
       let data;
@@ -7438,7 +7448,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ all: true, datePrefix: getImportDatePrefix() }),
+        body: JSON.stringify({ all: true, datePrefix: getImportDatePrefix(), importedBy: getAdminName() }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
