@@ -1,0 +1,55 @@
+name: Fix report archive by Lab ID date
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-report-archive-by-labid.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Archive reports by Lab ID date
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('api/src/send-report.js')
+          s = p.read_text()
+          old = """        const archiveDate  = new Date();
+        const monthFolder  = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' });
+        const dayFolder    = archiveDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', timeZone: 'America/New_York' }).replace(/\\//g, '-');
+"""
+          new = """        // Archive reports with the original sample intake date encoded in the Lab ID,
+        // not the date the report happens to be sent. Example: 090226-001 -> September 2026/09-02-26.
+        const labDatePrefix = String(labId).match(/^(\\d{6})/)?.[1] || '';
+        if (!labDatePrefix) throw new Error(`Could not derive archive date from Lab ID: ${labId}`);
+        const mm = parseInt(labDatePrefix.slice(0, 2), 10);
+        const dd = parseInt(labDatePrefix.slice(2, 4), 10);
+        const yy = parseInt(labDatePrefix.slice(4, 6), 10);
+        const archiveDate = new Date(Date.UTC(2000 + yy, mm - 1, dd));
+        if (archiveDate.getUTCMonth() !== mm - 1 || archiveDate.getUTCDate() !== dd || archiveDate.getUTCFullYear() !== 2000 + yy) {
+          throw new Error(`Invalid date prefix in Lab ID: ${labDatePrefix}`);
+        }
+        const monthFolder = archiveDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        const dayFolder   = `${labDatePrefix.slice(0,2)}-${labDatePrefix.slice(2,4)}-${labDatePrefix.slice(4,6)}`;
+"""
+          if old not in s:
+              raise SystemExit('Expected archive-date block not found; no changes made')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add api/src/send-report.js
+          git commit -m "Archive reports by Lab ID date"
+          git push origin main
