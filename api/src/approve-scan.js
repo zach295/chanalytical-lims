@@ -1183,7 +1183,7 @@ app.http('approve-scan', {
               const copyRes = await fetch(`${GRAPH}/sites/${_siteId}/drive/items/${tmplId}/copy`, {
                 method:'POST',
                 headers:{ Authorization:`Bearer ${_token}`, 'Content-Type':'application/json' },
-                body:JSON.stringify({ parentReferenc:{ id:folderId }, name:csFileName }),
+                body:JSON.stringify({ parentReference:{ id:folderId }, name:csFileName }),
               });
               context.log(`[CS] Template copy request: ${copyRes.status}`);
               if (copyRes.ok || copyRes.status === 202) {
