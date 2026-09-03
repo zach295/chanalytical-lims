@@ -1,0 +1,34 @@
+name: Split RTB Multi-Element Rows
+
+on:
+  push:
+    paths:
+      - '.github/workflows/split-rtb-multi-element.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply patch
+        run: python .github/scripts/split_rtb_multi_element.py
+      - name: Validate JavaScript
+        run: |
+          node --check api/src/approve-scan.js
+          git diff --check
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/src/approve-scan.js
+          git commit -m "Split Reports to be Billed by element"
+          git push
