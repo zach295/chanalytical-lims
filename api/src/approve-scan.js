@@ -556,56 +556,6 @@ async function writeReportsToBilled(siteId, token, params, context) {
 
 // ── Write to Radon Control Sheet on approval ──────────────────────────────────
 async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {
-  const GRAPH = 'https://graph.microsoft.com/v1.0';
-const SHEETS_ID = '15403E6ZaZFQuKNTtgJcb6-2jmlLnk02eq04BGPATqTw';
-const SHEETS_TAB = 'Form Responses';
-
-async function getSheetsToken() {
-  const sa = JSON.parse(process.env.GMAIL_SERVICE_ACCOUNT || '{}');
-  if (!sa.private_key) throw new Error('GMAIL_SERVICE_ACCOUNT missing');
-  const crypto = require('crypto');
-  const now    = Math.floor(Date.now() / 1000);
-  const header  = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/spreadsheets',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now, exp: now + 3600,
-  })).toString('base64url');
-  const sign    = crypto.createSign('RSA-SHA256');
-  sign.update(`${header}.${payload}`);
-  const sig = sign.sign(sa.private_key, 'base64url');
-  const jwt = `${header}.${payload}.${sig}`;
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
-  });
-  const data = await res.json();
-  if (!data.access_token) throw new Error('Sheets token failed: ' + JSON.stringify(data));
-  return data.access_token;
-}
-
-async function writeToGoogleSheet(rows, context) {
-  try {
-    const token = await getSheetsToken();
-    const range = encodeURIComponent(`${SHEETS_TAB}!A:M`);
-    const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: rows }),
-      }
-    );
-    if (!res.ok) {
-      const err = await res.text();
-      context.log('[Sheets] Write failed:', err.slice(0, 200));
-    } else {
-      context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet');
-    }
-  } catch(e) { context.log('[Sheets] Error (non-fatal):', e.message); }
-}
   const MONTHS = ['January','February','March','April','May','June',
                   'July','August','September','October','November','December'];
   const baseId     = labId.split(' ')[0].trim();
@@ -1264,24 +1214,24 @@ app.http('approve-scan', {
           if (d.getDay() === 0) d.setDate(d.getDate() + 1);
           return `${pad(d.getMonth()+1)}/${pad(d.getDate())}/${String(d.getFullYear()).slice(-2)}`;
         })();
-        const dateRec  = body.receivedDate || `${pad(etNow.getMonth()+1)}/${pad(etNow.getDate())}/${String(etNow.getFullYear()).slice(-2)}`;
-        const timeRec  = body.receivedTime || `${pad(etNow.getHours())}:${pad(etNow.getMinutes())}`;
+        const dateRec  = receivedDate || `${pad(etNow.getMonth()+1)}/${pad(etNow.getDate())}/${String(etNow.getFullYear()).slice(-2)}`;
+        const timeRec  = receivedTime || `${pad(etNow.getHours())}:${pad(etNow.getMinutes())}`;
         const sheetRows = labItems
           .filter(l => !l.isRejected)
           .map(l => [
             dateRec,
             timeRec,
-            body.dateDrawn  || '',
-            body.timeDrawn  || '',
-            body.customer   || '',
-            body.clientCode || '',
+            dateDrawn  || '',
+            timeDrawn  || '',
+            formalName || customer || '',
+            clientCode || '',
             '',
             l.fullId,
-            body.location   || '',
-            body.city       || '',
-            body.state      || 'ME',
-            body.zip        || '',
-            l.service       || body.tests?.join(', ') || '',
+            location   || '',
+            city       || '',
+            state      || 'ME',
+            zip        || '',
+            l.coaTest  || tests?.join(', ') || '',
           ]);
         if (sheetRows.length) {
           // Fire-and-forget with 8s timeout — never blocks billing or activity log
@@ -1324,6 +1274,7 @@ app.http('approve-scan', {
           testNames:  labItems.map(l => l.coaTest),
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
+          csWarning:  csWarning || undefined,
         },
       };
 
