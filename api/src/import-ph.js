@@ -99,8 +99,11 @@ function parsePHFile(rows) {
     const baseCode    = isDuplicate ? code.replace(/ D$/i, '').trim() : code;
 
     if (isDuplicate) {
-      const qc = String(row[COL_QC] || '').toLowerCase().trim();
-      sampleMap[labId].duplicates[baseCode] = qc === 'pass';
+      const qcRaw = row[COL_QC];
+      const qcStr = String(qcRaw ?? '').toLowerCase().trim();
+      // Graph API returns raw formula values: true/false, 1/0, or "pass"/"fail"
+      const passed = qcStr === 'pass' || qcStr === 'true' || qcStr === '1' || qcRaw === true || qcRaw === 1;
+      sampleMap[labId].duplicates[baseCode] = passed;
     } else {
       sampleMap[labId].measurements[baseCode] = {
         ph: row[COL_PH],
