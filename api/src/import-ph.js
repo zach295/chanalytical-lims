@@ -198,6 +198,10 @@ app.http('import-ph', {
         const mergedResults = {};
         for (const file of phFiles) {
           const rows    = await readSheetValues(siteId, file.id, token);
+          // Debug: log first 5 data rows raw
+          for (let i = 10; i < Math.min(15, rows.length); i++) {
+            context.log(`[ph-debug] row ${i}:`, JSON.stringify(rows[i]?.slice(0, 7)));
+          }
           const results = parsePHFile(rows);
           context.log(`[ph] ${file.name}: ${Object.keys(results).length} valid results`);
           Object.assign(mergedResults, results);
