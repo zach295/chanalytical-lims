@@ -1,0 +1,37 @@
+name: Improve Activity Logging
+
+on:
+  push:
+    paths:
+      - '.github/workflows/improve-activity-logging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply logging improvements
+        run: python3 .github/scripts/improve_activity_logging.py
+      - name: Validate JavaScript
+        run: |
+          node --check api/shared/audit.js
+          node --check api/src/patch-report-cell.js
+          node --check api/src/send-report.js
+          node --check api/src/update-sample.js
+          node --check api/src/reject-sample.js
+          node --check api/src/inventory-write.js
+          git diff --check
+      - name: Commit changes
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add api/shared/audit.js api/src/patch-report-cell.js api/src/send-report.js api/src/update-sample.js api/src/reject-sample.js api/src/inventory-write.js
+          git commit -m "Strengthen laboratory activity logging"
+          git push origin main
