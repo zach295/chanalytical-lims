@@ -3284,11 +3284,17 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
-      // Use first match (primary sample row)
+      // Use first match for shared sample metadata, but preserve ALL test rows
+      // for this Lab ID. Individual-element samples can have one Archived Intake row
+      // per test (for example Total Hardness, Iron, Total, and Manganese, Total).
       const raw = matches[0];
+      const allTests = [...new Set(matches.flatMap(r =>
+        String(r.field_2 || '').split(/[|;]/).map(t => t.trim()).filter(Boolean)
+      ))];
+      const combinedCoaTest = allTests.join(' | ');
       const found = {
         labId:        raw.field_1  || '',
-        coaTest:      raw.field_2  || '',
+        coaTest:      combinedCoaTest,
         customer:     raw.field_3  || '',
         dateDrawn:    raw.field_4  || '',
         timeDrawn:    raw.field_5  || '',
