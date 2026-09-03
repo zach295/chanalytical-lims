@@ -17,6 +17,9 @@ function calcColor(paramName, displayVal) {
   if (paramName === 'Nitrite-Nitrogen, Total')   { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#FF0000'; return null; }
   if (paramName === 'Nitrate-Nitrogen, Total')   { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
   if (paramName === 'Arsenic, Total')            { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
+  if (paramName === 'Arsenic, Speciation')       { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
+  if (paramName === 'Arsenic III')               { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
+  if (paramName === 'Arsenic V')                 { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
   if (paramName === 'Lead, Total')               { if (rl||(num&&n<15))  return '#00CC44'; if (num&&n>=15) return '#FF0000'; return null; }
   if (paramName === 'Uranium, Total')            { if (rl||(num&&n<30))  return '#00CC44'; if (num&&n>=30) return '#FF0000'; return null; }
   if (paramName === 'Copper, Total')             { if (rl||(num&&n<0.9)) return '#00CC44'; if (num&&n>=0.9&&n<=1.29) return '#0070C0'; if (num&&n>=1.3) return '#FF0000'; return null; }
