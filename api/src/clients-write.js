@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
-const { getToken, createItem, updateItem } = require('../shared/graph');
+const { getToken, createItem, updateItem, listItems } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 const LISTS = { CLIENTS: 'Clients' };
 
@@ -23,17 +24,10 @@ function toSpFields(c) {
   };
 }
 
-async function logActivity(action, clientName, details, by) {
-  try {
-    const now     = new Date();
-    const logDate = now.toLocaleDateString('en-US',{ timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-    const logTime = now.toLocaleTimeString('en-US',{ timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-    await createItem('Activity Log', {
-      Title: `${logDate} ${clientName}`, Client: clientName,
-      ActivityType: action, Notes: details.slice(0, 3000),
-      By: by || 'Admin', LogDate: logDate, LogTime: logTime, Quantity: 0,
-    });
-  } catch(e) {}
+function diffFields(oldFields, newFields) {
+  return Object.entries(newFields)
+    .filter(([k, v]) => String(oldFields?.[k] ?? '') !== String(v ?? ''))
+    .map(([k, v]) => `${k}: "${oldFields?.[k] ?? ''}" → "${v ?? ''}"`);
 }
 
 app.http('clients-write', {
@@ -41,35 +35,50 @@ app.http('clients-write', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const body   = await request.json();
+      const body = await request.json();
       const { action, itemId, client, updatedBy } = body;
       if (!client?.clientName) return { status: 400, jsonBody: { error: 'clientName required' } };
-      const token  = await getToken();
+      await getToken(); // preserve existing auth/connection check
       const fields = toSpFields(client);
+      const actor = updatedBy || 'Admin';
 
       if (action === 'add') {
         const result = await createItem(LISTS.CLIENTS, fields);
-        const details = `New client added to Clients list.\nCode: ${client.clientCode || '—'} | Pricing: ${client.pricingCategory || '—'} | Status: ${client.status || 'Active'} | Report Email: ${client.reportEmail || '—'} | Phone: ${client.phone || '—'} | Billing Address: ${client.billingAddress || '—'}`;
-        await logActivity('Client Added', client.clientName, details, updatedBy);
-        return { status: 200, jsonBody: { success: true, id: result?.id } };
+        const details = `New client added. Code: ${client.clientCode || '—'} | Pricing: ${client.pricingCategory || '—'} | Status: ${client.status || 'Active'} | Report Email: ${client.reportEmail || '—'} | Phone: ${client.phone || '—'} | Billing Address: ${client.billingAddress || '—'}`;
+        const audit = await writeActivityLog({ labId: client.clientName, type: 'Client Added', notes: details, by: actor, context });
+        return { status: 200, jsonBody: { success: true, id: result?.id, auditWarning: audit.success ? null : audit.error } };
       }
 
       if (action === 'update') {
         if (!itemId) return { status: 400, jsonBody: { error: 'itemId required for update' } };
+        const old = (await listItems(LISTS.CLIENTS, { top: 1000 }).catch(() => []))
+          .find(r => String(r._id) === String(itemId)) || {};
+        const changes = diffFields(old, fields);
         await updateItem(LISTS.CLIENTS, itemId, fields);
-        const changed = Object.entries(client).filter(([k,v]) => v !== undefined && v !== '').map(([k,v]) => `${k}: ${v}`).join(' | ');
-        const details = `Clients list updated.\nFields changed: ${changed}`;
-        await logActivity('Client Updated', client.clientName, details, updatedBy);
-        return { status: 200, jsonBody: { success: true } };
+        const audit = await writeActivityLog({
+          labId: client.clientName,
+          type: 'Client Updated',
+          notes: changes.length ? changes.join(' | ') : 'Client update saved with no material field change.',
+          by: actor,
+          context,
+        });
+        return { status: 200, jsonBody: { success: true, auditWarning: audit.success ? null : audit.error } };
       }
 
       if (action === 'deactivate' || action === 'activate') {
         if (!itemId) return { status: 400, jsonBody: { error: 'itemId required' } };
         const newStatus = action === 'activate' ? 'Active' : 'Inactive';
+        const old = (await listItems(LISTS.CLIENTS, { top: 1000 }).catch(() => []))
+          .find(r => String(r._id) === String(itemId)) || {};
         await updateItem(LISTS.CLIENTS, itemId, { Status: newStatus });
-        const details = `Status changed to ${newStatus} in Clients list.`;
-        await logActivity(`Client ${newStatus}`, client.clientName, details, updatedBy);
-        return { status: 200, jsonBody: { success: true } };
+        const audit = await writeActivityLog({
+          labId: client.clientName,
+          type: `Client ${newStatus}`,
+          notes: `Status: "${old.Status || ''}" → "${newStatus}"`,
+          by: actor,
+          context,
+        });
+        return { status: 200, jsonBody: { success: true, auditWarning: audit.success ? null : audit.error } };
       }
 
       return { status: 400, jsonBody: { error: `Unknown action: ${action}` } };
