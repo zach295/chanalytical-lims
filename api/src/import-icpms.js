@@ -331,6 +331,8 @@ app.http('import-icpms', {
 
       // Step 1: Get Results Cache — find IDs needing ICP-MS data
       const cacheItems = await listItems('Results Cache', { top: 2000 });
+      const byDate = {};
+      const diagInfo = { sampleColors: [], rawIdsFromFile: {}, datesSearched: [], idsNeeded: {}, filesUsed: [], rowsFoundInFiles: 0, mergedSampleCount: 0 };
       const needsIcpms = cacheItems.filter(r => {
         if (/\bREJ\b/i.test(r.LabID || '')) return false;
         if (dateFilter && !String(r.LabID || '').startsWith(dateFilter)) return false;
@@ -354,14 +356,8 @@ app.http('import-icpms', {
                            'July','August','September','October','November','December'];
       const allRows = [];
       const filesUsed = [];
-      const diagInfo = {
-        datesSearched: Object.keys(byDate),
-        idsNeeded: Object.fromEntries(Object.entries(byDate).map(([d, s]) => [d, [...s]])),
-        rowsFoundInFiles: 0,
-        mergedSampleCount: 0,
-        rawIdsFromFile: {},
-        sampleColors: [],
-      };
+      diagInfo.datesSearched = Object.keys(byDate);
+      diagInfo.idsNeeded = Object.fromEntries(Object.entries(byDate).map(([d, s]) => [d, [...s]]));
 
       for (const [datePart, ids] of Object.entries(byDate)) {
         // Build month subfolder: MMDDYY → "August 2026"
