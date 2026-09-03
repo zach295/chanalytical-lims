@@ -1,0 +1,32 @@
+name: Fix Activity Log Sort
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-activity-log-sort.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply Activity Log sort fix
+        run: python3 .github/scripts/fix_activity_log_sort.py
+      - name: Validate
+        run: |
+          git diff --check
+          grep -n "activityTimestamp" admin-dashboard.html
+      - name: Commit changes
+        run: |
+          git config user.name "zach295"
+          git config user.email "zach@chanalytical.com"
+          git add admin-dashboard.html
+          git commit -m "Sort Activity Log newest to oldest by date and time"
+          git push origin main
