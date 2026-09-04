@@ -7,9 +7,14 @@ app.http('get-scan-queue', {
   handler: async (request, context) => {
     try {
       // ── Pending scans from Review Queue ──────────────────────────────────────
-      const queueItems = await listItems(LISTS.REVIEW_QUEUE, { top: 100 });
+      // Do not use $top here. SharePoint does not guarantee newest-first ordering,
+      // so $top:100 could return an older slice of the list and hide the scan that
+      // was just created. Load the list, then sort by SharePoint item id newest-first.
+      const queueItems = await listItems(LISTS.REVIEW_QUEUE);
+      queueItems.sort((a, b) => Number(b._id || 0) - Number(a._id || 0));
+
       const filtered = queueItems.filter(r => {
-        const status = r.Title || r.ReviewStatus || '';
+        const status = String(r.ReviewStatus || r.Title || '').trim();
         return status !== 'Approved' && status !== 'Discarded' && status !== 'Processed';
       });
 
@@ -54,7 +59,7 @@ app.http('get-scan-queue', {
         tests:            parseTests(r.TestSelections),
         confidence:       r.OCRConfidence || 0,
         processedDate:    r.ProcessedDate || '',
-        reviewStatus:     r.Title        || r.ReviewStatus || 'Pending',
+        reviewStatus:     r.ReviewStatus || r.Title || 'Pending',
         validationErrors: r.ValidationErrors || '',
         waterType:        r.WaterType    || '',
         phone:            r.Phone        || '',
