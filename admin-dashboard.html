@@ -4973,8 +4973,14 @@ document.addEventListener('DOMContentLoaded', function() {
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        // By the time the exact item is visible, the normal queue reload will render it.
-        // If Graph propagation took longer than 10s, still perform one final reload.
+        // If another Review Queue load is already in progress, loadReviewQueue() would
+        // immediately return because of the _rqLoading guard. Wait for that older load
+        // to finish first, then do a guaranteed fresh reload after the scanned item is visible.
+        let waitForExistingLoad = 0;
+        while (_rqLoading && waitForExistingLoad < 40) {
+          await new Promise(r => setTimeout(r, 250));
+          waitForExistingLoad++;
+        }
         await loadReviewQueue();
         showToast(confirmed ? '✅ Scan added to queue' : '✅ Scan processed — queue refreshed');
       } else {
