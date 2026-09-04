@@ -2525,16 +2525,16 @@ document.addEventListener('DOMContentLoaded', function() {
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
       await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
-      const res  = await fetch('/api/get-scan-queue');
+      const res  = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache: 'no-store' });
       const data = await res.json();
-      // Filter out locally-deleted scans (prevents re-appearance after F5)
-      const deletedScans = getDeletedScans();
-      console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
-      const scans = (data.pending || []).filter(r =>
-        !deletedScans.has(r.fileId) &&
-        !deletedScans.has(r.barcodeId) &&
-        !deletedScans.has(r.baseId)
-      );
+      if (!res.ok) throw new Error(data.error || 'Failed to load Review Queue');
+      reviewQueueData = data;
+      const scans = (data.pending || []).map(r => ({
+        ...r,
+        services: r.services || (Array.isArray(r.tests) ? r.tests.join('; ') : ''),
+        tests: Array.isArray(r.tests) ? r.tests : []
+      }));
+      reviewQueueData.pending = scans;
 
       // ── Approved Today + Dysart's Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
@@ -4825,7 +4825,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div><strong>Location:</strong> ${record.location}, ${record.city}, ${record.state} ${record.zip}</div>
       ${record.notes ? `<div><strong>Notes:</strong> ${record.notes}</div>` : ''}
     `;
-    document.getElementById('rv-tests-list').textContent = record.services || '—';
+    document.getElementById('rv-tests-list').textContent = record.services || (record.tests || []).join('; ') || '—';
     document.getElementById('rv-labid-preview').textContent = 'Will be generated on approval...';
     document.getElementById('rv-notes').value = '';
     openModal('review-approve');
@@ -4854,7 +4854,7 @@ document.addEventListener('DOMContentLoaded', function() {
       record = { ...record, customer, dateDrawn, location, city };
       tests = testsRaw.split(',').map(s => s.trim()).filter(Boolean);
     } else {
-      tests = record.services.split(';').map(s => s.trim()).filter(Boolean);
+      tests = Array.isArray(record.tests) && record.tests.length ? record.tests : String(record.services || '').split(';').map(s => s.trim()).filter(Boolean);
     }
 
     const clientMatch = resolveClientFromName(record.customer);

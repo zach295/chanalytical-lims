@@ -38,7 +38,10 @@ app.http('get-scan-queue', {
         city:             r.City         || '',
         state:            r.State        || 'ME',
         zip:              r.Zip          || '',
-        tests:            r.TestSelections ? r.TestSelections.split(',').map(t => t.trim()).filter(Boolean) : [],
+        services:         r.TestSelections || '',
+        tests:            r.TestSelections
+          ? String(r.TestSelections).split(/\s*(?:\||;)\s*/).map(t => t.trim()).filter(Boolean)
+          : [],
         confidence:       r.OCRConfidence || 0,
         processedDate:    r.ProcessedDate || '',
         reviewStatus:     r.Title        || r.ReviewStatus || 'Pending',
