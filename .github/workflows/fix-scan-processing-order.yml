@@ -1,0 +1,32 @@
+name: Fix Scan Processing Order
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-scan-processing-order.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply patch
+        run: python .github/scripts/fix_scan_processing_order.py
+      - name: Validate
+        run: |
+          git diff --check
+          node --check api/src/scan-folder.js
+          grep -q "Do NOT move the file before OCR" api/src/scan-folder.js
+          grep -q "Only after the Review Queue row exists" api/src/scan-folder.js
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/src/scan-folder.js
+          git commit -m "Process COC before moving scan file"
+          git push
