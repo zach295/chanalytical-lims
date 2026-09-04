@@ -1,0 +1,28 @@
+name: Inspect Current Review Path
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-current-review-path.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('admin-dashboard.html').read_text()
+          for needle in ['function buildScanCard(r)', 'openReviewApprove(', 'reviewQueueData = data', 'async function triggerScanNow']:
+              print('\n===',needle,'===')
+              start=0
+              while True:
+                  i=s.find(needle,start)
+                  if i<0: break
+                  print(s[max(0,i-500):i+8000])
+                  start=i+len(needle)
+          print('\n=== scan writer payload ===')
+          b=Path('api/src/scan-folder.js').read_text()
+          for needle in ['writeToReviewQueue({','BarcodeID:', 'TestSelections:', 'ReviewStatus:']:
+              i=b.find(needle)
+              if i>=0: print(b[max(0,i-1800):i+5000])
+          PY
