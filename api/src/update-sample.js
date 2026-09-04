@@ -142,7 +142,7 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
 }
 
 // ── Radon Control Sheet Helper ────────────────────────────────────────────────
-async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {
+async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context, updates = {}) {
   const GRAPH      = 'https://graph.microsoft.com/v1.0';
   const siteId     = siteIdArg || process.env.SP_SITE_ID;
   const token      = tokenArg  || (await getToken());
@@ -196,6 +196,32 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
     await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
       { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) });
     if (context) context.log(`[radonSheet] Updated A${targetRow}: ${newLabId}`);
+
+    // Sample Correction can change the reviewed Date/Time Drawn after accession.
+    // Keep the Radon Control Sheet collection fields synchronized with those edits.
+    if (updates.dateDrawn !== undefined) {
+      const drawDateRaw = String(updates.dateDrawn || '').trim();
+      let drawDate = drawDateRaw;
+      let m = drawDateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) drawDate = `${m[2]}/${m[3]}/${m[1]}`;
+      else {
+        m = drawDateRaw.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+        if (m) drawDate = `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/20${m[3]}`;
+      }
+      const dRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='E${targetRow}')`,
+        { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawDate]] }) });
+      if (!dRes.ok) throw new Error(`Radon draw-date update failed (${dRes.status})`);
+      if (context) context.log(`[radonSheet] Updated E${targetRow} draw date: ${drawDate}`);
+    }
+
+    if (updates.timeDrawn !== undefined) {
+      const drawTime = to24h(updates.timeDrawn);
+      const tRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='F${targetRow}')`,
+        { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawTime]] }) });
+      if (!tRes.ok) throw new Error(`Radon draw-time update failed (${tRes.status})`);
+      if (context) context.log(`[radonSheet] Updated F${targetRow} draw time: ${drawTime}`);
+    }
+
     return { updated: true, row: targetRow };
   } finally {
     await fetch(`${wbBase}/closeSession`, { method: 'POST', headers: wbHdr }).catch(() => {});
@@ -545,7 +571,7 @@ app.http('update-sample', {
           archivedItems.some(r => (r.field_2||'').toLowerCase().includes('radon') || (r.field_2||'').toLowerCase().includes('rw'));
         if (isRadon) {
           try {
-            const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context);
+            const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context, updates);
             log.push(rwResult.updated ? `✅ Radon sheet updated` : `ℹ️ Radon: ${rwResult.reason}`);
           } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
         }
