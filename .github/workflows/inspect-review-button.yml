@@ -1,0 +1,21 @@
+name: Inspect Review Button
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-review-button.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('admin-dashboard.html').read_text()
+          i=s.find('function buildScanCard(r)')
+          j=s.find('\n  async function', i+1)
+          block=s[i:j if j>i else i+30000]
+          for line in block.splitlines():
+              if 'onclick=' in line or 'barcodeId' in line or 'fileId' in line or 'Review' in line or 'Approve' in line or 'return `' in line:
+                  print(line)
+          PY
