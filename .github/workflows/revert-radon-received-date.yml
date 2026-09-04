@@ -1,0 +1,55 @@
+name: Revert Radon Received Date Change
+on:
+  push:
+    paths:
+      - '.github/workflows/revert-radon-received-date.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('api/src/approve-scan.js')
+          s=p.read_text()
+          s=s.replace(
+            "async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, receivedDate, context) {",
+            "async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn, context) {",1)
+          old="""    // Use the reviewed/corrected dates from the approval card. Previously column G
+    // always used today's approval date, so correcting Date Received before approval
+    // never reached the Radon Control Sheet.
+    const drawnFmt    = fmtExcel(dateDrawn) || dateDrawn || '';
+    const receivedFmt = fmtExcel(receivedDate) || receivedDate || todayET;
+"""
+          new="""    // Format dateDrawn for Excel (MM/DD/YYYY)
+    const drawnFmt = fmtExcel(dateDrawn) || dateDrawn || '';
+"""
+          if old not in s: raise SystemExit('received-date block not found')
+          s=s.replace(old,new,1)
+          s=s.replace(
+            "body: JSON.stringify({ values: [[newLabId, '', '', '', drawnFmt, timeDrawn || '', receivedFmt]] }),",
+            "body: JSON.stringify({ values: [[newLabId, '', '', '', drawnFmt, timeDrawn || '', todayET]] }),",1)
+          oldcall="""            dateDrawn || '',
+            to24h(timeDrawn) || timeDrawn || '',
+            receivedDate || '',
+            context
+"""
+          newcall="""            dateDrawn || '',
+            to24h(timeDrawn) || timeDrawn || '',
+            context
+"""
+          if oldcall not in s: raise SystemExit('received-date call not found')
+          s=s.replace(oldcall,newcall,1)
+          p.write_text(s)
+          PY
+      - run: git diff --check
+      - run: node --check api/src/approve-scan.js
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add api/src/approve-scan.js
+          git commit -m "Revert incorrect radon received-date change"
+          git push
