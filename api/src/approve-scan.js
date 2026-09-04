@@ -438,7 +438,7 @@ async function loadDynamicTestTypes(token) {
 }
 
 // ── Write to Reports to be Billed (SharePoint List) ──────────────────────────
-async function writeReportsToBilled(siteId, token, params, context) {
+async function writeReportsToBilled(siteId, token, params, context, cache = {}) {
   const GRAPH   = 'https://graph.microsoft.com/v1.0';
   const authHdr = { Authorization: `Bearer ${token}` };
   try {
@@ -450,25 +450,28 @@ async function writeReportsToBilled(siteId, token, params, context) {
     try {
       let pricingCategory = params.pricingCategory || '';
       if (!pricingCategory && params.customer) {
-        const cRes = await fetch(
-          `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,PricingCategory)&$top=500`,
-          { headers: authHdr });
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          const cLow  = params.customer.toLowerCase().trim();
-          const found = (cData.value||[]).find(i => (i.fields?.ClientName||'').toLowerCase().trim() === cLow);
-          pricingCategory = found?.fields?.PricingCategory || '';
+        if (!cache.clientPricingRows) {
+          const cRes = await fetch(
+            `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,PricingCategory)&$top=500`,
+            { headers: authHdr });
+          cache.clientPricingRows = cRes.ok ? ((await cRes.json()).value || []) : [];
         }
+        const cLow  = params.customer.toLowerCase().trim();
+        const found = cache.clientPricingRows.find(i => (i.fields?.ClientName||'').toLowerCase().trim() === cLow);
+        pricingCategory = found?.fields?.PricingCategory || '';
       }
       const catLow = pricingCategory.toLowerCase();
       const priceCol = catLow.includes('inspector') ? 'InspectorPricing'
                      : catLow.includes('wq')        ? 'WQPricing'
                      : 'PublicPricing';
-      const pRes = await fetch(
-        `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
-        { headers: authHdr });
-      if (pRes.ok) {
-        const pData  = await pRes.json();
+      if (!cache.pricingRows) {
+        const pRes = await fetch(
+          `${GRAPH}/sites/${siteId}/lists/Current%20Pricing-V1/items?$expand=fields&$top=200`,
+          { headers: authHdr });
+        cache.pricingRows = pRes.ok ? ((await pRes.json()).value || []) : [];
+      }
+      if (cache.pricingRows.length) {
+        const pData  = { value: cache.pricingRows };
         // A single Lab ID can contain multiple separately ordered elements, e.g.
         // "Iron, Total | Manganese, Total | Total Hardness". Price EACH component
         // and sum them instead of accidentally matching only one element.
@@ -500,16 +503,19 @@ async function writeReportsToBilled(siteId, token, params, context) {
 
     const amt = rate ? parseFloat((qty * rate).toFixed(2)) : null;
     // First: get actual internal field names from the list
-    const colsRes = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=50`,
-      { headers: authHdr }
-    );
-    const colMap = {}; // displayName → internalName
-    if (colsRes.ok) {
-      const colData = await colsRes.json();
-      (colData.value || []).forEach(c => { colMap[c.displayName] = c.name; });
-      if (context) context.log('[RTB] Column map:', JSON.stringify(colMap));
+    if (!cache.colMap) {
+      const colsRes = await fetch(
+        `${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=50`,
+        { headers: authHdr }
+      );
+      cache.colMap = {};
+      if (colsRes.ok) {
+        const colData = await colsRes.json();
+        (colData.value || []).forEach(c => { cache.colMap[c.displayName] = c.name; });
+        if (context) context.log('[RTB] Cached column map:', JSON.stringify(cache.colMap));
+      }
     }
+    const colMap = cache.colMap || {};
 
     const labNum = (params.labId || '').split(' ')[0].trim();
     const fields = {
@@ -914,6 +920,7 @@ app.http('approve-scan', {
       // ── Write RCS and RTB in parallel ────────────────────────────────────────
       // Run RTB writes sequentially to prevent race condition on row finding
       const rtbResults = [];
+      const rtbCache = {}; // pricing/client/column metadata loaded once per approval
       for (const item of labItems) {
         // Match COA behavior: one Reports-to-be-Billed row per separately ordered
         // test/element while keeping the same base Lab ID and sample metadata.
@@ -945,7 +952,7 @@ app.http('approve-scan', {
             state:           state            || 'ME',
             zip:             zip ? String(zip).padStart(5,'0') : '',
             testName:        rowTest,
-          }, context).catch(e => ({ success:false, error:e.message }));
+          }, context, rtbCache).catch(e => ({ success:false, error:e.message }));
           rtbResults.push(rtbResult);
           context.log('[RTB]', item.baseId, rowTest, rtbResult.success ? `id ${rtbResult.id}` : rtbResult.error);
         }

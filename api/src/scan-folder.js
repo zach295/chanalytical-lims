@@ -366,16 +366,22 @@ app.http('scan-folder', {
         const file = toProcess[_fi];
         // Add delay between files to avoid Azure DI rate limiting
         if (_fi > 0) await new Promise(r => setTimeout(r, 2000));
+        const fileStartedAt = Date.now();
+        const timing = {};
         try {
           // Move to REVIEW immediately to prevent duplicate processing
+          const moveStartedAt = Date.now();
           await moveSpFile(file.id, SCAN_REVIEW, token);
+          timing.moveMs = Date.now() - moveStartedAt;
 
           // Download file as Buffer → base64 for Azure Doc Intel
+          const downloadStartedAt = Date.now();
           const buf  = await downloadSpFile(file.id, token);
+          timing.downloadMs = Date.now() - downloadStartedAt;
           const b64  = buf.toString('base64');
           const isPdf = /\.pdf$/i.test(file.name) || file.file?.mimeType === 'application/pdf';
 
-          // ── PRIMARY: Azure Document Intelligence + Claude Sonnet ─────────────
+          // ── PRIMARY: Azure Document Intelligence + Claude Haiku ─────────────
           let raw       = '';
           let azureText = '';
 
@@ -391,6 +397,7 @@ app.http('scan-folder', {
             context.log(`[scan] STEP 2 — Sending to Azure DI`);
 
             try {
+              const azureStartedAt = Date.now();
               // Start Azure analysis
               const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30`;
               const startRes   = await fetch(analyzeUrl, {
@@ -433,8 +440,9 @@ app.http('scan-folder', {
               context.log(`[scan] STEP 3 FAIL — Azure status: ${azureResult?.status || 'timeout'}`);
                 throw new Error(`Azure: ${azureResult?.status || 'timeout'}`);
               }
-              scanLog.push('OK Azure succeeded');
-              context.log(`[scan] STEP 3 OK — Azure succeeded`);
+              timing.azureMs = Date.now() - azureStartedAt;
+              scanLog.push(`OK Azure succeeded in ${timing.azureMs}ms`);
+              context.log(`[scan] STEP 3 OK — Azure succeeded in ${(timing.azureMs/1000).toFixed(1)}s`);
 
               // Build structured plain text from Azure output (page 1 only)
               const page1      = azureResult.analyzeResult?.pages?.[0];
@@ -564,7 +572,8 @@ app.http('scan-folder', {
                 context.log(`[scan] Added ${selMarks.length} selection marks to azureText`);
               }
 
-              // Claude Sonnet structures Azure's text into JSON
+              // Claude Haiku structures Azure's text into JSON; Sonnet is reserved for recovery
+              const claudeStartedAt = Date.now();
               const extractRes = await fetch('https://api.anthropic.com/v1/messages', {
                 method:  'POST',
                 headers: {
@@ -573,7 +582,7 @@ app.http('scan-folder', {
                   'anthropic-version': '2023-06-01',
                 },
                 body: JSON.stringify({
-                  model:      'claude-sonnet-4-6',
+                  model:      'claude-haiku-4-5',
                   max_tokens: 800,
                   system:     'You are a JSON extraction API. Output ONLY a valid JSON object. No markdown, no explanation.',
                   messages: [{ role: 'user', content:
@@ -583,10 +592,8 @@ app.http('scan-folder', {
 FORM TEXT:
 ${azureText}
 
-KNOWN CLIENTS (match exactly if name appears on form, else ""):
-${aliasCtx}
-
 RULES:
+- Extract only what is present in the OCR text. Do not infer or guess a known client identity; local matching happens after extraction.
 - formType: "business" if Report To section has a company/person name other than Chanalytical. "public" if Report To is blank or shows Chanalytical.
 - customer: BUSINESS — find the company name next to [CHECKED] in Report To section. If fill-in line, copy what's written. "" if blank/nothing marked. PUBLIC — person's name from Customer & Property Information "Name:" field. "" if blank.
 - location: BUSINESS=well owner street address (MIDDLE section). PUBLIC=customer street address (TOP section). Never use Report To address.
@@ -611,8 +618,9 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
               if (!extractRes.ok) throw new Error(`Claude extract: ${extractRes.status}`);
               const extractData = await extractRes.json();
               raw = extractData.content?.find(c => c.type === 'text')?.text || '';
-              scanLog.push(`Claude raw: ${raw.length}chars`);
-              context.log(`[scan] STEP 5 — Claude raw response length: ${raw.length}`);
+              timing.haikuMs = Date.now() - claudeStartedAt;
+              scanLog.push(`Haiku raw: ${raw.length}chars in ${timing.haikuMs}ms`);
+              context.log(`[scan] STEP 5 — Haiku response length: ${raw.length} in ${(timing.haikuMs/1000).toFixed(1)}s`);
               context.log(`[scan] STEP 5 — Claude preview: ${raw.slice(0, 300)}`);
 
               // Retry if primary extraction returned near-empty result
@@ -621,8 +629,12 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
                   const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
                   if (s >= 0 && e > s) {
                     const testParse = JSON.parse(raw.slice(s, e + 1));
-                    if (!testParse.customer && !testParse.tests?.length && testParse.confidence < 30) {
-                      context.log('[scan] STEP 5 — Primary extraction empty, retrying with minimal prompt');
+                    const weakExtraction = (Number(testParse.confidence || 0) < 50) &&
+                      !testParse.customer && !testParse.location &&
+                      !testParse.tests?.length && !testParse.individualElements?.length && !testParse.hasRadon;
+                    if (weakExtraction) {
+                      context.log('[scan] STEP 5 — Haiku extraction weak, retrying once with Sonnet');
+                      const sonnetStartedAt = Date.now();
                       const retryRes = await fetch('https://api.anthropic.com/v1/messages', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
@@ -649,8 +661,9 @@ Return ONLY: {"customer":"","tests":[],"hasRadon":false,"dateDrawn":"","location
                       if (retryRes.ok) {
                         const retryData = await retryRes.json();
                         const retryRaw = retryData.content?.find(c => c.type === 'text')?.text || '';
+                        timing.sonnetRetryMs = Date.now() - sonnetStartedAt;
                         if (retryRaw && retryRaw.includes('{')) raw = retryRaw;
-                        context.log('[scan] STEP 5 retry — result:', retryRaw.slice(0, 200));
+                        context.log(`[scan] STEP 5 Sonnet retry — ${(timing.sonnetRetryMs/1000).toFixed(1)}s — result:`, retryRaw.slice(0, 200));
                         scanLog.push(`retry raw: ${retryRaw.length}chars`);
                       }
                     }
@@ -905,6 +918,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
           };
           context.log('[scan] CUSTOMER DEBUG', JSON.stringify(matchDebug));
 
+          const queueStartedAt = Date.now();
           await writeToReviewQueue({
             Title:            reviewStatus,
             LabID:            '',
@@ -935,6 +949,11 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             WaterType:        ocr.waterType    || '',
           }, token);
 
+          timing.reviewQueueMs = Date.now() - queueStartedAt;
+          timing.totalMs = Date.now() - fileStartedAt;
+          scanLog.push(`TIMING move=${timing.moveMs||0}ms download=${timing.downloadMs||0}ms azure=${timing.azureMs||0}ms haiku=${timing.haikuMs||0}ms sonnetRetry=${timing.sonnetRetryMs||0}ms reviewQueue=${timing.reviewQueueMs||0}ms total=${timing.totalMs}ms`);
+          context.log(`[scan] TIMING ${file.name} — move ${(timing.moveMs||0)/1000}s | download ${(timing.downloadMs||0)/1000}s | Azure ${((timing.azureMs||0)/1000).toFixed(1)}s | Haiku ${((timing.haikuMs||0)/1000).toFixed(1)}s | Sonnet retry ${((timing.sonnetRetryMs||0)/1000).toFixed(1)}s | Queue ${((timing.reviewQueueMs||0)/1000).toFixed(1)}s | TOTAL ${(timing.totalMs/1000).toFixed(1)}s`);
+
           results.push({
             fileName:     file.name,
             barcodeId:    ocr.barcodeId || '',
@@ -942,6 +961,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             client:       client?.clientName || ocr.customer,
             tests,
             confidence:   ocr.confidence,
+            timing,
             ocrExtracted: { phone: ocr.phone, billingAddress: ocr.billingAddress, email: ocr.email, customer: ocr.customer },
             ocrTextSnippet: azureText.slice(0, 800), // first 800 chars for debugging
           });
