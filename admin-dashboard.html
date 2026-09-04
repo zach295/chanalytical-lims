@@ -288,14 +288,6 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
-    <div id="scan-timing-panel" style="display:none;background:var(--white);border:1px solid var(--border);border-left:4px solid var(--teal);border-radius:8px;padding:12px 16px;margin-bottom:16px;box-shadow:var(--shadow);">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
-        <div style="font-size:13px;font-weight:700;color:var(--navy);">⏱️ Last COC Scan Timing</div>
-        <div id="scan-timing-total" style="font-size:16px;font-weight:700;color:var(--teal);"></div>
-      </div>
-      <div id="scan-timing-detail" style="font-size:12px;color:var(--slate);margin-top:7px;line-height:1.7;"></div>
-    </div>
-
     <div class="summary-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">
       <div class="stat-card green" style="padding:16px 20px;">
         <div class="stat-label">Approved Today</div>
@@ -4950,27 +4942,6 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentOcrFile = null;
   let currentOcrExtraction = null;
 
-  function showScanTiming(result) {
-    const panel = document.getElementById('scan-timing-panel');
-    const totalEl = document.getElementById('scan-timing-total');
-    const detailEl = document.getElementById('scan-timing-detail');
-    if (!panel || !result?.timing) return;
-    const t = result.timing;
-    const sec = ms => ((Number(ms)||0)/1000).toFixed(1) + 's';
-    const aiMs = (Number(t.haikuMs)||0) + (Number(t.sonnetRetryMs)||0);
-    const spMs = (Number(t.moveMs)||0) + (Number(t.downloadMs)||0) + (Number(t.reviewQueueMs)||0);
-    totalEl.textContent = `Total ${sec(t.totalMs)}`;
-    detailEl.innerHTML = [
-      `<strong>Azure OCR:</strong> ${sec(t.azureMs)}`,
-      `<strong>AI extraction:</strong> ${sec(aiMs)}${t.sonnetRetryMs ? ' (includes Sonnet recovery)' : ' (Haiku)'}`,
-      `<strong>SharePoint:</strong> ${sec(spMs)}`,
-      `<strong>Move:</strong> ${sec(t.moveMs)}`,
-      `<strong>Download:</strong> ${sec(t.downloadMs)}`,
-      `<strong>Queue write:</strong> ${sec(t.reviewQueueMs)}`
-    ].join(' &nbsp;·&nbsp; ');
-    panel.style.display = 'block';
-  }
-
   async function triggerScanNow(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
@@ -4981,8 +4952,6 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
-      const timedResult = (data.results || []).find(r => r && r.timing);
-      if (timedResult) showScanTiming(timedResult);
       if (found > 0) {
         // scan-folder does not return until the Review Queue item has been written.
         // Reload immediately; the old polling logic captured its baseline AFTER the
