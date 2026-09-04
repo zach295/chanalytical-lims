@@ -1,0 +1,15 @@
+name: Inspect All Radon Writes
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-all-radon-writes.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo '=== RCS references ==='
+          grep -RIn --exclude-dir=.git -E 'RCS_|Radon Control|writeRadon|updateRadon' . || true
+          echo '=== dateDrawn references near approve-scan call ==='
+          grep -RIn --exclude-dir=.git -E 'dateDrawn|SampleDate' api/src | head -n 300 || true
