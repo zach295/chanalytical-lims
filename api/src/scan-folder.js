@@ -394,10 +394,10 @@ app.http('scan-folder', {
         const fileStartedAt = Date.now();
         const timing = {};
         try {
-          // Move to REVIEW immediately to prevent duplicate processing
-          const moveStartedAt = Date.now();
-          await moveSpFile(file.id, SCAN_REVIEW, token);
-          timing.moveMs = Date.now() - moveStartedAt;
+          // Do NOT move the file before OCR. Some SharePoint/scanner flows can race
+          // with an early move and return the file to Incoming. Duplicate processing is
+          // already prevented by Review Queue FileID tracking, so process it in place first.
+          timing.moveMs = 0;
 
           // Download file as Buffer → base64 for Azure Doc Intel
           const downloadStartedAt = Date.now();
@@ -975,6 +975,17 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
           }, token);
 
           timing.reviewQueueMs = Date.now() - queueStartedAt;
+
+          // Only after the Review Queue row exists, move the physical scan to Review.
+          // If SharePoint move/propagation fails, keep the queue row and continue: the
+          // FileID remains valid and queuedIds prevents the Incoming copy being reprocessed.
+          const moveStartedAt = Date.now();
+          try {
+            await moveSpFile(file.id, SCAN_REVIEW, token);
+          } catch (moveErr) {
+            context.log(`[scan] Review move deferred for ${file.name}: ${moveErr.message}`);
+          }
+          timing.moveMs = Date.now() - moveStartedAt;
           timing.totalMs = Date.now() - fileStartedAt;
           scanLog.push(`TIMING move=${timing.moveMs||0}ms download=${timing.downloadMs||0}ms azure=${timing.azureMs||0}ms haiku=${timing.haikuMs||0}ms sonnetRetry=${timing.sonnetRetryMs||0}ms reviewQueue=${timing.reviewQueueMs||0}ms total=${timing.totalMs}ms`);
           context.log(`[scan] TIMING ${file.name} — move ${(timing.moveMs||0)/1000}s | download ${(timing.downloadMs||0)/1000}s | Azure ${((timing.azureMs||0)/1000).toFixed(1)}s | Haiku ${((timing.haikuMs||0)/1000).toFixed(1)}s | Sonnet retry ${((timing.sonnetRetryMs||0)/1000).toFixed(1)}s | Queue ${((timing.reviewQueueMs||0)/1000).toFixed(1)}s | TOTAL ${(timing.totalMs/1000).toFixed(1)}s`);
