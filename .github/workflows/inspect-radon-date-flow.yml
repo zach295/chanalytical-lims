@@ -1,0 +1,28 @@
+name: Inspect Radon Date Flow
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-radon-date-flow.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          for fn in ['admin-dashboard.html','api/src/approve-scan.js','api/src/update-sample.js']:
+              s=Path(fn).read_text()
+              print('\n###',fn)
+              for needle in ['approveScan(', 'SampleDate', 'dateDrawn', 'Radon Water', 'RCS_', 'updateRadonSheet']:
+                  print('\n===',needle,'===')
+                  start=0
+                  n=0
+                  while True:
+                      i=s.find(needle,start)
+                      if i<0: break
+                      print(s[max(0,i-1200):i+2600])
+                      start=i+len(needle)
+                      n+=1
+                      if n>=8: break
+          PY
