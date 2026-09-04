@@ -24,6 +24,7 @@ const modules = [
   './patch-report-cell',
   './control-sheet',
   './update-sample',
+  './sample-admin',
   './send-report',
   './render-report-pdf',
   './update-inventory',
