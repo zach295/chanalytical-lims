@@ -1,0 +1,57 @@
+name: Fix Review Test Handoff
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-review-test-handoff.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('api/src/scan-folder.js')
+          s=p.read_text()
+          old="TestSelections:   tests.join(', '),"
+          new="TestSelections:   tests.join(' | '),"
+          if old not in s:
+              raise SystemExit('scan-folder TestSelections writer not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('api/src/get-scan-queue.js')
+          s=p.read_text()
+          old="""        tests:            r.TestSelections
+          ? String(r.TestSelections).split(/\\s*(?:\\||;)\\s*/).map(t => t.trim()).filter(Boolean)
+          : [],
+"""
+          new="""        tests:            r.TestSelections
+          ? (() => {
+              const raw = String(r.TestSelections).trim();
+              if (!raw) return [];
+              if (/[|;]/.test(raw)) return raw.split(/\\s*(?:\\||;)\\s*/).map(t => t.trim()).filter(Boolean);
+              // Backward compatibility for rows written before pipe-delimited storage.
+              // Keep commas that are part of test names such as "Iron, Total".
+              return raw.split(/,\\s+(?!(?:Total|Speciation)\\b)/i).map(t => t.trim()).filter(Boolean);
+            })()
+          : [],
+"""
+          if old not in s:
+              raise SystemExit('get-scan-queue tests parser not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+      - run: |
+          node --check api/src/scan-folder.js
+          node --check api/src/get-scan-queue.js
+          git diff --check
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add api/src/scan-folder.js api/src/get-scan-queue.js
+          git commit -m "Fix Review Queue test data handoff"
+          git push
