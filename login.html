@@ -118,7 +118,7 @@
       const res = await fetch('/api/users-manage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'setpw', email, newPassword: pw }),
+        body: JSON.stringify({ action: 'setpw', email, password: pw }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);

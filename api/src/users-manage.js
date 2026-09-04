@@ -188,7 +188,9 @@ app.http('users-manage', {
 
       if (action === 'setpw') {
         // Set a new password for a user (admin action or first-time setup)
-        const { email: pwEmail, password: newPw } = body;
+        const pwEmail = body.email;
+        const newPw = body.password || body.newPassword || '';
+        if (newPw.length < 6) return { status: 400, body: JSON.stringify({ error: 'Password must be at least 6 characters.' }) };
         const user = await findUserByEmail(pwEmail);
         if (!user) return { status: 404, body: JSON.stringify({ error: 'User not found' }) };
         const hashed = hashPassword(newPw || '');

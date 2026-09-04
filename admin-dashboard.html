@@ -2526,6 +2526,24 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!pw) { if(err){err.className='msg-inline err';err.textContent='Enter your LIMS password.';} return; }
     if (btn) { btn.disabled=true; btn.textContent='Verifying...'; }
     try {
+      // Verify through the same authentication path used by the normal LIMS login.
+      // This also supports accounts whose last forced password change was saved locally
+      // by the older reset flow before the server-side password field was corrected.
+      const loginResult = await Auth.loginAsync(s?.email || '', pw);
+      if (!loginResult?.success) throw new Error(loginResult?.error || 'Incorrect LIMS password.');
+      const verifiedRoles = String(loginResult.user?.role || '').split(',').map(v=>v.trim());
+      if (!verifiedRoles.includes('admin')) throw new Error('This account does not have Admin access.');
+
+      // Keep the Users-list password hash synchronized with the password that just
+      // successfully authenticated in the LIMS. This repairs older forced-reset accounts.
+      const syncRes = await fetch('/api/users-manage', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ action:'setpw', email:s?.email || '', password:pw, updatedBy:s?.name || s?.email || 'Admin' })
+      });
+      const syncData = await syncRes.json().catch(()=>({}));
+      if (!syncRes.ok || !syncData.success) throw new Error(syncData.error || 'Could not synchronize the LIMS password.');
+
+      // Now issue the short-lived server-side Admin token.
       const res = await fetch('/api/sample-admin', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({ action:'verify', email:s?.email || '', password:pw })
