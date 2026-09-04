@@ -2524,9 +2524,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!container) return;
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
-      await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
-      const res  = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache: 'no-store' });
+      // Load the Review Queue first. Client-list refresh is helpful for dropdowns,
+      // but it must never block scanned COCs from appearing for review.
+      const queuePromise = fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache: 'no-store' });
+      const clientsPromise = Promise.resolve()
+        .then(() => refreshClientList())
+        .catch(e => console.warn('[queue] client refresh failed:', e?.message || e));
+      const res = await queuePromise;
       const data = await res.json();
+      await clientsPromise;
       if (!res.ok) throw new Error(data.error || 'Failed to load Review Queue');
       reviewQueueData = data;
       const scans = (data.pending || []).map(r => ({
