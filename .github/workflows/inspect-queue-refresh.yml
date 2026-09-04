@@ -1,0 +1,23 @@
+name: Inspect Queue Refresh
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-queue-refresh.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show queue refresh functions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('admin-dashboard.html').read_text()
+          for term in ['function refreshQueueSafe','async function refreshQueueSafe','async function triggerScanNow','function triggerScanNow','loadReviewQueue','refreshQueue']:
+              i=s.find(term)
+              if i>=0:
+                  print('\n###', term, '###')
+                  print(s[i:i+7000])
+          PY
