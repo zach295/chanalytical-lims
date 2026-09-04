@@ -1,0 +1,24 @@
+name: Inspect Review Date Input
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-review-date-input.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('admin-dashboard.html').read_text()
+          for needle in ["const g =", "dateDrawn`,", "-dateDrawn", "dateDrawn'", 'Sample Date']:
+              print('\n###', needle)
+              start=0; n=0
+              while True:
+                  i=s.find(needle,start)
+                  if i<0: break
+                  print(s[max(0,i-1800):i+3000])
+                  start=i+len(needle); n+=1
+                  if n>=12: break
+          PY
