@@ -1,0 +1,28 @@
+name: Inspect Scan Response
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-scan-response.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for fn in ['api/src/scan-folder.js','api/src/get-scan-queue.js','admin-dashboard.html']:
+              s=Path(fn).read_text()
+              print('\n===== ',fn,' =====')
+              if fn.endswith('scan-folder.js'):
+                  print(s[-9000:])
+              elif fn.endswith('get-scan-queue.js'):
+                  print(s)
+              else:
+                  for term in ['async function loadReviewQueue','async function triggerScanNow']:
+                      i=s.find(term)
+                      if i>=0: print(s[i:i+10000])
+          PY
