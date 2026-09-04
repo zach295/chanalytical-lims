@@ -1,0 +1,32 @@
+name: Fix Scan Move Reliability
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-scan-move-reliability.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply patch
+        run: python .github/scripts/fix_scan_move_reliability.py
+      - name: Validate
+        run: |
+          git diff --check
+          node --check api/src/scan-folder.js
+          grep -q "Could not move scan into Review after 3 attempts" api/src/scan-folder.js
+          grep -q "move verification failed" api/src/scan-folder.js
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/src/scan-folder.js
+          git commit -m "Verify scan moves into Review before OCR"
+          git push
