@@ -1,0 +1,22 @@
+name: Inspect Approve Body
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-approve-body.yml'
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('admin-dashboard.html').read_text()
+          needle="fetch('/api/approve-scan'"
+          start=0
+          while True:
+              i=s.find(needle,start)
+              if i<0: break
+              print(s[max(0,i-1800):i+5000])
+              start=i+len(needle)
+          PY
