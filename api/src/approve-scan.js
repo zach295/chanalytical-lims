@@ -37,24 +37,23 @@ async function getSheetsToken() {
 }
 
 async function writeToGoogleSheet(rows, context) {
-  try {
-    const token = await getSheetsToken();
-    const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
-    const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: rows }),
-      }
-    );
-    if (!res.ok) {
-      const err = await res.text();
-      context.log('[Sheets] Write failed:', err.slice(0, 200));
-    } else {
-      context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet');
+  const token = await getSheetsToken();
+  const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: rows }),
     }
-  } catch(e) { context.log('[Sheets] Error (non-fatal):', e.message); }
+  );
+  if (!res.ok) {
+    const err = await res.text().catch(()=>'');
+    throw new Error(`Google Sheets write failed (${res.status}): ${err.slice(0,300)}`);
+  }
+  const data = await res.json().catch(()=>({}));
+  context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet', data?.updates?.updatedRange || '');
+  return { success:true, updatedRange:data?.updates?.updatedRange || '', rows:rows.length };
 }
 
 // Module-level cache for list IDs (avoids repeated lookups per approval)
@@ -1305,6 +1304,8 @@ app.http('approve-scan', {
       }
 
       // ── Write to Google Sheet ────────────────────────────────────────────────
+      let coaSheetWarning = '';
+      let coaSheetStatus = 'skipped';
       try {
         const now = new Date();
         const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -1352,13 +1353,19 @@ app.http('approve-scan', {
             ]);
           });
         if (sheetRows.length) {
-          // Fire-and-forget with 8s timeout — never blocks billing or activity log
-          Promise.race([
+          // Await the write before returning from the Azure Function. Fire-and-forget work
+          // can be terminated as soon as the request completes, which caused intermittent/missed COA rows.
+          const sheetResult = await Promise.race([
             writeToGoogleSheet(sheetRows, context),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Sheets timeout')), 8000)),
-          ]).catch(e => context.log('[Sheets] Non-fatal:', e.message));
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Google Sheets write timed out after 12 seconds')), 12000)),
+          ]);
+          coaSheetStatus = `written:${sheetResult.rows}`;
         }
-      } catch(e) { context.log('[Sheets] Row build error:', e.message); }
+      } catch(e) {
+        coaSheetStatus = 'failed';
+        coaSheetWarning = e.message || 'Google Sheets write failed';
+        context.log('[Sheets] COA write failed:', coaSheetWarning);
+      }
 
       // ── Write Approval to Activity Log ────────────────────────────────────────
       try {
@@ -1373,6 +1380,7 @@ app.http('approve-scan', {
           `Customer: ${formalName || customer || '—'}`,
           `Written to: Archived Intake | Accession Log | Reports to be Billed | Results Cache`,
           `COA scan archived | Review Queue row deleted`,
+          `COA Google Sheet: ${coaSheetStatus}${coaSheetWarning ? ' — ' + coaSheetWarning : ''}`,
         ].join('\n');
         await createItem('Activity Log', {
           Title: `${_ld} ${labItems[0]?.baseId||''}`,
@@ -1393,6 +1401,8 @@ app.http('approve-scan', {
           formalName,
           archiveNote: fileId ? 'File moved to Archive' : 'No file to archive',
           csWarning:  csWarning || undefined,
+          coaSheetWarning: coaSheetWarning || undefined,
+          coaSheetStatus,
         },
       };
 
