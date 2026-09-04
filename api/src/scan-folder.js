@@ -955,6 +955,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
           context.log(`[scan] TIMING ${file.name} — move ${(timing.moveMs||0)/1000}s | download ${(timing.downloadMs||0)/1000}s | Azure ${((timing.azureMs||0)/1000).toFixed(1)}s | Haiku ${((timing.haikuMs||0)/1000).toFixed(1)}s | Sonnet retry ${((timing.sonnetRetryMs||0)/1000).toFixed(1)}s | Queue ${((timing.reviewQueueMs||0)/1000).toFixed(1)}s | TOTAL ${(timing.totalMs/1000).toFixed(1)}s`);
 
           results.push({
+            fileId:       file.id,
             fileName:     file.name,
             barcodeId:    ocr.barcodeId || '',
             barcodeMatch: !!barcodeMatch,
