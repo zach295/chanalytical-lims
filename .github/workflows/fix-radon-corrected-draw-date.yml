@@ -1,0 +1,73 @@
+name: Fix Radon Corrected Draw Date
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-radon-corrected-draw-date.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('api/src/update-sample.js')
+          s=p.read_text()
+          old="async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context) {"
+          new="async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenArg, context, updates = {}) {"
+          if old not in s: raise SystemExit('signature anchor not found')
+          s=s.replace(old,new,1)
+          old2="""    await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
+      { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) });
+    if (context) context.log(`[radonSheet] Updated A${targetRow}: ${newLabId}`);
+    return { updated: true, row: targetRow };
+"""
+          new2="""    // Always keep the Lab ID in sync. If the sample correction changed the
+    // collection date/time, update the Radon Control Sheet E/F cells too.
+    await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
+      { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) });
+
+    const fmtRadonDate = (value) => {
+      const v = String(value || '').trim();
+      if (!v) return '';
+      let m = v.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      if (m) return `${m[2]}/${m[3]}/${m[1]}`;
+      m = v.match(/^(\\d{1,2})[-\\/](\\d{1,2})[-\\/](\\d{2})$/);
+      if (m) return `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/20${m[3]}`;
+      m = v.match(/^(\\d{1,2})[-\\/](\\d{1,2})[-\\/](\\d{4})$/);
+      if (m) return `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/${m[3]}`;
+      return v;
+    };
+
+    if (updates.dateDrawn !== undefined) {
+      const drawDate = fmtRadonDate(updates.dateDrawn);
+      await fetch(`${wbBase}/worksheets/${wsId}/range(address='E${targetRow}')`,
+        { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawDate]] }) });
+      if (context) context.log(`[radonSheet] Updated E${targetRow} draw date: ${drawDate}`);
+    }
+    if (updates.timeDrawn !== undefined) {
+      const drawTime = String(updates.timeDrawn || '').trim();
+      await fetch(`${wbBase}/worksheets/${wsId}/range(address='F${targetRow}')`,
+        { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawTime]] }) });
+      if (context) context.log(`[radonSheet] Updated F${targetRow} draw time: ${drawTime}`);
+    }
+    return { updated: true, row: targetRow };
+"""
+          if old2 not in s: raise SystemExit('radon update block anchor not found')
+          s=s.replace(old2,new2,1)
+          old3="const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context);"
+          new3="const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context, updates);"
+          if old3 not in s: raise SystemExit('call anchor not found')
+          s=s.replace(old3,new3,1)
+          p.write_text(s)
+          PY
+      - run: git diff --check
+      - run: node --check api/src/update-sample.js
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add api/src/update-sample.js
+          git commit -m "Update radon draw date during sample correction"
+          git push
