@@ -301,28 +301,91 @@ app.http('send-report', {
         }
       } catch(e) { context.log('[send-report] Archive save (non-fatal):', e.message); }
 
-      // Write Report Date to Reports to be Billed when report is sent
+      // Write Report Date to every matching Reports to be Billed row when report is sent.
+      // Billing rows are keyed by BASE Lab ID, even when the report is sent using a suffixed Lab ID.
+      let billingDateWarning = null;
       try {
         const siteId4   = process.env.SP_SITE_ID;
+        const reportBaseId4 = String(labId).match(/(\d{6}-\d{3})/)?.[1] || String(labId).split(' ')[0].trim();
         const now4      = new Date();
         const etNow4    = new Date(now4.toLocaleString('en-US', { timeZone: 'America/New_York' }));
         const pad4      = n => String(n).padStart(2, '0');
         const reportDate4 = `${pad4(etNow4.getMonth()+1)}/${pad4(etNow4.getDate())}/${String(etNow4.getFullYear()).slice(-2)}`;
+
+        // Resolve the list and the actual internal name of the "Report Date" column.
+        const listsRes4 = await fetch(`${GRAPH}/sites/${siteId4}/lists?$select=id,displayName&$top=100`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        if (!listsRes4.ok) throw new Error(`Could not resolve Reports to be Billed list (${listsRes4.status})`);
+        const listsData4 = await listsRes4.json();
+        const rtbList4 = (listsData4.value || []).find(l => l.displayName === 'Reports to be Billed');
+        if (!rtbList4?.id) throw new Error('Reports to be Billed list not found');
+
+        const colsRes4 = await fetch(`${GRAPH}/sites/${siteId4}/lists/${rtbList4.id}/columns?$select=name,displayName&$top=100`,
+          { headers: { Authorization: `Bearer ${token}` } });
+        if (!colsRes4.ok) throw new Error(`Could not resolve Reports to be Billed columns (${colsRes4.status})`);
+        const colsData4 = await colsRes4.json();
+        const reportDateCol4 = (colsData4.value || []).find(c => String(c.displayName || '').trim().toLowerCase() === 'report date');
+        if (!reportDateCol4?.name) throw new Error('Report Date column not found in Reports to be Billed');
+
+        // Read the list and match all rows whose Title is the base Lab ID. This handles
+        // multi-element samples, which can have multiple billing rows for one Lab ID.
         const rtbSearch4 = await fetch(
-          `${GRAPH}/sites/${siteId4}/lists/Reports to be Billed/items?$expand=fields($select=id,Title)&$filter=fields/Title eq '${labId}'&$top=5`,
+          `${GRAPH}/sites/${siteId4}/lists/${rtbList4.id}/items?$expand=fields($select=Title)&$top=2000`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (rtbSearch4.ok) {
-          const rtbData4 = await rtbSearch4.json();
-          for (const item of (rtbData4.value || [])) {
-            await fetch(
-              `${GRAPH}/sites/${siteId4}/lists/Reports to be Billed/items/${item.id}/fields`,
-              { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ Report_x0020_Date: reportDate4 }) }
-            ).catch(() => {});
+        if (!rtbSearch4.ok) throw new Error(`Reports to be Billed lookup failed (${rtbSearch4.status})`);
+        const rtbData4 = await rtbSearch4.json();
+        const matches4 = (rtbData4.value || []).filter(item =>
+          String(item.fields?.Title || '').split(' ')[0].trim() === reportBaseId4
+        );
+        context.log(`[RTB Report Date] ${reportBaseId4} — found ${matches4.length} row(s); field=${reportDateCol4.name}`);
+
+        let updated4 = 0;
+        const failed4 = [];
+        for (const item of matches4) {
+          const patchRes4 = await fetch(
+            `${GRAPH}/sites/${siteId4}/lists/${rtbList4.id}/items/${item.id}/fields`,
+            { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ [reportDateCol4.name]: reportDate4 }) }
+          );
+          if (patchRes4.ok) {
+            updated4++;
+            context.log(`[RTB Report Date] Updated row ${item.id} to ${reportDate4}`);
+          } else {
+            const err4 = await patchRes4.text().catch(()=>'');
+            failed4.push(`${item.id}:${patchRes4.status}`);
+            context.log(`[RTB Report Date] Row ${item.id} failed (${patchRes4.status}): ${err4.slice(0,200)}`);
           }
         }
-      } catch(e) { context.log('[send-report] Report Date billing update (non-fatal):', e.message); }
+
+        if (!matches4.length) {
+          billingDateWarning = `No Reports to be Billed rows found for ${reportBaseId4}`;
+        } else if (failed4.length) {
+          billingDateWarning = `Report Date updated on ${updated4}/${matches4.length} billing row(s); failed rows: ${failed4.join(', ')}`;
+        }
+
+        // Keep the operational trace in the permanent Activity Log as requested.
+        const billingAudit = await writeActivityLog({
+          labId: reportBaseId4,
+          type: billingDateWarning ? 'Billing Report Date Warning' : 'Billing Report Date Updated',
+          notes: billingDateWarning
+            ? `${billingDateWarning} | Report Date: ${reportDate4} | Sent report Lab ID: ${labId}`
+            : `Report Date ${reportDate4} written to ${updated4} Reports to be Billed row(s) | Sent report Lab ID: ${labId}`,
+          by: body.authorizedBy || 'Lab Staff',
+          context,
+        });
+        if (!billingAudit.success) context.log('[RTB Report Date] Activity Log warning:', billingAudit.error || 'unknown error');
+      } catch(e) {
+        billingDateWarning = e.message;
+        context.log('[send-report] Report Date billing update (non-fatal):', e.message);
+        await writeActivityLog({
+          labId,
+          type: 'Billing Report Date Warning',
+          notes: `Report sent, but Reports to be Billed Report Date update failed: ${e.message}`,
+          by: body.authorizedBy || 'Lab Staff',
+          context,
+        }).catch(() => {});
+      }
 
       // Results Cache kept as permanent record for report regeneration
 
@@ -344,6 +407,7 @@ app.http('send-report', {
         attachments: attachments.map(a => a.name),
         hasCOC:      attachments.length > 1,
         auditWarning,
+        billingDateWarning,
       }};
 
     } catch (err) {
