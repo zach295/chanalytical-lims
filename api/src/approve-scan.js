@@ -37,23 +37,55 @@ async function getSheetsToken() {
 }
 
 async function writeToGoogleSheet(rows, context) {
-  const token = await getSheetsToken();
-  const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: rows }),
+  const expectedBaseIds = [...new Set(rows.map(r => String(r?.[7] || '').match(/(\d{6}-\d{3})/)?.[1]).filter(Boolean))];
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const attemptStart = Date.now();
+    try {
+      const authStart = Date.now();
+      const token = await getSheetsToken();
+      context.log(`[Sheets][timing] attempt ${attempt} auth: ${Date.now()-authStart}ms`);
+
+      const appendStart = Date.now();
+      const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
+      const res = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values: rows }),
+        }
+      );
+      context.log(`[Sheets][timing] attempt ${attempt} append: ${Date.now()-appendStart}ms status=${res.status}`);
+      if (!res.ok) {
+        const err = await res.text().catch(()=>'');
+        throw new Error(`Google Sheets write failed (${res.status}): ${err.slice(0,300)}`);
+      }
+      const data = await res.json().catch(()=>({}));
+
+      const verifyStart = Date.now();
+      const verifyRange = encodeURIComponent(`${SHEETS_TAB}!H1:H`);
+      const verifyRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${verifyRange}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      context.log(`[Sheets][timing] attempt ${attempt} verify-read: ${Date.now()-verifyStart}ms status=${verifyRes.status}`);
+      if (!verifyRes.ok) throw new Error(`Google Sheets verification read failed (${verifyRes.status})`);
+      const verifyVals = (await verifyRes.json()).values || [];
+      const seen = new Set(verifyVals.map(r => String(r?.[0] || '').match(/(\d{6}-\d{3})/)?.[1]).filter(Boolean));
+      const missing = expectedBaseIds.filter(id => !seen.has(id));
+      if (missing.length) throw new Error(`Google Sheets verification missing Lab ID(s): ${missing.join(', ')}`);
+
+      context.log(`[Sheets] Wrote and verified ${rows.length} row(s) to Google Sheet ${data?.updates?.updatedRange || ''} in ${Date.now()-attemptStart}ms`);
+      return { success:true, updatedRange:data?.updates?.updatedRange || '', rows:rows.length, attempt };
+    } catch (e) {
+      lastError = e;
+      context.log(`[Sheets] attempt ${attempt}/3 failed after ${Date.now()-attemptStart}ms: ${e.message}`);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
     }
-  );
-  if (!res.ok) {
-    const err = await res.text().catch(()=>'');
-    throw new Error(`Google Sheets write failed (${res.status}): ${err.slice(0,300)}`);
   }
-  const data = await res.json().catch(()=>({}));
-  context.log('[Sheets] Wrote', rows.length, 'row(s) to Google Sheet', data?.updates?.updatedRange || '');
-  return { success:true, updatedRange:data?.updates?.updatedRange || '', rows:rows.length };
+  throw lastError || new Error('Google Sheets write failed after 3 attempts');
 }
 
 // Module-level cache for list IDs (avoids repeated lookups per approval)
@@ -1441,13 +1473,10 @@ app.http('approve-scan', {
             ]);
           });
         if (sheetRows.length) {
-          // Await the write before returning from the Azure Function. Fire-and-forget work
-          // can be terminated as soon as the request completes, which caused intermittent/missed COA rows.
-          const sheetResult = await Promise.race([
-            writeToGoogleSheet(sheetRows, context),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Google Sheets write timed out after 12 seconds')), 12000)),
-          ]);
-          coaSheetStatus = `written:${sheetResult.rows}`;
+          // Fully await the Google write. The helper handles retries and verifies that
+          // the expected Lab IDs are present in column H before approval returns.
+          const sheetResult = await writeToGoogleSheet(sheetRows, context);
+          coaSheetStatus = `written:${sheetResult.rows}:attempt${sheetResult.attempt}`;
         }
       } catch(e) {
         coaSheetStatus = 'failed';
