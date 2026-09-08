@@ -428,7 +428,7 @@ app.http('send-report', {
         const now5 = new Date();
         const etNow5 = new Date(now5.toLocaleString('en-US', { timeZone: 'America/New_York' }));
         const pad5 = n => String(n).padStart(2, '0');
-        const reportDate5 = `${pad5(etNow5.getMonth()+1)}/${pad5(etNow5.getDate())}/${String(etNow5.getFullYear()).slice(-2)}`;
+        const reportDate5 = `${pad5(etNow5.getMonth()+1)}-${pad5(etNow5.getDate())}-${String(etNow5.getFullYear()).slice(-2)}`;
         const sheetsToken5 = await getSheetsToken();
 
         // Read H (Lab ID) so we can identify every COA row for this sample.
@@ -457,7 +457,7 @@ app.http('send-report', {
           {
             method: 'POST',
             headers: { Authorization: `Bearer ${sheetsToken5}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: updateData5 }),
+            body: JSON.stringify({ valueInputOption: 'RAW', data: updateData5 }),
           }
         );
         if (!updateRes5.ok) {

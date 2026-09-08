@@ -37,7 +37,10 @@ async function getSheetsToken() {
 }
 
 async function writeToGoogleSheet(rows, context) {
-  const expectedBaseIds = [...new Set(rows.map(r => String(r?.[7] || '').match(/(\d{6}-\d{3})/)?.[1]).filter(Boolean))];
+  // Identify each expected COA row by Lab ID + displayed test name. This makes
+  // retries idempotent if Google accepted a write but the verification call failed.
+  const rowKey = row => `${String(row?.[7] || '').trim()}|${String(row?.[12] || '').trim()}`;
+  const expectedKeys = rows.map(rowKey);
   let lastError = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -47,38 +50,104 @@ async function writeToGoogleSheet(rows, context) {
       const token = await getSheetsToken();
       context.log(`[Sheets][timing] attempt ${attempt} auth: ${Date.now()-authStart}ms`);
 
-      const appendStart = Date.now();
-      const range = encodeURIComponent(`${SHEETS_TAB}!A:N`);
-      const res = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values: rows }),
-        }
+      // Get the actual row count so we can use existing blank rows rather than
+      // appending/inserting new rows at the bottom of the sheet.
+      const metaStart = Date.now();
+      const metaRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}?fields=sheets(properties(title,gridProperties(rowCount)))`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      context.log(`[Sheets][timing] attempt ${attempt} append: ${Date.now()-appendStart}ms status=${res.status}`);
-      if (!res.ok) {
-        const err = await res.text().catch(()=>'');
-        throw new Error(`Google Sheets write failed (${res.status}): ${err.slice(0,300)}`);
-      }
-      const data = await res.json().catch(()=>({}));
+      if (!metaRes.ok) throw new Error(`Google Sheets metadata lookup failed (${metaRes.status})`);
+      const meta = await metaRes.json();
+      const sheetMeta = (meta.sheets || []).find(sh => sh.properties?.title === SHEETS_TAB);
+      const rowCount = Math.max(Number(sheetMeta?.properties?.gridProperties?.rowCount || 1000), 2);
+      context.log(`[Sheets][timing] attempt ${attempt} metadata: ${Date.now()-metaStart}ms rows=${rowCount}`);
 
+      // Read the current working grid. A completely blank A:N row is available.
+      const locateStart = Date.now();
+      const gridRange = encodeURIComponent(`${SHEETS_TAB}!A1:N${rowCount}`);
+      const gridRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${gridRange}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      context.log(`[Sheets][timing] attempt ${attempt} locate-read: ${Date.now()-locateStart}ms status=${gridRes.status}`);
+      if (!gridRes.ok) throw new Error(`Google Sheets row lookup failed (${gridRes.status})`);
+      const gridVals = (await gridRes.json()).values || [];
+
+      const existingCounts = new Map();
+      for (let r = 1; r < gridVals.length; r++) {
+        const key = `${String(gridVals[r]?.[7] || '').trim()}|${String(gridVals[r]?.[12] || '').trim()}`;
+        if (key !== '|') existingCounts.set(key, (existingCounts.get(key) || 0) + 1);
+      }
+
+      // Only write expected rows that do not already exist from a prior attempt.
+      const usedCounts = new Map();
+      const missingRows = [];
+      for (let i = 0; i < rows.length; i++) {
+        const key = expectedKeys[i];
+        const already = existingCounts.get(key) || 0;
+        const used = usedCounts.get(key) || 0;
+        if (used < already) usedCounts.set(key, used + 1);
+        else missingRows.push(rows[i]);
+      }
+
+      if (missingRows.length) {
+        const emptyRowNums = [];
+        for (let rowNum = 2; rowNum <= rowCount && emptyRowNums.length < missingRows.length; rowNum++) {
+          const vals = gridVals[rowNum - 1] || [];
+          const isEmpty = Array.from({ length: 14 }, (_, c) => String(vals[c] || '').trim()).every(v => !v);
+          if (isEmpty) emptyRowNums.push(rowNum);
+        }
+        if (emptyRowNums.length < missingRows.length) {
+          throw new Error(`COA sheet does not have enough existing empty rows (${emptyRowNums.length} available, ${missingRows.length} needed)`);
+        }
+
+        const writeStart = Date.now();
+        const writeData = missingRows.map((row, i) => ({
+          range: `${SHEETS_TAB}!A${emptyRowNums[i]}:N${emptyRowNums[i]}`,
+          values: [row],
+        }));
+        const writeRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values:batchUpdate`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            // RAW preserves ZIP leading zeroes and exact MM-DD-YY text formatting.
+            body: JSON.stringify({ valueInputOption: 'RAW', data: writeData }),
+          }
+        );
+        context.log(`[Sheets][timing] attempt ${attempt} write existing rows ${emptyRowNums.join(',')}: ${Date.now()-writeStart}ms status=${writeRes.status}`);
+        if (!writeRes.ok) {
+          const err = await writeRes.text().catch(()=> '');
+          throw new Error(`Google Sheets write failed (${writeRes.status}): ${err.slice(0,300)}`);
+        }
+      } else {
+        context.log(`[Sheets] attempt ${attempt}: all ${rows.length} expected row(s) already present`);
+      }
+
+      // Verify Lab ID + Test Name counts, not just Lab ID presence.
       const verifyStart = Date.now();
-      const verifyRange = encodeURIComponent(`${SHEETS_TAB}!H1:H`);
       const verifyRes = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${verifyRange}`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${gridRange}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       context.log(`[Sheets][timing] attempt ${attempt} verify-read: ${Date.now()-verifyStart}ms status=${verifyRes.status}`);
       if (!verifyRes.ok) throw new Error(`Google Sheets verification read failed (${verifyRes.status})`);
       const verifyVals = (await verifyRes.json()).values || [];
-      const seen = new Set(verifyVals.map(r => String(r?.[0] || '').match(/(\d{6}-\d{3})/)?.[1]).filter(Boolean));
-      const missing = expectedBaseIds.filter(id => !seen.has(id));
-      if (missing.length) throw new Error(`Google Sheets verification missing Lab ID(s): ${missing.join(', ')}`);
+      const verifyCounts = new Map();
+      for (let r = 1; r < verifyVals.length; r++) {
+        const key = `${String(verifyVals[r]?.[7] || '').trim()}|${String(verifyVals[r]?.[12] || '').trim()}`;
+        if (key !== '|') verifyCounts.set(key, (verifyCounts.get(key) || 0) + 1);
+      }
+      const neededCounts = new Map();
+      for (const key of expectedKeys) neededCounts.set(key, (neededCounts.get(key) || 0) + 1);
+      const missingKeys = [...neededCounts.entries()]
+        .filter(([key, count]) => (verifyCounts.get(key) || 0) < count)
+        .map(([key, count]) => `${key} (${verifyCounts.get(key) || 0}/${count})`);
+      if (missingKeys.length) throw new Error(`Google Sheets verification missing COA row(s): ${missingKeys.join(', ')}`);
 
-      context.log(`[Sheets] Wrote and verified ${rows.length} row(s) to Google Sheet ${data?.updates?.updatedRange || ''} in ${Date.now()-attemptStart}ms`);
-      return { success:true, updatedRange:data?.updates?.updatedRange || '', rows:rows.length, attempt };
+      context.log(`[Sheets] Wrote/verified ${rows.length} COA row(s) using existing empty rows in ${Date.now()-attemptStart}ms`);
+      return { success:true, rows:rows.length, attempt };
     } catch (e) {
       lastError = e;
       context.log(`[Sheets] attempt ${attempt}/3 failed after ${Date.now()-attemptStart}ms: ${e.message}`);
@@ -1430,20 +1499,35 @@ app.http('approve-scan', {
         const now = new Date();
         const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
         const pad = n => String(n).padStart(2, '0');
-        const reportDate = (() => {
-          const d = new Date(etNow); d.setDate(d.getDate() + 1);
-          if (d.getDay() === 6) d.setDate(d.getDate() + 2);
-          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-          return `${pad(d.getMonth()+1)}/${pad(d.getDate())}/${String(d.getFullYear()).slice(-2)}`;
-        })();
-        const dateRec  = receivedDate || `${pad(etNow.getMonth()+1)}/${pad(etNow.getDate())}/${String(etNow.getFullYear()).slice(-2)}`;
+        const toCoaDate = value => {
+          const raw = String(value || '').trim();
+          if (!raw) return '';
+          let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          if (m) return `${pad(m[2])}-${pad(m[3])}-${m[1].slice(-2)}`;
+          m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+          if (m) return `${pad(m[1])}-${pad(m[2])}-${m[3].slice(-2)}`;
+          return raw;
+        };
+        const dateRec  = toCoaDate(receivedDate) || `${pad(etNow.getMonth()+1)}-${pad(etNow.getDate())}-${String(etNow.getFullYear()).slice(-2)}`;
+        const dateDrawnCoa = toCoaDate(dateDrawn);
         const timeRec  = receivedTime || `${pad(etNow.getHours())}:${pad(etNow.getMinutes())}`;
         const coaDisplayTest = testName => {
           const name = String(testName || '').trim();
           if (name === 'Basic Safety (FHA)') return 'Basic Safety';
-          if (name === 'Expanded Safety (Mortgage Test)') return 'Expanded Safety (Mortgage Test)';
+          if (name === 'Expanded Safety (Mortgage Test)') return 'Expanded Safety (Mtg Test)';
           return name;
         };
+        const coaCustomerName = (() => {
+          const current = String(formalName || customer || '').trim();
+          if (!usePublic || current.startsWith('Public-')) return current;
+          const parts = String(customer || current).trim().split(/\s+/).filter(Boolean);
+          if (parts.length >= 2) {
+            const last = parts[parts.length - 1];
+            const first = parts.slice(0, -1).join(' ');
+            return `Public-${last}, ${first}`;
+          }
+          return current ? `Public-${current}` : current;
+        })();
         const sheetRows = labItems
           .filter(l => !l.isRejected)
           .flatMap(l => {
@@ -1458,16 +1542,16 @@ app.http('approve-scan', {
             return testsForRows.map(coaTestName => [
               dateRec,
               timeRec,
-              dateDrawn  || '',
+              dateDrawnCoa,
               timeDrawn  || '',
-              formalName || customer || '',
+              coaCustomerName,
               clientCode || '',
-              reportDate,
+              '', // Report Date is written only when the report is actually sent
               l.baseId,
               location   || '',
               city       || '',
               state      || 'ME',
-              zip        || '',
+              String(zip || '').replace(/[^0-9]/g, '').padStart(5, '0'),
               coaTestName,
               1,
             ]);
