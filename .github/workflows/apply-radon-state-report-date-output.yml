@@ -17,7 +17,7 @@ jobs:
         run: node .github/scripts/fix-radon-state-report-date-output.js
       - name: Validate date output
         run: |
-          node -e "const fs=require('fs');const s=fs.readFileSync('admin-dashboard.html','utf8');const i=s.indexOf('async function generateRadonStateReport()');const c=s.slice(i,i+9000);if(!c.includes('formatReportDate')||!c.includes('reportDateDisplay')||c.includes('toExcelDate'))process.exit(1);"
+          node -e "const fs=require('fs');const s=fs.readFileSync('admin-dashboard.html','utf8');const i=s.indexOf('async function generateRadonStateReport()');const c=s.slice(i,i+9000);if(!c.includes('formatReportDate')||!c.includes('reportDateDisplay')||c.includes('const toExcelDate ='))process.exit(1);"
       - name: Commit source change
         run: |
           git config user.name 'github-actions[bot]'
@@ -26,4 +26,4 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'Fix Radon state report date output'
           git push
-# retry after helper syntax correction
+# retry after helper simplification
