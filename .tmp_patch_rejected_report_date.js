@@ -13,7 +13,7 @@ const new1 = `    fields["Client Code"]        = params.clientCode || '';
       const next = nextBusinessDay(params.receivedDate);
       if (next) {
         const [m, d, y] = next.split('/');
-        fields["Report Date"] = \\`${'${m}'}/${'${d}'}/${'${String(y).slice(-2)}'}\\`;
+        fields["Report Date"] = m + '/' + d + '/' + String(y).slice(-2);
       } else {
         fields["Report Date"] = '';
       }
