@@ -747,6 +747,15 @@ app.http('generate-report', {
         }
       }
 
+      // Hardness is calculated from Calcium and Magnesium. Whenever hardness is
+      // included in a package or ordered by itself, show all three related results
+      // on the report so the calculation inputs are visible to the client.
+      if (needed.has('Hardness by calculation')) {
+        needed.add('Calcium, Total');
+        needed.add('Magnesium, Total');
+        context.log('[gen] Hardness included → forcing Calcium, Total + Magnesium, Total onto report');
+      }
+
       const activeParams = PARAM_CONFIG.filter(p => needed.has(p.name));
       const fhaParams    = PARAM_CONFIG.filter(p => FHA_PARAM_NAMES.includes(p.name));
       context.log(`[gen] services=${JSON.stringify(services)}`);
