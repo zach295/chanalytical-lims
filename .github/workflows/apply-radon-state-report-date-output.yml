@@ -1,0 +1,28 @@
+name: Apply Radon state report date output fix
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-radon-state-report-date-output.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply targeted patch
+        run: node .github/scripts/fix-radon-state-report-date-output.js
+      - name: Validate date output
+        run: |
+          node -e "const fs=require('fs');const s=fs.readFileSync('admin-dashboard.html','utf8');const i=s.indexOf('async function generateRadonStateReport()');const c=s.slice(i,i+9000);if(!c.includes('formatReportDate')||!c.includes('reportDateDisplay')||c.includes('toExcelDate'))process.exit(1);"
+      - name: Commit source change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add admin-dashboard.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix Radon state report date output'
+          git push
