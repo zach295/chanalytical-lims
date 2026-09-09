@@ -983,7 +983,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="date" id="report-date-from" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:4px;box-sizing:border-box;">
         <span style="font-size:11px;color:var(--slate);display:block;text-align:center;margin-bottom:4px;">to</span>
         <input type="date" id="report-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
-        <button class="action-btn" onclick="generateMonthlyReport()" style="width:100%;padding:10px 8px;background:var(--navy);color:white;border-color:var(--navy);font-size:12px;text-align:center;box-sizing:border-box;">
+        <button class="action-btn" onclick="generateDysartsReport()" style="width:100%;padding:10px 8px;background:var(--navy);color:white;border-color:var(--navy);font-size:12px;text-align:center;box-sizing:border-box;">
           Generate Report
         </button>
       </div>
@@ -6442,7 +6442,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  async function generateMonthlyReport() {
+  async function generateDysartsReport() {
     const fromVal  = document.getElementById('radon-date-from')?.value;
     const toVal    = document.getElementById('radon-date-to')?.value;
     const company  = document.getElementById('radon-company')?.value || '';
