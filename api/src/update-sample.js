@@ -5,6 +5,7 @@
  */
 const { app }   = require('@azure/functions');
 const { listItems, updateItem, createItem, getToken, LISTS } = require('../shared/graph');
+const { syncCoaFromArchivedRows } = require('../shared/coa-sheet');
 
 const SUFFIX_MAP = {
   'Basic Safety (FHA)':'BS','Basic Safety':'BS','Standard Safety':'SS',
@@ -578,6 +579,18 @@ app.http('update-sample', {
       }
 
       // Results Cache: lab ID stores base ID only — no suffix — no update needed on correction
+
+      // ── Synchronize COA / Form Responses ───────────────────────────────────
+      // Re-read Archived Intake after all correction writes so the COA sheet mirrors
+      // the final authoritative values rather than the pre-correction snapshot.
+      try {
+        const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
+        const correctedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+        const coaSync = await syncCoaFromArchivedRows(baseId, correctedRows, context);
+        log.push(`✅ COA sheet synchronized (${coaSync.updated} row(s)${coaSync.cleared ? `, ${coaSync.cleared} old row(s) cleared` : ''})`);
+      } catch(e) {
+        log.push(`⚠️ COA sheet: ${e.message}`);
+      }
 
       // ── Write to Activity Log ───────────────────────────────────────────────
       try {

@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { createItem, listItems, updateItem, LISTS } = require('../shared/graph');
+const { syncCoaFromArchivedRows } = require('../shared/coa-sheet');
 
 // ── Control Sheet Helper ──────────────────────────────────────────────────────
 // Finds C_MMDDYY.xlsx in Test C folder and updates the lab ID cell in column A
@@ -332,6 +333,19 @@ app.http('reject-sample', {
         }).catch(e => context.log('[ArchivedIntake] Error:', e.message));
       }
       log.push(`✅ Archived Intake: updated ${matches.length} row(s) → suffix changed to REJ`);
+
+      // ── Synchronize COA / Form Responses ─────────────────────────────────
+      // This updates the existing COA row(s) to the rejection type and assigns the
+      // next-business-day Report Date. If an older sample never had a COA row, the
+      // helper uses an existing blank sheet row rather than inserting duplicates.
+      try {
+        const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
+        const rejectedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+        const coaSync = await syncCoaFromArchivedRows(baseId, rejectedRows, context);
+        log.push(`✅ COA sheet synchronized to rejection (${coaSync.updated} row(s))`);
+      } catch(e) {
+        log.push(`⚠️ COA sheet: ${e.message}`);
+      }
 
       return {
         status: 200,

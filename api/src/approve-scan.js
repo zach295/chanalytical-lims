@@ -1543,7 +1543,6 @@ app.http('approve-scan', {
           return current ? `Public-${current}` : current;
         })();
         const sheetRows = labItems
-          .filter(l => !l.isRejected)
           .flatMap(l => {
             // A single Lab ID may contain a package plus one or more separately ordered
             // elements. COA/Form Responses needs one row per test/element while keeping
@@ -1560,7 +1559,7 @@ app.http('approve-scan', {
               timeDrawn  || '',
               coaCustomerName,
               clientCode || '',
-              '', // Report Date is written only when the report is actually sent
+              (l.isRejection || l.isRejected) ? toCoaDate(nextBusinessDay(dateRec)) : '', // rejected samples use next business day; normal samples are dated when sent
               l.baseId,
               location   || '',
               city       || '',
