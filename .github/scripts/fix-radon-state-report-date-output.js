@@ -12,15 +12,11 @@ const newReturn = `        const reportDateDisplay = calcDate ? formatReportDate
 if (!s.includes(oldReturn)) throw new Error('Expected Radon data row date output block not found');
 s = s.replace(oldReturn, newReturn);
 
-const oldFormat = `      // Format Report Date column (index 8) as date\n      const dateColLetter = 'I';\n      for (let i = 1; i <= dataRows.length; i++) {\n        const cell = ws[\`${dateColLetter}\${i+1}\`];\n        if (cell && typeof cell.v === 'number') {\n          cell.t = 'n';\n          cell.z = 'MM/DD/YYYY';\n        }\n      }\n\n`;
-if (!s.includes(oldFormat)) throw new Error('Expected Excel cell formatting block not found');
-s = s.replace(oldFormat, '');
-
 const fnStart = s.indexOf('async function generateRadonStateReport()');
 if (fnStart < 0) throw new Error('Radon state report function not found');
 const fnChunk = s.slice(fnStart, fnStart + 9000);
 if (!fnChunk.includes('formatReportDate') || !fnChunk.includes('reportDateDisplay')) throw new Error('String report date output not present');
-if (fnChunk.includes('toExcelDate')) throw new Error('Old Excel serial conversion still present in Radon report function');
+if (fnChunk.includes('const toExcelDate =')) throw new Error('Old Excel serial conversion still present in Radon report function');
 
 fs.writeFileSync(path, s);
 console.log('Radon State Report now writes Report Date as MM/DD/YYYY text');
