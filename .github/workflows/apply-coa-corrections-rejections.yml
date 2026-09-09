@@ -1,0 +1,37 @@
+name: Apply COA corrections and rejections sync
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-coa-corrections-rejections.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply targeted patch
+        run: node .github/scripts/fix-coa-corrections-rejections.js
+      - name: Validate JavaScript
+        run: |
+          node --check api/shared/coa-sheet.js
+          node --check api/src/approve-scan.js
+          node --check api/src/update-sample.js
+          node --check api/src/reject-sample.js
+      - name: Validate targeted behavior
+        run: |
+          grep -F "(l.isRejection || l.isRejected) ? toCoaDate(nextBusinessDay(dateRec)) : ''" api/src/approve-scan.js
+          grep -F "syncCoaFromArchivedRows(baseId, correctedRows, context)" api/src/update-sample.js
+          grep -F "syncCoaFromArchivedRows(baseId, rejectedRows, context)" api/src/reject-sample.js
+          grep -F "actualTests.length !== expectedTests.length" api/shared/coa-sheet.js
+      - name: Commit source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add api/src/approve-scan.js api/src/update-sample.js api/src/reject-sample.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Synchronize COA corrections and rejections'
+          git push
