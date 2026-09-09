@@ -22,18 +22,19 @@ const fnMatches = [...before.matchAll(/async function\s+([A-Za-z0-9_$]+)\s*\(\)\
 if (!fnMatches.length) throw new Error('No async function found before Dysart implementation');
 const owner = fnMatches[fnMatches.length - 1];
 const oldFnName = owner[1];
+if (oldFnName === 'generateRadonStateReport') throw new Error('Refusing to rename Radon report function');
 const ownerStart = owner.index;
 const ownerText = owner[0];
 const renamed = ownerText.replace(`function ${oldFnName}`, 'function generateDysartsReport');
 s = s.slice(0, ownerStart) + renamed + s.slice(ownerStart + ownerText.length);
 
-// Guardrails: the Dysart function must use the Dysart date controls and the four-company filter.
+// Guardrails: verify the renamed function owns the unique Dysart implementation marker
+// and that the four-company filter remains present after the function declaration.
 const dysFnIdx = s.indexOf('async function generateDysartsReport()');
-if (dysFnIdx < 0) throw new Error('Renamed Dysart function not found');
-const dysChunk = s.slice(dysFnIdx, dysFnIdx + 12000);
-if (!dysChunk.includes("report-date-from") || !dysChunk.includes('NORTHERN_CLIENTS')) {
-  throw new Error('Renamed function does not look like the Dysart report implementation');
-}
+const newMarkerIdx = s.indexOf(marker);
+if (dysFnIdx < 0 || newMarkerIdx < dysFnIdx) throw new Error('Dysart implementation was not renamed correctly');
+const between = s.slice(dysFnIdx, newMarkerIdx);
+if (!between.includes('NORTHERN_CLIENTS')) throw new Error('Four-company Dysart filter not found in renamed function');
 
 fs.writeFileSync(path, s);
 console.log(`Renamed Dysart report function from ${oldFnName} to generateDysartsReport and repointed its button`);
