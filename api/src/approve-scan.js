@@ -635,7 +635,20 @@ async function writeReportsToBilled(siteId, token, params, context, cache = {}) 
     fields["Date Drawn"]         = fmtExcel(params.dateDrawn) || '';
     fields["Time Drawn"]         = params.timeDrawn || '';
     fields["Client Code"]        = params.clientCode || '';
-    // Report Date left blank — filled in when report is actually sent
+    // Normal samples get Report Date when the report is actually sent.
+    // Rejected samples are never reported, so preserve the legacy billing behavior:
+    // assign the next business day after Date Rec'd at approval time.
+    if (params.isRejected) {
+      const next = nextBusinessDay(params.receivedDate);
+      if (next) {
+        const [m, d, y] = next.split('/');
+        fields["Report Date"] = m + '/' + d + '/' + String(y).slice(-2);
+      } else {
+        fields["Report Date"] = '';
+      }
+    } else {
+      fields["Report Date"] = '';
+    }
     fields["Location"]           = params.location || '';
     fields["City/Town"]          = params.city || '';
     fields["Item/Service"]       = params.testName || '';
@@ -1056,6 +1069,7 @@ app.http('approve-scan', {
             state:           state            || 'ME',
             zip:             zip ? String(zip).padStart(5,'0') : '',
             testName:        rowTest,
+            isRejected:      !!(item.isRejection || item.isRejected),
           }, context, rtbCache).catch(e => ({ success:false, error:e.message }));
           rtbResults.push(rtbResult);
           context.log('[RTB]', item.baseId, rowTest, rtbResult.success ? `id ${rtbResult.id}` : rtbResult.error);
