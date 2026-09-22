@@ -130,10 +130,14 @@ async function updateControlSheet(siteIdArg, datePrefix, baseId, newLabId, token
     if (targetRow < 0) throw new Error(`Lab ID ${baseId} not found in column A of C_${datePrefix}.xlsx (scanned ${rows.length} rows)`);
 
     // 5. Update the cell with new lab ID
-    await fetch(
+    const patchRes = await fetch(
       `${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
       { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) }
     );
+    if (!patchRes.ok) {
+      const patchErr = await patchRes.text().catch(() => '');
+      throw new Error(`Control sheet Lab ID update failed (${patchRes.status}): ${patchErr.slice(0,180)}`);
+    }
 
     if (context) context.log(`[controlSheet] Updated A${targetRow}: ${newLabId}`);
     return { updated: true, row: targetRow };
@@ -194,8 +198,12 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
       if (cell.split(' ')[0] === baseId || cell === baseId) { targetRow = i + 1; break; }
     }
     if (targetRow < 0) return { updated: false, reason: `${baseId} not found in radon sheet` };
-    await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
+    const idRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
       { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) });
+    if (!idRes.ok) {
+      const idErr = await idRes.text().catch(() => '');
+      throw new Error(`Radon Lab ID update failed (${idRes.status}): ${idErr.slice(0,180)}`);
+    }
     if (context) context.log(`[radonSheet] Updated A${targetRow}: ${newLabId}`);
 
     // Sample Correction can change the reviewed Date/Time Drawn after accession.
@@ -304,12 +312,20 @@ app.http('update-sample', {
         if (updates.zip          !== undefined) fields.field_11 = updates.zip;
         if (updates.notes        !== undefined) fields.field_13 = updates.notes;
 
-        if (Object.keys(fields).length > 0) {
-          if (listId) {
-            await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
+        if (Object.keys(fields).length > 0 && listId) {
+          // Treat each Archived Intake row independently. A failed SharePoint write
+          // must be visible, but must not prevent the remaining correction targets.
+          try {
+            const aiRes = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/items/${item._id}/fields`,
               { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
                 body: JSON.stringify(fields) });
+            if (!aiRes.ok) {
+              const aiErr = await aiRes.text().catch(() => '');
+              throw new Error(`PATCH failed (${aiRes.status}): ${aiErr.slice(0,180)}`);
+            }
             rowsUpdated++;
+          } catch (e) {
+            log.push(`⚠️ Archived Intake row ${item._id}: ${e.message}`);
           }
         }
       }
