@@ -1,306 +1,219 @@
 /**
- * import-control.js — Azure version
- * 1. Reads Results Cache to get Lab IDs needing control sheet data
- * 2. Groups IDs by date (MMDDYY from base ID)
- * 3. Finds the matching control sheet file for each date
- * 4. Writes pH, bacteria, Gallery chemistry to Results Cache
+ * control-sheet.js
+ * Module-level cache for fileId + wsId survives warm starts — cuts API calls from 5 to 2.
+ * usedRange(valuesOnly=true) returns actual data rows only (not formatted empty cells).
+ *
+ * Supports two sheet types via the optional `type` body param:
+ *   type: 'wq' (default) → C_MMDDYY.xlsx  from Master Control Sheet.xlsx
+ *   type: 'rw'           → RW_MMDDYY.xlsx from Master RW Control Sheet.xlsx
  */
-const { app }    = require('@azure/functions');
-const { getToken, listItems, createItem, updateItem, LISTS } = require('../shared/graph');
-const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-let XLSX;
-try { XLSX = require('xlsx'); } catch(e) { console.warn('[import-control] xlsx not available:', e.message); }
+const GRAPH         = 'https://graph.microsoft.com/v1.0';
+const SITE_ID       = process.env.SP_SITE_ID;
+const CTRL_FOLDER   = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Control Sheets';
+const CTRL_BASE     = '/sites/Laboratory/Shared Documents/Documents/Control Sheets';
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
 
-// Convert any date/time value to military time "MM/DD/YY HH:MM"
-function toMilitaryDT(val) {
-  if (!val && val !== 0) return '';
-  // Excel serial number (number type)
-  if (typeof val === 'number') {
-    const ms      = (val - 25569) * 86400 * 1000;
-    const d       = new Date(Math.round(ms));
-    const mm      = String(d.getUTCMonth()+1).padStart(2,'0');
-    const dd      = String(d.getUTCDate()).padStart(2,'0');
-    const yy      = String(d.getUTCFullYear()).slice(-2);
-    const hh      = String(d.getUTCHours()).padStart(2,'0');
-    const min     = String(d.getUTCMinutes()).padStart(2,'0');
-    return `${mm}/${dd}/${yy} ${hh}:${min}`;
-  }
-  // JS Date object
-  if (val instanceof Date) {
-    const mm  = String(val.getMonth()+1).padStart(2,'0');
-    const dd  = String(val.getDate()).padStart(2,'0');
-    const yy  = String(val.getFullYear()).slice(-2);
-    const hh  = String(val.getHours()).padStart(2,'0');
-    const min = String(val.getMinutes()).padStart(2,'0');
-    return `${mm}/${dd}/${yy} ${hh}:${min}`;
-  }
-  // String — strip AM/PM and normalize
-  const s     = String(val).trim();
-  const ampm  = s.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
-  if (ampm) {
-    let [, datePart, h, m, ap] = ampm;
-    h  = parseInt(h, 10);
-    ap = (ap||'').toUpperCase();
-    if (ap === 'PM' && h < 12) h += 12;
-    if (ap === 'AM' && h === 12) h = 0;
-    datePart = datePart.replace(/(\d{1,2}\/\d{1,2}\/)(\d{4})/, (_, p1, y) => p1 + y.slice(-2));
-    return `${datePart} ${String(h).padStart(2,'0')}:${m}`;
-  }
-  return s;
-}
+// ── Module-level caches (survive warm function starts) ────────────────────────
+let _token = null, _tokenExpiry = 0;
+const _fileCache = {}; // { [fileName]: { fileId, wsId } }
 
-async function graphListFolder(folderRelPath, token) {
-  const siteId = process.env.SP_SITE_ID;
-  const enc    = folderRelPath.split('/').map(encodeURIComponent).join('/');
-  const res    = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/root:/${enc}:/children?$select=id,name,file&$top=500`,
-    { headers: { Authorization: `Bearer ${token}` } }
+async function getToken() {
+  if (_token && Date.now() < _tokenExpiry) return _token;
+  const { MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET } = process.env;
+  const res = await fetch(
+    `https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`,
+    { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({ grant_type:'client_credentials',
+        client_id:MS_CLIENT_ID, client_secret:MS_CLIENT_SECRET,
+        scope:'https://graph.microsoft.com/.default' }) }
   );
-  if (!res.ok) throw new Error(`listFolder ${res.status}`);
-  return (await res.json()).value || [];
+  if (!res.ok) { const b = await res.text(); throw new Error(`Auth ${res.status}: ${b.slice(0,150)}`); }
+  const { access_token, expires_in } = await res.json();
+  _token = access_token; _tokenExpiry = Date.now() + (expires_in - 60) * 1000;
+  return _token;
 }
 
-async function graphDownloadFile(itemId, token) {
-  const siteId = process.env.SP_SITE_ID;
-  const res    = await fetch(
-    `${GRAPH}/sites/${siteId}/drive/items/${itemId}/content`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) throw new Error(`downloadFile ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+async function graphGet(path, token) {
+  const res = await fetch(`${GRAPH}${path}`, { headers:{Authorization:`Bearer ${token}`} });
+  if (!res.ok) throw new Error(`GET ${path.slice(0,80)} → ${res.status}`);
+  return res.json();
+}
+async function graphPost(path, body, token) {
+  const res = await fetch(`${GRAPH}${path}`, {
+    method:'POST', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!res.ok && res.status !== 202) throw new Error(`POST ${path.slice(0,80)} → ${res.status}: ${(await res.text()).slice(0,100)}`);
+  return res.json().catch(()=>({}));
+}
+async function graphPatch(path, body, token) {
+  const res = await fetch(`${GRAPH}${path}`, {
+    method:'PATCH', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${path.slice(0,80)} → ${res.status}: ${(await res.text()).slice(0,100)}`);
+  return res.json().catch(()=>({}));
 }
 
-const COL = {
-  BARCODE:0, PH:3, DT_PH:4, COLIFORM:5, ECOLI:6,
-  START_DT:8, END_DT:10,
-  CHLORIDE:13, DT_CHLORIDE:14, FLUORIDE:15, DT_FLUORIDE:16,
-  NITRITE:17, DT_NITRITE:18, NITRATE:19, DT_NITRATE:20,
-  ALKALINITY:21, DT_ALKALINITY:22, SULFATE:23, DT_SULFATE:24,
-  TANNINS:25, DT_TANNINS:26, TDS:27, DT_TDS:28,
-  BROMIDE:29, DT_BROMIDE:30,
-};
-
-function cellVal(ws, r, c) {
-  const cell = ws[XLSX.utils.encode_cell({ r, c })];
-  if (!cell || cell.v === undefined || cell.v === null) return '';
-  const v = String(cell.w || cell.v).trim();
-  return (v === 'N/A' || v === '#N/A') ? '' : v;
+function toDrivePath(p) {
+  const i = p.indexOf('Shared Documents/');
+  return i >= 0 ? p.slice(i + 17) : p.replace(/^\/+/, '');
+}
+function dateInfo(mmddyy) {
+  const mm = parseInt(mmddyy.slice(0,2)) - 1, yy = parseInt('20'+mmddyy.slice(4,6));
+  return { monthFolder:`${MONTHS[mm]} ${yy}` };
+}
+function todayMMDDYY() {
+  const p = {};
+  new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',
+    month:'2-digit',day:'2-digit',year:'2-digit'}).formatToParts(new Date()).forEach(({type,value})=>p[type]=value);
+  return `${p.month}${p.day}${p.year}`;
 }
 
-function getBaseId(barcode) {
-  const m = String(barcode || '').match(/^(\d{6}-\d{3})/);
-  return m ? m[1] : '';
-}
-
-function getDatePart(baseId) {
-  const m = String(baseId || '').match(/^(\d{6})/);
-  return m ? m[1] : '';
-}
-
-function sn(val) {
-  if (!val || val === '') return val;
-  const n = parseFloat(val);
-  if (isNaN(n)) return val;
-  return n < 0 ? '0' : String(Math.round(n * 10000) / 10000);
-}
-
-function parseControlFile(buffer, targetIds) {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) return [];
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  const rows = [];
-  for (let r = 1; r <= range.e.r; r++) {
-    const barcode = cellVal(ws, r, COL.BARCODE);
-    if (!barcode) continue;
-    const baseId = getBaseId(barcode);
-    if (!baseId) continue;
-    if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
-    rows.push({
-      baseId, barcode,
-      ph:           cellVal(ws, r, COL.PH),
-      dt_ph:        cellVal(ws, r, COL.DT_PH),
-      coliform:     cellVal(ws, r, COL.COLIFORM),
-      ecoli:        cellVal(ws, r, COL.ECOLI),
-      start_dt:     cellVal(ws, r, COL.START_DT),
-      end_dt:       cellVal(ws, r, COL.END_DT),
-      chloride:     cellVal(ws, r, COL.CHLORIDE),
-      dt_chloride:  cellVal(ws, r, COL.DT_CHLORIDE),
-      fluoride:     cellVal(ws, r, COL.FLUORIDE),
-      dt_fluoride:  cellVal(ws, r, COL.DT_FLUORIDE),
-      nitrite:      cellVal(ws, r, COL.NITRITE),
-      dt_nitrite:   cellVal(ws, r, COL.DT_NITRITE),
-      nitrate:      cellVal(ws, r, COL.NITRATE),
-      dt_nitrate:   cellVal(ws, r, COL.DT_NITRATE),
-      alkalinity:   cellVal(ws, r, COL.ALKALINITY),
-      dt_alkalinity:cellVal(ws, r, COL.DT_ALKALINITY),
-      sulfate:      cellVal(ws, r, COL.SULFATE),
-      dt_sulfate:   cellVal(ws, r, COL.DT_SULFATE),
-      tannins:      cellVal(ws, r, COL.TANNINS),
-      dt_tannins:   cellVal(ws, r, COL.DT_TANNINS),
-      tds:          cellVal(ws, r, COL.TDS),
-      dt_tds:       cellVal(ws, r, COL.DT_TDS),
-      bromide:      cellVal(ws, r, COL.BROMIDE),
-      dt_bromide:   cellVal(ws, r, COL.DT_BROMIDE),
-    });
+/** Return file name prefix and template path for the given sheet type. */
+function sheetConfig(sheetType, ctrlDrivePath) {
+  if (sheetType === 'rw') {
+    return {
+      filePrefix:   'RW_',
+      templatePath: `${ctrlDrivePath}/Master RW Control Sheet.xlsx`,
+    };
   }
-  return rows;
+  // default: wq
+  return {
+    filePrefix:   'C_',
+    templatePath: `${ctrlDrivePath}/Master Control Sheet.xlsx`,
+  };
 }
 
-function buildFields(row) {
-  const f = {};
-  if (row.ph)            f.Title    = sn(row.ph);
-  if (row.dt_ph)         f.field_1 = toMilitaryDT(row.dt_ph);
-  if (row.coliform)      f.field_2  = row.coliform;
-  if (row.ecoli)         f.field_3  = row.ecoli;
-  if (row.start_dt)      f.field_4 = toMilitaryDT(row.start_dt);
-  if (row.end_dt)        f.field_5 = toMilitaryDT(row.end_dt);
-  if (row.chloride)      f.field_6  = sn(row.chloride);
-  if (row.dt_chloride)   f.field_7 = toMilitaryDT(row.dt_chloride);
-  if (row.fluoride)      f.field_8  = sn(row.fluoride);
-  if (row.dt_fluoride)   f.field_9 = toMilitaryDT(row.dt_fluoride);
-  if (row.nitrite)       f.field_10 = sn(row.nitrite);
-  if (row.dt_nitrite)    f.field_11 = toMilitaryDT(row.dt_nitrite);
-  if (row.nitrate)       f.field_12 = sn(row.nitrate);
-  if (row.dt_nitrate)    f.field_13 = toMilitaryDT(row.dt_nitrate);
-  if (row.alkalinity)    f.field_14 = sn(row.alkalinity);
-  if (row.dt_alkalinity) f.field_15 = toMilitaryDT(row.dt_alkalinity);
-  if (row.sulfate)       f.field_16 = sn(row.sulfate);
-  if (row.dt_sulfate)    f.field_17 = toMilitaryDT(row.dt_sulfate);
-  if (row.tannins)       f.field_18 = sn(row.tannins);
-  if (row.dt_tannins)    f.field_19 = toMilitaryDT(row.dt_tannins);
-  if (row.tds)           f.field_20 = sn(row.tds);
-  if (row.dt_tds)        f.field_21 = toMilitaryDT(row.dt_tds);
-  if (row.bromide)       f.field_22 = sn(row.bromide);
-  if (row.dt_bromide)    f.field_23 = toMilitaryDT(row.dt_bromide);
-  return f;
+// Get (or cache) fileId + wsId for a control sheet
+async function getSheetIds(token, destFilePath, fileName) {
+  if (_fileCache[fileName]) {
+    console.log(`[CS] Using cached IDs for ${fileName}`);
+    return _fileCache[fileName];
+  }
+  const file = await graphGet(`/sites/${SITE_ID}/drive/root:/${destFilePath}:?$select=id`, token);
+  const wsRes = await graphGet(`/sites/${SITE_ID}/drive/items/${file.id}/workbook/worksheets?$select=id,name`, token);
+  const wsId = wsRes.value?.[0]?.id;
+  if (!wsId) throw new Error('No worksheet found');
+  _fileCache[fileName] = { fileId:file.id, wsId };
+  console.log(`[CS] Cached IDs for ${fileName}: file=${file.id.slice(0,8)}... ws=${wsId.slice(0,8)}...`);
+  return _fileCache[fileName];
 }
 
-app.http('import-control', {
-  methods: ['POST'],
-  authLevel: 'anonymous',
-  handler: async (request, context) => {
-    try {
-      if (!XLSX) return { status: 500, jsonBody: { error: 'xlsx not installed' } };
-      const body       = await request.json().catch(() => ({}));
-      const dateFilter = body.datePrefix ? String(body.datePrefix).trim() : '';
-      const { debug, all: importAll } = body;
-      const token = await getToken();
+async function ensureMonthFolder(ctrlDrivePath, monthFolder, token) {
+  try { await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}/${monthFolder}:?$select=id`, token); }
+  catch {
+    const p = await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}:?$select=id`, token);
+    await graphPost(`/sites/${SITE_ID}/drive/items/${p.id}/children`,
+      { name:monthFolder, folder:{}, '@microsoft.graph.conflictBehavior':'replace' }, token);
+  }
+}
 
-      const rawFolder = process.env.SP_CONTROL_FOLDER ||
-        '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
-      const marker = 'Shared Documents/';
-      const mi     = rawFolder.indexOf(marker);
-      const folder = mi >= 0 ? rawFolder.slice(mi + marker.length) : rawFolder.replace(/^\/+/, '');
+exports.handler = async (event) => {
+  if (event.httpMethod !== 'POST') return { statusCode:405, body:'Method Not Allowed' };
+  try {
+    const { action, labIds, date, type } = JSON.parse(event.body || '{}');
+    const sheetType     = (type || 'wq').toLowerCase(); // 'wq' or 'rw'
+    const mmddyy        = date || todayMMDDYY();
+    const { monthFolder } = dateInfo(mmddyy);
+    const ctrlDrivePath = toDrivePath(CTRL_FOLDER);
+    const { filePrefix, templatePath } = sheetConfig(sheetType, toDrivePath(CTRL_BASE));
+    const fileName      = `${filePrefix}${mmddyy}.xlsx`;
+    const destFilePath  = `${ctrlDrivePath}/${monthFolder}/${fileName}`;
 
-      // Step 1: Get Results Cache IDs needing control data
-      const cacheItems = await listItems('Results Cache', { top: 500 });
-      // Process rows missing pH (Title) OR coliform OR any Gallery chemistry
-      const needsControl = cacheItems.filter(r => {
-        const hasId = !!(r.LabID || '').trim();
-        if (/\bREJ\b/i.test(r.LabID || '')) return false;
-        return hasId;
-      });
+    const token = await getToken();
+    console.log(`[CS] action=${action} type=${sheetType} file=${fileName}`);
 
-      if (!needsControl.length) {
-        return { status: 200, jsonBody: { success: true, message: 'All Results Cache entries already have control data', updated: 0 } };
-      }
+    // Clear stale cache entries for other days
+    Object.keys(_fileCache).forEach(k => { if (k !== fileName) delete _fileCache[k]; });
 
-      // Group by date portion
-      const byDate = {};
-      for (const item of needsControl) {
-        const baseId   = String(item.LabID || '').split(' ')[0].trim();
-        const datePart = getDatePart(baseId);
-        if (!datePart) continue;
-        if (dateFilter && datePart !== dateFilter) continue;
-        if (!byDate[datePart]) byDate[datePart] = new Set();
-        byDate[datePart].add(baseId);
-      }
-
-      context.log(`[import-control] Dates: ${Object.keys(byDate).join(', ')}`);
-
-      // Step 2: Parse matching files — look in month subfolder for each date
-      const MONTHS_LIST = ['January','February','March','April','May','June',
-                           'July','August','September','October','November','December'];
-      const allRows   = [];
-      const filesUsed = [];
-
-      for (const [datePart, ids] of Object.entries(byDate)) {
-        // Build month subfolder path from MMDDYY prefix
-        const mm         = datePart.slice(0, 2);
-        const yy         = datePart.slice(4, 6);
-        const monthName  = MONTHS_LIST[parseInt(mm, 10) - 1] || '';
-        const year       = '20' + yy;
-        const monthFolder = `${folder}/${monthName} ${year}`;
-
-        // List files in the month subfolder
-        let monthFiles = [];
-        try { monthFiles = await graphListFolder(monthFolder, token); } catch(e) {
-          context.log(`[import-control] Month folder not found: ${monthFolder}`);
-          continue;
-        }
-        const matchingFiles = monthFiles.filter(f => /\.xlsx?$/i.test(f.name) && f.name.includes(datePart));
-        if (!matchingFiles.length) {
-          context.log(`[import-control] No control file for date ${datePart} in ${monthFolder}`);
-          continue;
-        }
-        for (const file of matchingFiles) {
-          filesUsed.push(file.name);
-          const buffer = await graphDownloadFile(file.id, token);
-          const rows   = parseControlFile(buffer, new Set()); // read all rows, no filter
-          allRows.push(...rows);
-          context.log(`[import-control] ${file.name}: ${rows.length} rows`);
-        }
-      }
-
-      if (debug) {
-        return { status: 200, jsonBody: { filesUsed, rowCount: allRows.length, rows: allRows.slice(0, 5) } };
-      }
-
-      // Step 4: Merge rows by baseId and write
-      const byBase = {};
-      for (const row of allRows) {
-        if (!byBase[row.baseId]) byBase[row.baseId] = {};
-        Object.assign(byBase[row.baseId], buildFields(row));
-      }
-
-      const log = []; let updated = 0, created = 0, errors = 0;
-
-      for (const [baseId, fields] of Object.entries(byBase)) {
-        if (!Object.keys(fields).length) continue;
-        const existing = cacheItems.find(r => {
-          const storedBase = String(r.LabID || '').split(' ')[0].trim();
-          return storedBase === baseId || r.LabID === baseId;
-        });
-        if (existing) {
-          await updateItem('Results Cache', existing._id, fields)
-            .then(() => { updated++; log.push(`Updated: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
-        } else {
-          await createItem('Results Cache', { LabID: baseId, ...fields })
-            .then(() => { created++; log.push(`Created: ${baseId}`); })
-            .catch(e => { errors++; log.push(`Error ${baseId}: ${e.message}`); });
-        }
-      }
-
-            // ── Activity Log ─────────────────────────────────────────────────────────
+    // ── CREATE ───────────────────────────────────────────────────────────────
+    if (action === 'create') {
       try {
-        const _now = new Date();
-        const _ld  = _now.toLocaleDateString('en-US', { timeZone:'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
-        const _lt  = _now.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
-        await createItem('Activity Log', {
-          Title: `${_ld} Control Sheet Import`, Client: 'Import',
-          ActivityType: 'Control Sheet Import', Notes: `Updated: ${updated}, Created: ${created}, Errors: ${errors} | Files: ${filesUsed.join(", ")}`,
-          By: 'System', LogDate: _ld, LogTime: _lt, Quantity: 0,
-        }).catch(()=>{});
-      } catch(e) {}
-
-      return { status: 200, jsonBody: { success: true, filesUsed, rowCount: allRows.length, created, updated, errors, log, samples: Object.keys(byBase) } };
-
-    } catch(e) {
-      context.log('[import-control] Error:', e.message, e.stack);
-      return { status: 500, jsonBody: { error: e.message } };
+        await graphGet(`/sites/${SITE_ID}/drive/root:/${destFilePath}:?$select=id`, token);
+        return { statusCode:200, headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ success:true, alreadyExists:true, fileName, monthFolder,
+            message:`${fileName} already exists in Control Sheets/${monthFolder}` }) };
+      } catch {}
+      await ensureMonthFolder(ctrlDrivePath, monthFolder, token);
+      const tpl  = await graphGet(`/sites/${SITE_ID}/drive/root:/${templatePath}:?$select=id`, token);
+      const dest = await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}/${monthFolder}:?$select=id`, token);
+      await graphPost(`/sites/${SITE_ID}/drive/items/${tpl.id}/copy`,
+        { parentReference:{id:dest.id}, name:fileName }, token);
+      // Clear cache so next addLabIds call fetches fresh IDs
+      delete _fileCache[fileName];
+      return { statusCode:200, headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ success:true, fileName, monthFolder,
+          message:`Created ${fileName} in Control Sheets/${monthFolder}` }) };
     }
+
+    // ── ADD LAB IDS ──────────────────────────────────────────────────────────
+    if (action === 'addLabIds') {
+      if (!labIds?.length) return { statusCode:400, body:JSON.stringify({error:'labIds required'}) };
+
+      // Get cached (or fresh) file + worksheet IDs
+      let fileId, wsId;
+      try {
+        ({ fileId, wsId } = await getSheetIds(token, destFilePath, fileName));
+      } catch(e) {
+        return { statusCode:404, headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ success:false, error:`${fileName} not found — ${e.message}` }) };
+      }
+
+      const wb = `/sites/${SITE_ID}/drive/items/${fileId}/workbook`;
+
+      // Read column A once — use for both dedup check AND finding next empty row
+      let nextRow = 2;
+      const existing = new Set();
+      try {
+        const rangeRes = await graphGet(
+          `${wb}/worksheets/${wsId}/range(address='A1:A500')?$select=values`, token);
+        const vals = rangeRes.values || [];
+        nextRow = 2;
+        for (let i = 0; i < vals.length; i++) {
+          const cell = vals[i] ? String(vals[i][0] || '').trim() : '';
+          if (cell) {
+            existing.add(cell); // build dedup set from ALL existing values
+            if (i > 0) nextRow = i + 2; // track last filled row (skip header at i=0)
+          } else if (i > 0) {
+            break; // first empty row found — stop scanning
+          }
+        }
+        console.log(`[CS] Scanned: ${existing.size} entries, nextRow=${nextRow}`);
+      } catch(e) { console.warn(`[CS] Row scan failed: ${e.message}, using row 2`); }
+
+      // Filter out any lab IDs already in the sheet (prevents duplicates from retried calls)
+      const newIds = labIds.filter(id => !existing.has(id.trim()));
+      if (!newIds.length) {
+        console.log(`[CS] All lab IDs already in sheet — skipping write`);
+        return { statusCode:200, headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ success:true, written:0, fileName, startRow:nextRow, message:'Already written' }) };
+      }
+
+      const endRow = nextRow + newIds.length - 1;
+      try {
+        await graphPatch(`${wb}/worksheets/${wsId}/range(address='A${nextRow}:A${endRow}')`,
+          { values: newIds.map(id=>[id]) }, token);
+      } catch(patchErr) {
+        // Stale cache (e.g. file was recreated) — clear and retry with fresh IDs
+        console.warn(`[CS] PATCH failed (${patchErr.message}) — clearing cache and retrying`);
+        delete _fileCache[fileName];
+        const fresh = await getSheetIds(token, destFilePath, fileName);
+        const wb2 = `/sites/${SITE_ID}/drive/items/${fresh.fileId}/workbook`;
+        await graphPatch(`${wb2}/worksheets/${fresh.wsId}/range(address='A${nextRow}:A${endRow}')`,
+          { values: newIds.map(id=>[id]) }, token);
+      }
+
+      console.log(`[CS] ✅ Wrote ${newIds.length} IDs to ${fileName} rows ${nextRow}-${endRow}`);
+      return { statusCode:200, headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ success:true, written:newIds.length, fileName, startRow:nextRow }) };
+    }
+
+    return { statusCode:400, body:JSON.stringify({error:'Unknown action: '+action}) };
+  } catch(e) {
+    console.error('[control-sheet]', e.message);
+    return { statusCode:500, body:JSON.stringify({error:e.message}) };
   }
-});
+};
