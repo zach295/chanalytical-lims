@@ -4497,41 +4497,49 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }
 
-      // Write lab IDs to control sheet from browser (avoids Netlify function timeout)
+      // Write lab IDs to WQ control sheet + ensure RW control sheet exists
+      // Both sheets are created on the first scan of the day regardless of sample type.
       if (data.labIds?.length) {
         (async () => {
           const CS_URL = '/api/control-sheet';
           const CS_HDR = { 'Content-Type': 'application/json' };
           const post = (body, signal) => fetch(CS_URL, { method:'POST', headers:CS_HDR, body:JSON.stringify(body), signal });
 
+          // ── WQ Control Sheet (C_MMDDYY) ──────────────────────────────────────
           try {
-            // Step 1: Try to write — if file exists this is all we need (20s timeout)
+            // Step 1: Try to write — if file exists this is all we need (24s timeout)
             const ctrl1   = new AbortController();
             const timer1  = setTimeout(() => ctrl1.abort(), 24000);
             const addRes  = await post({ action:'addLabIds', labIds:data.labIds }, ctrl1.signal).catch(e=>({ ok:false, status:0, json:()=>({ success:false, error:e.name==='AbortError'?'timeout':e.message }) }));
             clearTimeout(timer1);
             const addData = await Promise.resolve(addRes.json ? addRes.json() : addRes).catch(()=>({ success:false, error:'parse error' }));
-            console.log('[control-sheet] addLabIds:', addRes.status, addData.success ? `✅ wrote ${addData.written} IDs to row ${addData.startRow}` : addData.error);
+            console.log('[control-sheet] WQ addLabIds:', addRes.status, addData.success ? `✅ wrote ${addData.written} IDs to row ${addData.startRow}` : addData.error);
 
-            if (addData.success) return; // Done
+            if (!addData.success) {
+              // Step 2: File missing — auto-create from template
+              console.log('[control-sheet] Creating WQ control sheet...');
+              const createRes  = await post({ action:'create' });
+              const createData = await createRes.json().catch(()=>({}));
+              console.log('[control-sheet] WQ create:', createRes.status, createData.message || createData.error);
 
-            // Step 2: File missing — auto-create from template
-            console.log('[control-sheet] Creating control sheet...');
-            const createRes  = await post({ action:'create' });
-            const createData = await createRes.json().catch(()=>({}));
-            console.log('[control-sheet] create:', createRes.status, createData.message || createData.error);
+              if (createData.success || createData.alreadyExists) {
+                // Step 3: Wait for SharePoint to finish copying (async operation)
+                await new Promise(r => setTimeout(r, 10000));
+                // Step 4: Retry writing
+                const retryRes  = await post({ action:'addLabIds', labIds:data.labIds });
+                const retryData = await retryRes.json().catch(()=>({}));
+                console.log('[control-sheet] WQ retry:', retryRes.status, retryData.success ? `✅ wrote ${retryData.written} IDs to row ${retryData.startRow}` : retryData.error);
+              }
+            }
+          } catch(e) { console.warn('[control-sheet] WQ error:', e.message); }
 
-            if (!createData.success && !createData.alreadyExists) return;
-
-            // Step 3: Wait for SharePoint to finish copying (async operation)
-            await new Promise(r => setTimeout(r, 10000));
-
-            // Step 4: Retry writing
-            const retryRes  = await post({ action:'addLabIds', labIds:data.labIds });
-            const retryData = await retryRes.json().catch(()=>({}));
-            console.log('[control-sheet] retry:', retryRes.status, retryData.success ? `✅ wrote ${retryData.written} IDs to row ${retryData.startRow}` : retryData.error);
-
-          } catch(e) { console.warn('[control-sheet] error:', e.message); }
+          // ── RW Control Sheet (RW_MMDDYY) — always ensure it exists ───────────
+          // Created from Master RW Control Sheet.xlsx on first scan; no-op if already present.
+          try {
+            const rwRes  = await post({ action:'create', type:'rw' });
+            const rwData = await rwRes.json().catch(()=>({}));
+            console.log('[control-sheet] RW:', rwRes.status, rwData.message || rwData.error);
+          } catch(e) { console.warn('[control-sheet] RW error:', e.message); }
         })();
       }
       showToast(`✅ ${labIdStr} written to sheets`);
