@@ -329,7 +329,10 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="section" id="section-clients">
     <div class="section-hdr">
       <div class="section-hdr-title">👥 Clients &amp; Codes</div>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="clients-search" type="search" placeholder="Search clients…"
+          style="padding:7px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:200px;background:var(--surface);color:var(--text);"
+          oninput="renderClientsTable()">
         <button class="btn-ok" style="padding:8px 16px;font-size:13px;" onclick="openAddClientModal()">+ Add Client</button>
         <button class="action-btn" onclick="loadClients()">↻ Refresh</button>
       </div>
@@ -3652,9 +3655,25 @@ document.addEventListener('DOMContentLoaded', function() {
       phone:        c.phone        || (typeof c.active === 'string' ? c.active : '') || '',
       status:       c.status       || (c.active === false || c.active === 'No' ? 'Inactive' : 'Active'),
     }));
+
+    const q = (document.getElementById('clients-search')?.value || '').toLowerCase().trim();
+    const visible = q
+      ? _clientsData.filter(c =>
+          (c.clientName  || '').toLowerCase().includes(q) ||
+          (c.clientCode  || '').toLowerCase().includes(q) ||
+          (c.abbrev      || '').toLowerCase().includes(q) ||
+          (c.reportEmail || '').toLowerCase().includes(q) ||
+          (c.billingEmail|| '').toLowerCase().includes(q))
+      : _clientsData;
+
+    if (!visible.length) {
+      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state">No clients match "${q}".</div></td></tr>`;
+      return;
+    }
+
     const statusColor = s => s === 'Inactive' ? 'var(--error)' : 'var(--success)';
     const statusBg    = s => s === 'Inactive' ? 'var(--error-light)' : 'var(--success-light)';
-    tbody.innerHTML = _clientsData.map(c => `
+    tbody.innerHTML = visible.map(c => `
       <tr id="client-row-${c._id}" style="${c.status === 'Inactive' ? 'opacity:0.6;' : ''}">
         <td style="font-weight:600;position:sticky;left:0;background:white;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.08);">${c.clientName}</td>
         <td style="font-family:monospace;font-size:12px;">${c.clientCode || ''}</td>
