@@ -206,9 +206,6 @@ document.addEventListener('DOMContentLoaded', function() {
     <button class="sb-btn" id="sb-testtypes-btn" onclick="showSection('testtypes',this)" style="display:none;">🔬 Test Types</button>
     <button class="sb-btn" id="sb-statistics-btn" onclick="showSection('statistics',this)" style="display:none;">📈 Statistics</button>
 
-    <div class="sb-label" id="sb-secure-admin-label" style="display:none;">Administration</div>
-    <button class="sb-btn" id="sb-secure-admin-btn" onclick="openSecureAdmin(this)" style="display:none;">🔒 Admin</button>
-
 
   </div>
   <div style="padding:14px 16px;border-top:1px solid rgba(255,255,255,0.1);">
@@ -684,51 +681,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   </div>
 
-  <!-- ══ SECURE ADMIN ═══════════════════════════════════════════════════════ -->
-  <div class="section" id="section-admin">
-    <div class="section-hdr">
-      <div>
-        <div class="section-hdr-title">🔒 Administration</div>
-        <div style="font-size:12px;color:var(--slate);margin-top:3px;">Password-protected tools. Admin verification expires after 15 minutes.</div>
-      </div>
-      <button class="action-btn" onclick="lockSecureAdmin()">🔐 Lock Admin</button>
-    </div>
-
-    <div class="card" style="margin-bottom:18px;">
-      <div class="card-header"><div class="card-title">🗑️ Sample Cleanup</div></div>
-      <div style="padding:20px;">
-        <div style="font-size:13px;color:var(--slate);margin-bottom:14px;line-height:1.5;">
-          Finds the complete accession group using the exact <strong>CreatedAt</strong> value in the Accession Log. Multi-element billing rows are included. Radon is treated as its separate Lab ID and is cleared from both the regular Control Sheet and Radon Control Sheet when linked to the same accession.
-        </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
-          <div style="flex:1;min-width:240px;">
-            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">Lab ID</label>
-            <input id="admin-cleanup-labid" type="text" placeholder="090426-014" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:monospace;" />
-          </div>
-          <button class="btn-ok" style="flex:none;padding:10px 18px;" onclick="adminFindSampleGroup()">Find Sample Group</button>
-        </div>
-        <div id="admin-cleanup-status" style="font-size:12px;color:var(--slate);margin-top:10px;min-height:18px;"></div>
-        <div id="admin-cleanup-preview" style="display:none;margin-top:16px;"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">↩️ Deleted Samples / Recovery</div>
-          <div style="font-size:11px;color:var(--slate);margin-top:3px;">Recovery snapshots are permanently purged after 30 days. Activity Log entries remain.</div>
-        </div>
-        <button class="action-btn" onclick="adminLoadRecoveries()">↻ Refresh</button>
-      </div>
-      <div id="admin-recovery-wrap" style="overflow-x:auto;">
-        <table>
-          <thead><tr><th>Requested Lab ID</th><th>Related Lab IDs</th><th>Deleted</th><th>Expires</th><th>Deleted By</th><th>Reason</th><th>Action</th></tr></thead>
-          <tbody id="admin-recovery-body"><tr><td colspan="7"><div class="empty-state">Unlock Admin to view recoveries.</div></td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   <!-- ══ RESULTS ENTRY ════════════════════════════════════════════════════════ -->
   <div class="section" id="section-results" style="display:none!important;"></div>
 
@@ -983,7 +935,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <input type="date" id="report-date-from" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:4px;box-sizing:border-box;">
         <span style="font-size:11px;color:var(--slate);display:block;text-align:center;margin-bottom:4px;">to</span>
         <input type="date" id="report-date-to" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:var(--font-body);margin-bottom:12px;box-sizing:border-box;">
-        <button class="action-btn" onclick="generateDysartsReport()" style="width:100%;padding:10px 8px;background:var(--navy);color:white;border-color:var(--navy);font-size:12px;text-align:center;box-sizing:border-box;">
+        <button class="action-btn" onclick="generateMonthlyReport()" style="width:100%;padding:10px 8px;background:var(--navy);color:white;border-color:var(--navy);font-size:12px;text-align:center;box-sizing:border-box;">
           Generate Report
         </button>
       </div>
@@ -1547,29 +1499,6 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
-<!-- Secure Admin password verification -->
-<div class="modal-overlay" id="modal-admin-auth">
-  <div class="modal" style="max-width:430px;">
-    <div class="modal-title">🔒 Admin Verification</div>
-    <div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:14px;">
-      Re-enter your <strong>LIMS password</strong> to open the Administration tools. This does not store your password.
-    </div>
-    <div class="form-field">
-      <label>Signed in as</label>
-      <input id="admin-auth-email" type="text" readonly />
-    </div>
-    <div class="form-field">
-      <label>LIMS Password</label>
-      <input id="admin-auth-password" type="password" data-allow-autofill="true" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitAdminVerification()" />
-    </div>
-    <div id="admin-auth-error" class="msg-inline"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('admin-auth')">Cancel</button>
-      <button class="btn-ok" id="admin-auth-submit" onclick="submitAdminVerification()">Unlock Admin</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1830,8 +1759,7 @@ document.addEventListener('DOMContentLoaded', function() {
              'sb-inventory-label','sb-kits-btn','sb-bottles-btn','sb-kitstk-btn',
              'sb-log-btn','sb-actions-label','sb-sendkits-btn','sb-setstock-btn',
              'sb-admin-label','sb-clients-btn','sb-users-btn',
-             'sb-testtypes-btn','sb-statistics-btn','sb-intake-btn',
-             'sb-secure-admin-label','sb-secure-admin-btn'],
+             'sb-testtypes-btn','sb-statistics-btn','sb-intake-btn'],
     owner:  ['sb-statistics-btn'],
   };
 
@@ -1992,69 +1920,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
-    // Sort by actual date + time, newest first. Activity Log dates are normally
-    // MM/DD/YY, but accept YYYY-MM-DD too so older/newer records sort correctly.
-    const activityTimestamp = (row) => {
-      const dateRaw = String(row.date || '').trim();
-      const timeRaw = String(row.time || '').trim();
-      let year = 0, month = 1, day = 1;
-
-      let m = dateRaw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
-      if (m) {
-        month = Number(m[1]); day = Number(m[2]);
-        year = Number(m[3]);
-        if (year < 100) year += 2000;
-      } else {
-        m = dateRaw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-        if (m) { year = Number(m[1]); month = Number(m[2]); day = Number(m[3]); }
-      }
-
-      let hour = 0, minute = 0, second = 0;
-      const tm = timeRaw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-      if (tm) {
-        hour = Number(tm[1]); minute = Number(tm[2]); second = Number(tm[3] || 0);
-        const ap = (tm[4] || '').toUpperCase();
-        if (ap === 'PM' && hour < 12) hour += 12;
-        if (ap === 'AM' && hour === 12) hour = 0;
-      }
-
-      if (!year || month < 1 || month > 12 || day < 1 || day > 31) return 0;
-      return new Date(year, month - 1, day, hour, minute, second).getTime();
-    };
-
     _spLogRows = (data.items || []).sort((a, b) => {
-      const diff = activityTimestamp(b) - activityTimestamp(a);
-      if (diff !== 0) return diff;
-      // Stable fallback for records with identical/missing timestamps.
-      return String(b.title || '').localeCompare(String(a.title || ''));
+      const da = (a.date || '') + (a.time || '');
+      const db = (b.date || '') + (b.time || '');
+      return db.localeCompare(da);
     });
     filterActivityLog();
-  }
-
-  // Normalize Activity Log display to military time (HH:MM), including older
-  // rows that may have been stored with AM/PM.
-  function formatActivityMilitaryTime(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '—';
-    const m = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
-    if (!m) return raw;
-    let hour = Number(m[1]);
-    const minute = m[2];
-    const ap = (m[3] || '').toUpperCase();
-    if (ap === 'PM' && hour < 12) hour += 12;
-    if (ap === 'AM' && hour === 12) hour = 0;
-    if (hour === 24) hour = 0;
-    return `${String(hour).padStart(2, '0')}:${minute}`;
-  }
-
-  function formatActivityDate(value) {
-    const raw = String(value || '').trim();
-    if (!raw) return '—';
-    let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (m) return `${String(m[2]).padStart(2,'0')}/${String(m[3]).padStart(2,'0')}/${m[1].slice(-2)}`;
-    m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
-    if (m) return `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/${String(m[3]).slice(-2)}`;
-    return raw;
   }
 
   function filterActivityLog() {
@@ -2077,8 +1948,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     tbody.innerHTML = rows.map((r, i) => `
       <tr style="border-bottom:1px solid var(--border);background:${i%2===0?'white':'var(--off-white)'}">
-        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${formatActivityDate(r.date)}</td>
-        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;font-family:monospace;">${formatActivityMilitaryTime(r.time)}</td>
+        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${r.date||'—'}</td>
+        <td style="padding:8px 12px;white-space:nowrap;color:var(--slate);font-size:12px;">${r.time||'—'}</td>
         <td style="padding:8px 12px;font-size:12px;font-weight:600;color:var(--navy);">${r.type||'—'}</td>
         <td style="padding:8px 12px;font-size:12px;">${r.client||r.title||'—'}</td>
         <td style="padding:8px 12px;font-size:12px;color:var(--slate);max-width:300px;">${r.notes||'—'}</td>
@@ -2472,232 +2343,6 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch { return d; }
   }
 
-  // ── SECURE ADMIN / SAMPLE CLEANUP ─────────────────────────────────────
-  let _adminPendingButton = null;
-  let _adminPreviewGroup = null;
-  const ADMIN_TOKEN_KEY = 'cha_admin_reauth_token';
-  const ADMIN_EXP_KEY   = 'cha_admin_reauth_exp';
-
-  function adminRoles() {
-    return String(_session?.role || '').split(',').map(v=>v.trim());
-  }
-  function adminIsRole() { return adminRoles().includes('admin'); }
-  function adminToken() {
-    const t = sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
-    const exp = parseInt(sessionStorage.getItem(ADMIN_EXP_KEY) || '0', 10);
-    if (!t || !exp || Date.now() >= exp) {
-      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-      sessionStorage.removeItem(ADMIN_EXP_KEY);
-      return '';
-    }
-    return t;
-  }
-  function lockSecureAdmin() {
-    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
-    sessionStorage.removeItem(ADMIN_EXP_KEY);
-    _adminPreviewGroup = null;
-    showSection('overview', document.querySelector('.sb-btn[onclick*="overview"]'));
-    showToast('🔐 Admin tools locked');
-  }
-  function openSecureAdmin(btn) {
-    if (!adminIsRole()) { showToast('⚠️ Admin access required.'); return; }
-    _adminPendingButton = btn || document.getElementById('sb-secure-admin-btn');
-    if (adminToken()) {
-      showSection('admin', _adminPendingButton);
-      return;
-    }
-    const s = Auth.getSession();
-    const email = document.getElementById('admin-auth-email');
-    const pw = document.getElementById('admin-auth-password');
-    const err = document.getElementById('admin-auth-error');
-    if (email) email.value = s?.email || '';
-    if (pw) pw.value = '';
-    if (err) { err.className='msg-inline'; err.textContent=''; }
-    openModal('admin-auth');
-    setTimeout(()=>pw?.focus(), 50);
-  }
-  window.openSecureAdmin = openSecureAdmin;
-
-  async function submitAdminVerification() {
-    const s = Auth.getSession();
-    const pw = document.getElementById('admin-auth-password')?.value || '';
-    const err = document.getElementById('admin-auth-error');
-    const btn = document.getElementById('admin-auth-submit');
-    if (!pw) { if(err){err.className='msg-inline err';err.textContent='Enter your LIMS password.';} return; }
-    if (btn) { btn.disabled=true; btn.textContent='Verifying...'; }
-    try {
-      // Verify through the same authentication path used by the normal LIMS login.
-      // This also supports accounts whose last forced password change was saved locally
-      // by the older reset flow before the server-side password field was corrected.
-      const loginResult = await Auth.loginAsync(s?.email || '', pw);
-      if (!loginResult?.success) throw new Error(loginResult?.error || 'Incorrect LIMS password.');
-      const verifiedRoles = String(loginResult.user?.role || '').split(',').map(v=>v.trim());
-      if (!verifiedRoles.includes('admin')) throw new Error('This account does not have Admin access.');
-
-      // Keep the Users-list password hash synchronized with the password that just
-      // successfully authenticated in the LIMS. This repairs older forced-reset accounts.
-      const syncRes = await fetch('/api/users-manage', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ action:'setpw', email:s?.email || '', password:pw, updatedBy:s?.name || s?.email || 'Admin' })
-      });
-      const syncData = await syncRes.json().catch(()=>({}));
-      if (!syncRes.ok || !syncData.success) throw new Error(syncData.error || 'Could not synchronize the LIMS password.');
-
-      // Now issue the short-lived server-side Admin token.
-      const res = await fetch('/api/sample-admin', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ action:'verify', email:s?.email || '', password:pw })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Admin verification failed.');
-      sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
-      sessionStorage.setItem(ADMIN_EXP_KEY, String(Date.now() + (data.expiresInMinutes || 15)*60000));
-      document.getElementById('admin-auth-password').value='';
-      closeModal('admin-auth');
-      showSection('admin', _adminPendingButton || document.getElementById('sb-secure-admin-btn'));
-      showToast('🔓 Admin unlocked for 15 minutes');
-    } catch(e) {
-      if (err) { err.className='msg-inline err'; err.textContent=e.message; }
-    } finally {
-      if (btn) { btn.disabled=false; btn.textContent='Unlock Admin'; }
-    }
-  }
-  window.submitAdminVerification = submitAdminVerification;
-
-  async function adminApi(action, extra={}) {
-    const token = adminToken();
-    if (!token) {
-      openSecureAdmin(document.getElementById('sb-secure-admin-btn'));
-      throw new Error('Admin verification required.');
-    }
-    const res = await fetch('/api/sample-admin', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ action, adminToken:token, ...extra })
-    });
-    const data = await res.json().catch(()=>({error:'Server returned an invalid response.'}));
-    if (res.status === 401) {
-      sessionStorage.removeItem(ADMIN_TOKEN_KEY); sessionStorage.removeItem(ADMIN_EXP_KEY);
-      openSecureAdmin(document.getElementById('sb-secure-admin-btn'));
-    }
-    if (!res.ok || data.error) throw new Error(data.error || `Admin request failed (${res.status})`);
-    return data;
-  }
-
-  function adminEsc(v) {
-    return String(v ?? '').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-  }
-  function adminFmtDT(v) {
-    if (!v) return '—';
-    try { return new Date(v).toLocaleString('en-US',{timeZone:'America/New_York'}); } catch { return v; }
-  }
-
-  async function adminFindSampleGroup() {
-    const input = document.getElementById('admin-cleanup-labid');
-    const status = document.getElementById('admin-cleanup-status');
-    const preview = document.getElementById('admin-cleanup-preview');
-    const baseId = String(input?.value || '').trim().split(' ')[0];
-    if (!baseId) { showToast('Enter a Lab ID.'); return; }
-    status.textContent = 'Searching Accession Log and linked records...';
-    preview.style.display='none';
-    _adminPreviewGroup = null;
-    try {
-      const data = await adminApi('preview',{baseId});
-      const g = data.group;
-      _adminPreviewGroup = g;
-      const listRows = Object.entries(g.counts || {}).map(([k,v])=>`<tr><td>${adminEsc(k)}</td><td style="font-weight:700;">${v}</td></tr>`).join('');
-      const sheetRows = (g.controlSheets || []).map(x=>`<tr><td>${x.kind==='radon'?'Radon Control Sheet':'Control Sheet'}</td><td><code>${adminEsc(x.baseId)}</code></td><td>${adminEsc(x.file)}</td><td>${x.row}</td></tr>`).join('');
-      const tests = (g.tests || []).map(t=>`<div style="padding:5px 0;border-bottom:1px solid var(--border);"><code>${adminEsc(t.baseId)}</code> — ${adminEsc(t.test || t.suffix || '—')}</div>`).join('');
-      preview.innerHTML = `
-        <div style="border:1.5px solid var(--border);border-radius:10px;padding:16px;background:var(--off-white);">
-          <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px;">
-            <div><div style="font-size:11px;color:var(--slate);font-weight:700;text-transform:uppercase;">CreatedAt Group</div><div style="font-family:monospace;font-weight:700;">${adminEsc(g.createdAt)}</div></div>
-            <div><div style="font-size:11px;color:var(--slate);font-weight:700;text-transform:uppercase;">Related Lab IDs</div><div>${(g.baseIds||[]).map(x=>`<code>${adminEsc(x)}</code>`).join(' ')}</div></div>
-            <div><div style="font-size:11px;color:var(--slate);font-weight:700;text-transform:uppercase;">Radon Lab IDs</div><div>${(g.radonBaseIds||[]).length?(g.radonBaseIds||[]).map(x=>`<code>${adminEsc(x)}</code>`).join(' '):'None'}</div></div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
-            <div><div style="font-weight:700;color:var(--navy);margin-bottom:7px;">Accession Tests</div>${tests || '<div>—</div>'}</div>
-            <div><div style="font-weight:700;color:var(--navy);margin-bottom:7px;">Records Found</div><table><tbody>${listRows}</tbody></table></div>
-          </div>
-          ${sheetRows?`<div style="margin-top:14px;"><div style="font-weight:700;color:var(--navy);margin-bottom:7px;">Control Sheet Entries</div><div style="overflow-x:auto;"><table><thead><tr><th>Sheet</th><th>Lab ID</th><th>File</th><th>Row</th></tr></thead><tbody>${sheetRows}</tbody></table></div></div>`:''}
-          <div style="margin-top:16px;">
-            <label style="display:block;font-size:12px;font-weight:700;color:var(--slate);margin-bottom:5px;">Reason for deletion <span style="color:var(--error);">*</span></label>
-            <textarea id="admin-delete-reason" rows="3" placeholder="Example: Test sample used for approval workflow validation" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--font-body);font-size:13px;resize:vertical;"></textarea>
-          </div>
-          <div style="margin-top:12px;padding:10px 12px;background:#fff3e0;border:1px solid #f5c98a;border-radius:8px;font-size:12px;color:#8a4b08;line-height:1.45;">
-            A 30-day recovery snapshot is created and verified <strong>before</strong> operational records are removed. Existing Activity Log history is preserved.
-          </div>
-          <button class="btn-ok" style="margin-top:14px;background:var(--error);width:100%;" onclick="adminDeleteSampleGroup()">Delete This Accession Group</button>
-        </div>`;
-      preview.style.display='block';
-      status.textContent = `Found ${g.baseIds.length} related Lab ID${g.baseIds.length===1?'':'s'}. Review everything below before deleting.`;
-    } catch(e) {
-      status.textContent = '⚠️ ' + e.message;
-      showToast('⚠️ ' + e.message);
-    }
-  }
-  window.adminFindSampleGroup = adminFindSampleGroup;
-
-  async function adminDeleteSampleGroup() {
-    const g = _adminPreviewGroup;
-    if (!g) { showToast('Find a sample group first.'); return; }
-    const reason = String(document.getElementById('admin-delete-reason')?.value || '').trim();
-    if (reason.length < 3) { showToast('A deletion reason is required.'); return; }
-    const ids = (g.baseIds || []).join(', ');
-    if (!confirm(`DELETE ACCESSION GROUP?\n\nCreatedAt: ${g.createdAt}\nLab IDs: ${ids}\n\nA 30-day recovery snapshot will be created first.\n\nReason: ${reason}`)) return;
-    const status = document.getElementById('admin-cleanup-status');
-    status.textContent='Creating recovery snapshot, then deleting linked records...';
-    try {
-      const data = await adminApi('delete',{ baseId:g.requestedBaseId, createdAt:g.createdAt, reason });
-      document.getElementById('admin-cleanup-preview').style.display='none';
-      _adminPreviewGroup=null;
-      status.textContent=`✅ Deleted. Recovery ID: ${data.deletionId}. Recoverable until ${adminFmtDT(data.expiresAt)}.`;
-      showToast('✅ Sample group deleted with 30-day recovery');
-      await adminLoadRecoveries();
-    } catch(e) {
-      status.textContent='⚠️ ' + e.message;
-      showToast('⚠️ ' + e.message);
-    }
-  }
-  window.adminDeleteSampleGroup = adminDeleteSampleGroup;
-
-  async function adminLoadRecoveries() {
-    const body = document.getElementById('admin-recovery-body');
-    if (!body) return;
-    if (!adminToken()) { body.innerHTML='<tr><td colspan="7"><div class="empty-state">Admin verification required.</div></td></tr>'; return; }
-    body.innerHTML='<tr><td colspan="7"><div class="empty-state">Loading recoveries...</div></td></tr>';
-    try {
-      const data = await adminApi('recoveries');
-      const rows = data.recoveries || [];
-      if (!rows.length) { body.innerHTML='<tr><td colspan="7"><div class="empty-state">No deleted samples are currently recoverable.</div></td></tr>'; return; }
-      body.innerHTML = rows.map(r=>`<tr>
-        <td><code>${adminEsc(r.requestedBaseId)}</code></td>
-        <td>${(r.baseIds||[]).map(x=>`<code>${adminEsc(x)}</code>`).join(' ')}</td>
-        <td style="font-size:12px;">${adminEsc(adminFmtDT(r.deletedAt))}</td>
-        <td style="font-size:12px;">${adminEsc(adminFmtDT(r.expiresAt))}</td>
-        <td>${adminEsc(r.deletedBy)}</td>
-        <td style="max-width:260px;white-space:normal;">${adminEsc(r.reason)}</td>
-        <td><button class="action-btn" onclick='adminRestoreSample(${JSON.stringify(JSON.stringify(r.path))})'>↩ Restore</button></td>
-      </tr>`).join('');
-    } catch(e) {
-      body.innerHTML=`<tr><td colspan="7"><div class="empty-state">⚠️ ${adminEsc(e.message)}</div></td></tr>`;
-    }
-  }
-  window.adminLoadRecoveries = adminLoadRecoveries;
-
-  async function adminRestoreSample(pathJson) {
-    const path = JSON.parse(pathJson);
-    try {
-      const p = await adminApi('restore-preview',{path});
-      const s = p.snapshot;
-      const counts = Object.entries(s.counts||{}).map(([k,v])=>`${k}: ${v}`).join('\n');
-      if (!confirm(`RESTORE DELETED SAMPLE?\n\nRequested Lab ID: ${s.requestedBaseId}\nRelated Lab IDs: ${(s.baseIds||[]).join(', ')}\nOriginal reason: ${s.reason}\nDeleted by: ${s.deletedBy}\n\n${counts}\nControl sheet entries: ${(s.controlSheets||[]).length}\n\nThis will recreate the operational records and write a restoration audit entry.`)) return;
-      const data = await adminApi('restore',{path});
-      showToast('✅ Deleted sample restored');
-      await adminLoadRecoveries();
-    } catch(e) { showToast('⚠️ ' + e.message); }
-  }
-  window.adminRestoreSample = adminRestoreSample;
-
   function showSection(id,btn) {
     if (id === 'statistics') loadStatistics();
     if (id === 'intake') { initMonthPicker(); loadIntake(); }
@@ -2742,7 +2387,6 @@ document.addEventListener('DOMContentLoaded', function() {
       clients:           ['office','lab','admin'],
       users:             ['admin'],
       testtypes:         ['lab','admin'],
-      admin:             ['admin'],
     };
     const role = _session?.role || 'office';
     const allowed = SECTION_ROLES[id];
@@ -2755,7 +2399,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (id === 'users') loadUsersTab();
     if (id === 'rejected') loadRejectedTab();
     if (id === 'testtypes') loadTestTypesTab();
-    if (id === 'admin') adminLoadRecoveries();
     if (id === 'coc') { loadCOCSettings().then(() => renderPreview()); }
     if (id === 'reports') {
       populateLabIdDropdowns(controlSheetLabIds);
@@ -2824,23 +2467,17 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!container) return;
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
-      // Load the Review Queue first. Client-list refresh is helpful for dropdowns,
-      // but it must never block scanned COCs from appearing for review.
-      const queuePromise = fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache: 'no-store' });
-      const clientsPromise = Promise.resolve()
-        .then(() => refreshClientList())
-        .catch(e => console.warn('[queue] client refresh failed:', e?.message || e));
-      const res = await queuePromise;
+      await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
+      const res  = await fetch('/api/get-scan-queue');
       const data = await res.json();
-      await clientsPromise;
-      if (!res.ok) throw new Error(data.error || 'Failed to load Review Queue');
-      reviewQueueData = data;
-      const scans = (data.pending || []).map(r => ({
-        ...r,
-        services: r.services || (Array.isArray(r.tests) ? r.tests.join('; ') : ''),
-        tests: Array.isArray(r.tests) ? r.tests : []
-      }));
-      reviewQueueData.pending = scans;
+      // Filter out locally-deleted scans (prevents re-appearance after F5)
+      const deletedScans = getDeletedScans();
+      console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
+      const scans = (data.pending || []).filter(r =>
+        !deletedScans.has(r.fileId) &&
+        !deletedScans.has(r.barcodeId) &&
+        !deletedScans.has(r.baseId)
+      );
 
       // ── Approved Today + Dysart's Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
@@ -5131,7 +4768,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <div><strong>Location:</strong> ${record.location}, ${record.city}, ${record.state} ${record.zip}</div>
       ${record.notes ? `<div><strong>Notes:</strong> ${record.notes}</div>` : ''}
     `;
-    document.getElementById('rv-tests-list').textContent = record.services || (record.tests || []).join('; ') || '—';
+    document.getElementById('rv-tests-list').textContent = record.services || '—';
     document.getElementById('rv-labid-preview').textContent = 'Will be generated on approval...';
     document.getElementById('rv-notes').value = '';
     openModal('review-approve');
@@ -5160,7 +4797,7 @@ document.addEventListener('DOMContentLoaded', function() {
       record = { ...record, customer, dateDrawn, location, city };
       tests = testsRaw.split(',').map(s => s.trim()).filter(Boolean);
     } else {
-      tests = Array.isArray(record.tests) && record.tests.length ? record.tests : String(record.services || '').split(';').map(s => s.trim()).filter(Boolean);
+      tests = record.services.split(';').map(s => s.trim()).filter(Boolean);
     }
 
     const clientMatch = resolveClientFromName(record.customer);
@@ -5259,36 +4896,32 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!res.ok) throw new Error(data.error || 'Scan failed');
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
       if (found > 0) {
-        const expectedIds = (data.results || []).filter(r => !r.error && r.fileId).map(r => String(r.fileId));
-        showToast('✅ Scan processed — loading review queue...');
+        showToast('✅ Processing scan — checking queue...');
+        // Poll get-scan-queue directly (no card rebuilds) until new item appears
+        let attempts = 0;
+        let prevQueueCount = 0;
+        try {
+          const initRes = await fetch('/api/get-scan-queue');
+          prevQueueCount = ((await initRes.json()).pending || []).length;
+        } catch(e) {}
 
-        // SharePoint list reads can lag briefly after a successful create. Poll for
-        // the exact file we just scanned (not a count baseline) so we neither refresh
-        // too early nor sit through a fixed retry window after the item is already there.
-        let confirmed = null;
-        for (let attempt = 0; attempt < 10; attempt++) {
+        const poll = async () => {
+          attempts++;
+          await new Promise(res => setTimeout(res, 2500));
           try {
-            const qRes = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache: 'no-store' });
-            const qData = await qRes.json();
-            const pendingIds = new Set((qData.pending || []).map(r => String(r.fileId || '')));
-            if (!expectedIds.length || expectedIds.some(id => pendingIds.has(id))) {
-              confirmed = qData;
-              break;
+            const res  = await fetch('/api/get-scan-queue');
+            const data = await res.json();
+            const curr = (data.pending || []).length;
+            if (curr > prevQueueCount || attempts >= 12) {
+              // New card detected — do ONE full reload
+              await loadReviewQueue();
+              showToast(curr > prevQueueCount ? '✅ Scan added to queue' : '✅ Queue refreshed');
+              return;
             }
           } catch(e) {}
-          await new Promise(r => setTimeout(r, 1000));
-        }
-
-        // If another Review Queue load is already in progress, loadReviewQueue() would
-        // immediately return because of the _rqLoading guard. Wait for that older load
-        // to finish first, then do a guaranteed fresh reload after the scanned item is visible.
-        let waitForExistingLoad = 0;
-        while (_rqLoading && waitForExistingLoad < 40) {
-          await new Promise(r => setTimeout(r, 250));
-          waitForExistingLoad++;
-        }
-        await loadReviewQueue();
-        showToast(confirmed ? '✅ Scan added to queue' : '✅ Scan processed — queue refreshed');
+          return poll();
+        };
+        await poll();
       } else {
         showToast('✅ Drive checked — no new scans');
       }
@@ -6082,7 +5715,6 @@ document.addEventListener('DOMContentLoaded', function() {
             sheetType:  patch.sheetType,
             labId:      currentReportData.labId,
             cacheField: paramMeta?.cacheField || '',
-            changedBy:  getAdminName(),
           }),
         });
         const d = await r.json();
@@ -6172,11 +5804,13 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       const getDate = r => {
-        // Statistics are based on accession date. The Lab ID prefix is authoritative:
-        // MMDDYY-NNN → YYYY-MM-DD. Fall back to received date only for legacy rows.
+        // Try explicit date fields first
+        const d = toISO(r.reportDate || r.stmtDate || r.dateRec || r.datePaid || '');
+        if (d) return d;
+        // Fall back to labId prefix: MMDDYY-NNN → 2026-MM-DD
         const m = (r.labId || '').match(/^(\d{2})(\d{2})(\d{2})-/);
         if (m) return `20${m[3]}-${m[1]}-${m[2]}`;
-        return toISO(r.dateRec || r.reportDate || r.stmtDate || r.datePaid || '');
+        return '';
       };
 
       // Week start = most recent Monday
@@ -6190,29 +5824,17 @@ document.addEventListener('DOMContentLoaded', function() {
       const monthISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
       const yearISO  = `${now.getFullYear()}-01-01`;
 
-      const baseLabId = r => {
-        const raw = String(r.labId || '').trim();
-        const m = raw.match(/(\d{6}-\d{3})/);
-        return m ? m[1] : raw;
-      };
       const calc = subset => {
-        // Revenue is the sum of ALL billing lines; kit count is UNIQUE accession IDs.
-        // This keeps FE + MN + HRD on one Lab ID as one kit while counting all revenue.
-        const income = subset.reduce((sum, r) => sum + (parseFloat(r.amt) || 0), 0);
-        const kits   = new Set(subset.map(baseLabId).filter(Boolean)).size;
+        const income = subset.reduce((s, r) => s + (parseFloat(r.amt) || 0), 0);
+        const kits   = subset.length;
         return { income, kits, avg: kits > 0 ? income / kits : 0 };
       };
 
       const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-      const todayISO = toISO(fmt(now));
-      const inRange = (r, start) => {
-        const d = getDate(r);
-        return d && d >= start && d <= todayISO;
-      };
-      const ws = calc(rows.filter(r => inRange(r, weekISO)));
-      const ms = calc(rows.filter(r => inRange(r, monthISO)));
-      const ys = calc(rows.filter(r => inRange(r, yearISO)));
+      const ws = calc(rows.filter(r => getDate(r) >= weekISO));
+      const ms = calc(rows.filter(r => getDate(r) >= monthISO));
+      const ys = calc(rows.filter(r => getDate(r) >= yearISO));
 
       console.log('[stats] total rows:', rows.length, 'week:', ws.kits, 'month:', ms.kits, 'year:', ys.kits);
       console.log('[stats] sample dates:', rows.slice(0,3).map(r => getDate(r)));
@@ -6312,33 +5934,30 @@ document.addEventListener('DOMContentLoaded', function() {
         return toISO(r.reportDate || r.stmtDate || '');
       };
 
-      // Filter: must have radon result, be in date range, Maine only, and match company if selected
+      // Filter: include all radon billing rows in date range matching company.
+      // rwResults is only written to billing when a report is sent — samples with
+      // imported results in Results Cache but not yet reported would be missed if
+      // we require rwResults. Include all rows where service type is radon OR
+      // rwResults is populated.
+      // State: only exclude if explicitly set to non-ME (blank state = Maine by default).
       const rows = billingRows.filter(r => {
-        if (!r.rwResults) return false;
-        if ((r.state || '').toUpperCase() !== 'ME') return false;
+        const isRadonRow = r.rwResults ||
+          (r.service || r.item || '').toLowerCase().includes('radon');
+        if (!isRadonRow) return false;
+        if (r.state && (r.state || '').toUpperCase() !== 'ME') return false;
         const d = getDate(r);
         if (d < fromVal || d > toVal) return false;
         if (company) {
-          const coMatch = r.clientCode === company || (r.customer||'').toLowerCase().includes(company.toLowerCase());
+          const coMatch = r.clientCode === company ||
+            (r.customer||'').toLowerCase().includes(company.toLowerCase());
           if (!coMatch) return false;
         }
         return true;
       });
 
-      if (!rows.length) { showToast('No radon results found in billing for this period.'); return; }
+      if (!rows.length) { showToast('No radon billing rows found for this period and company.'); return; }
 
-      const formatReportDate = d => {
-        if (!d) return '';
-        const raw = String(d).trim();
-        const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-        if (iso) return iso[2].padStart(2,'0') + '/' + iso[3].padStart(2,'0') + '/' + iso[1];
-        const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
-        if (us) {
-          const year = us[3].length === 2 ? '20' + us[3] : us[3];
-          return us[1].padStart(2,'0') + '/' + us[2].padStart(2,'0') + '/' + year;
-        }
-        return raw;
-      };
+      const toExcelDate = d => Math.floor((new Date(d + 'T00:00:00') - new Date('1899-12-30')) / 86400000);
 
       const dataRows = rows.map(r => {
         const client    = clientMap[r.clientCode] || clientMap[(r.customer||'').toLowerCase().trim()] || {};
@@ -6356,16 +5975,20 @@ document.addEventListener('DOMContentLoaded', function() {
           if (d.getDay() === 0) d.setDate(d.getDate() + 1);
           return d.toISOString().slice(0,10);
         })();
-        const reportDateDisplay = calcDate ? formatReportDate(calcDate) : '';
+        const excelDate = calcDate ? toExcelDate(calcDate) : '';
         return [
           'LAB480', 'Water',
           client.radonLic || '',
           client.billingZip || '',
           r.labId || '',
-          (() => { const n = parseFloat(r.rwResults); return isNaN(n) ? r.rwResults : n < 100 ? '<100' : Math.round(n / 100) * 100; })(),
+          (() => { 
+            if (!r.rwResults) return '';
+            const n = parseFloat(r.rwResults); 
+            return isNaN(n) ? r.rwResults : n < 100 ? '<100' : Math.round(n / 100) * 100; 
+          })(),
           r.location || '',
           town,
-          reportDateDisplay,
+          excelDate || '',
           '', '',
         ];
       });
@@ -6453,10 +6076,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  async function generateDysartsReport() {
-    const fromVal  = document.getElementById('report-date-from')?.value;
-    const toVal    = document.getElementById('report-date-to')?.value;
+  async function generateMonthlyReport() {
+    const fromVal  = document.getElementById('radon-date-from')?.value;
+    const toVal    = document.getElementById('radon-date-to')?.value;
+    const company  = document.getElementById('radon-company')?.value || '';
     if (!fromVal || !toVal) { showToast('Select a date range first.'); return; }
+    if (!company) { showToast('Select a company first.'); return; }
     if (fromVal > toVal) { showToast('Start date must be before end date.'); return; }
     const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const monthLabel = fromVal === toVal ? fmtDate(fromVal) : `${fmtDate(fromVal)} – ${fmtDate(toVal)}`;
@@ -6796,7 +6421,7 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
               const r = await fetch('/api/patch-report-cell', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType, labId: currentReportData.labId, changedBy: getAdminName() }),
+                body: JSON.stringify({ tempId: currentReportData._tempId, paramName: pName, field: patch.field, value: patch.value, sheetType: patch.sheetType }),
               });
               const d = await r.json();
               if (d.success && d.newHex && patch.colorDiv) patch.colorDiv.style.background = d.newHex;
@@ -6886,14 +6511,6 @@ document.addEventListener('DOMContentLoaded', function() {
   
       case 'Arsenic, Total':
         // green: <1 (string) OR <10;  red: >=10
-        if (rl || (num && n < 10))  return '#00CC44';
-        if (num && n >= 10)          return '#FF0000';
-        return null;
-
-      case 'Arsenic, Speciation':
-      case 'Arsenic III':
-      case 'Arsenic V':
-        // green: <10;  red: >=10
         if (rl || (num && n < 10))  return '#00CC44';
         if (num && n >= 10)          return '#FF0000';
         return null;
@@ -7643,7 +7260,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (statusEl) statusEl.textContent = '';
     try {
       const datePrefix = getImportDatePrefix();
-      const res  = await fetch('/api/import-ph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix, importedBy: getAdminName() }) });
+      const res  = await fetch('/api/import-ph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ pH import complete — ${data.updated} sample(s) updated`;
@@ -7667,7 +7284,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (statusEl) statusEl.textContent = '';
     try {
       const datePrefix = getImportDatePrefix();
-      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix, importedBy: getAdminName() }) });
+      const res  = await fetch('/api/import-bacteria', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datePrefix }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
       const msg = `✅ Bacteria import complete — ${data.updated} sample(s) updated`;
@@ -7694,7 +7311,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch('/api/import-radon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dateFilter, importedBy: getAdminName() }),
+        body: JSON.stringify({ dateFilter }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
@@ -7723,7 +7340,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/import-control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uploadedBy: getAdminName(), importedBy: getAdminName(), datePrefix: getImportDatePrefix() }),
+        body: JSON.stringify({ uploadedBy: getAdminName(), datePrefix: getImportDatePrefix() }),
       });
       const text = await res.text();
       let data;
@@ -7777,7 +7394,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ all: true, datePrefix: getImportDatePrefix(), importedBy: getAdminName() }),
+        body: JSON.stringify({ all: true, datePrefix: getImportDatePrefix() }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(`${label}: ${data.error || 'Import failed'}`);
