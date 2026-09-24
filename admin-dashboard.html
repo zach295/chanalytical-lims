@@ -2927,6 +2927,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  // Review Queue — called by all Rejection section checkboxes.
+  // Checking ANY rejection option clears every other checkbox in that card.
+  const RQ_REJECTED_VALUES = [
+    'Rejected - Timeout', 'Rejected - Missing Information',
+    'WQ - Reject', 'RW - Reject',
+  ];
+  function enforceRejectedTimeout(cb, fileId) {
+    if (!cb.checked) return;
+    const card = fileId
+      ? document.getElementById(`scan-card-${fileId}`)
+      : cb.closest('[id^="scan-card-"]');
+    if (!card) return;
+    // Uncheck every other checkbox in this card
+    card.querySelectorAll('input[type="checkbox"]').forEach(other => {
+      if (other !== cb) other.checked = false;
+    });
+  }
+
   async function loadOverview() {
     try {
       // Fetch all Archived Intake records via accession-status overview-stats action
