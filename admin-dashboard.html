@@ -2471,11 +2471,17 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   var _rqLoading = false;
+  var _rqReloadPending = false;
   async function loadReviewQueue() {
-    if (_rqLoading) return; // prevent concurrent calls
-    _rqLoading = true;
+    // Never discard a refresh request. If a load is already running, remember
+    // that another pass is required and let the active load perform it afterward.
+    if (_rqLoading) {
+      _rqReloadPending = true;
+      return;
+    }
     const container = document.getElementById('rq-scan-cards');
     if (!container) return;
+    _rqLoading = true;
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
       await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
@@ -2590,6 +2596,12 @@ document.addEventListener('DOMContentLoaded', function() {
       if (container) container.innerHTML = `<div class="empty-state" style="padding:32px;">⚠️ ${e.message}</div>`;
     } finally {
       _rqLoading = false;
+      if (_rqReloadPending) {
+        _rqReloadPending = false;
+        // Run the queued refresh after this call fully unwinds. This guarantees
+        // a Check Drive completion cannot be lost behind an earlier queue load.
+        setTimeout(() => loadReviewQueue(), 0);
+      }
     }
   }
 
