@@ -2472,11 +2472,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var _rqLoading = false;
   var _rqReloadPending = false;
-  async function loadReviewQueue() {
-    // Never discard a refresh request. If a load is already running, remember
-    // that another pass is required and let the active load perform it afterward.
+  var _rqQueuedData = null;
+  async function loadReviewQueue(preloadedData = null) {
+    // Never discard a refresh request. Preserve a confirmed queue snapshot so
+    // the follow-up render cannot lose the newly-created row to a stale refetch.
     if (_rqLoading) {
       _rqReloadPending = true;
+      if (preloadedData) _rqQueuedData = preloadedData;
       return;
     }
     const container = document.getElementById('rq-scan-cards');
@@ -2485,8 +2487,12 @@ document.addEventListener('DOMContentLoaded', function() {
     container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
     try {
       await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
-      const res  = await fetch('/api/get-scan-queue');
-      const data = await res.json();
+      let data = preloadedData;
+      if (!data) {
+        const res = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache:'no-store' });
+        if (!res.ok) throw new Error('Failed to load Review Queue (' + res.status + ')');
+        data = await res.json();
+      }
       // Filter out locally-deleted scans (prevents re-appearance after F5)
       const deletedScans = getDeletedScans();
       console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
@@ -2598,9 +2604,11 @@ document.addEventListener('DOMContentLoaded', function() {
       _rqLoading = false;
       if (_rqReloadPending) {
         _rqReloadPending = false;
-        // Run the queued refresh after this call fully unwinds. This guarantees
-        // a Check Drive completion cannot be lost behind an earlier queue load.
-        setTimeout(() => loadReviewQueue(), 0);
+        const queuedData = _rqQueuedData;
+        _rqQueuedData = null;
+        // Run the queued refresh after this call fully unwinds. If Check Drive
+        // already confirmed the exact FileID, render that same snapshot directly.
+        setTimeout(() => loadReviewQueue(queuedData), 0);
       }
     }
   }
@@ -4969,6 +4977,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Wait for the exact FileID returned by scan-folder instead of relying on
         // queue counts or an immediate read that may still be stale.
         let confirmed = false;
+        let confirmedData = null;
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
             const qRes = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache:'no-store' });
@@ -4976,6 +4985,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const pendingIds = new Set((qData.pending || []).map(r => String(r.fileId || '')));
             if (!expectedIds.length || expectedIds.some(id => pendingIds.has(id))) {
               confirmed = true;
+              confirmedData = qData;
               break;
             }
           } catch(e) {}
@@ -4988,7 +4998,7 @@ document.addEventListener('DOMContentLoaded', function() {
           await new Promise(r => setTimeout(r, 250));
           waitForExistingLoad++;
         }
-        await loadReviewQueue();
+        await loadReviewQueue(confirmedData);
         showToast(confirmed
           ? `✅ ${found} scan${found === 1 ? '' : 's'} added to queue`
           : '✅ Scan processed — queue refreshed');
