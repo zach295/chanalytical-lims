@@ -2514,14 +2514,10 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       data = { ...data, pending: [...livePending, ...serverPending] };
 
-      // Filter out locally-deleted scans (prevents re-appearance after F5)
-      const deletedScans = getDeletedScans();
-      console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
-      const scans = (data.pending || []).filter(r =>
-        !deletedScans.has(r.fileId) &&
-        !deletedScans.has(r.barcodeId) &&
-        !deletedScans.has(r.baseId)
-      );
+      // The server Review Queue is authoritative. Historical FileIDs/barcodes in
+      // localStorage must not hide a newly-scanned row (scanner files can reuse IDs).
+      const scans = data.pending || [];
+      console.log('[queue] pending fileIds:', scans.map(r=>r.fileId));
 
       // ── Approved Today + Dysart's Run counters ──────────────────────────────
       const approvedBody = document.getElementById('rq-approved-body');
