@@ -944,7 +944,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
           context.log('[scan] CUSTOMER DEBUG', JSON.stringify(matchDebug));
 
           const queueStartedAt = Date.now();
-          await writeToReviewQueue({
+          const queueFields = {
             Title:            reviewStatus,
             LabID:            '',
             ClientName:       client ? client.clientName : (ocr.customer || ''),
@@ -972,7 +972,8 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ScannedBy:        scannedByName,
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
-          }, token);
+          };
+          await writeToReviewQueue(queueFields, token);
 
           timing.reviewQueueMs = Date.now() - queueStartedAt;
 
@@ -999,6 +1000,35 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             tests,
             confidence:   ocr.confidence,
             timing,
+            // Return the exact Review Queue payload in dashboard shape so the live
+            // page can render immediately without waiting for SharePoint read propagation.
+            queueRecord: {
+              fileId: file.id,
+              fileName: file.name,
+              barcodeId: queueFields.BarcodeID || '',
+              baseId: (queueFields.BarcodeID || '').split(' ')[0].trim(),
+              customer: queueFields.ClientName || '',
+              email: queueFields.Email || '',
+              dateDrawn: queueFields.SampleDate || '',
+              timeDrawn: queueFields.SampleTime || '',
+              receivedDate: queueFields.ReceivedDate || '',
+              receivedTime: queueFields.ReceivedTime || '',
+              location: queueFields.Address || '',
+              city: queueFields.City || '',
+              state: queueFields.State || 'ME',
+              zip: queueFields.Zip || '',
+              services: queueFields.TestSelections || '',
+              tests,
+              confidence: queueFields.OCRConfidence || 0,
+              processedDate: queueFields.ProcessedDate || '',
+              reviewStatus: queueFields.Title || 'Ready to Review',
+              validationErrors: queueFields.ValidationErrors || '',
+              waterType: queueFields.WaterType || '',
+              phone: queueFields.Phone || '',
+              billingAddress: queueFields.BillingAddress || '',
+              isNewClient: queueFields.IsNewClient === 'Yes',
+              formType: queueFields.FormType || 'public',
+            },
             ocrExtracted: { phone: ocr.phone, billingAddress: ocr.billingAddress, email: ocr.email, customer: ocr.customer },
             ocrTextSnippet: azureText.slice(0, 800), // first 800 chars for debugging
           });
