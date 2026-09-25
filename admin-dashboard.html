@@ -4497,9 +4497,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }
 
-      // Control-sheet writes are handled by /api/approve-scan.
-      // Do not call /api/control-sheet again here: the duplicate WQ write/retry path
-      // added a 24s timeout and redundant Graph/Excel work to every approval.
+      // WQ writing remains entirely inside /api/approve-scan.
+      // After approval returns, ensure today's blank Radon Control Sheet exists.
+      // Intentionally do NOT await this request: daily-sheet pre-creation must never
+      // add latency to intake, and the endpoint is idempotent if the file exists.
+      if (data.labIds?.length) {
+        fetch('/api/control-sheet', {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ action:'create', type:'rw' }),
+        })
+          .then(async r => {
+            const d = await r.json().catch(()=>({}));
+            if (!r.ok || !d.success) console.warn('[control-sheet] background RCS create:', d.error || r.status);
+            else console.log('[control-sheet] background RCS ready:', d.fileName);
+          })
+          .catch(e => console.warn('[control-sheet] background RCS create failed:', e.message));
+      }
       showToast(`✅ ${labIdStr} written to sheets`);
 
       // Add to in-memory recently approved cache so it shows in Recently Approved table
