@@ -115,8 +115,6 @@ app.http('mark-scan-processed', {
           const targetRow = match._id;
           if (!targetRow) continue;
 
-          // Mark discarded first. Even if physical deletion races/404s,
-          // get-scan-queue will stop returning this row.
           try {
             await updateItem(LISTS.REVIEW_QUEUE, targetRow, {
               ReviewStatus: 'Discarded',
@@ -124,7 +122,6 @@ app.http('mark-scan-processed', {
             });
             context.log(`[mark-scan-processed] Marked Review Queue item ${targetRow} discarded`);
           } catch (statusErr) {
-            // 404 means this duplicate is already gone; continue to the others.
             context.log(`[mark-scan-processed] Status update for ${targetRow}: ${statusErr.message}`);
           }
 
@@ -143,8 +140,7 @@ app.http('mark-scan-processed', {
           }
         }
 
-        // Verify no live row with this FileID remains. If SharePoint still exposes
-        // one, mark every remaining duplicate Discarded so it cannot render again.
+        // Re-query by FileID and make sure no live duplicate can render again.
         if (fileId) {
           try {
             const escaped = String(fileId).replace(/'/g, "''");
@@ -160,10 +156,13 @@ app.http('mark-scan-processed', {
                 }).catch(e => context.log(`[mark-scan-processed] Final discard mark ${rem._id}: ${e.message}`));
               }
             }
-            queueDeleted = remaining.every(rem =>
+            // The row is safely hidden if it is absent OR all remaining copies are discarded.
+            const finalRows = await listItems(LISTS.REVIEW_QUEUE, {
+              filter: `fields/FileID eq '${escaped}'`
+            }).catch(() => remaining);
+            queueDeleted = !finalRows.length || finalRows.every(rem =>
               String(rem.ReviewStatus || rem.Title || '').toLowerCase() === 'discarded'
             );
-            if (!remaining.length) queueDeleted = true;
           } catch (verifyErr) {
             context.log(`[mark-scan-processed] Queue cleanup verification: ${verifyErr.message}`);
             queueDeleted = cleanedRows > 0 && !queueWarning;
@@ -180,8 +179,6 @@ app.http('mark-scan-processed', {
             driveDeleted = await deleteSpFile(fileId, token);
           } catch (fileErr) {
             context.log(`[mark-scan-processed] PDF delete failed: ${fileErr.message}`);
-            // Keep the queue discarded even if file cleanup fails; report warning
-            // without resurrecting the Review Queue card.
             queueWarning = queueWarning || `PDF delete failed: ${fileErr.message}`;
           }
         } else {
@@ -189,13 +186,6 @@ app.http('mark-scan-processed', {
         }
 
         if (queueWarning) context.log(`[mark-scan-processed] Cleanup warning: ${queueWarning}`);
-      } else {
-          context.log('[mark-scan-processed] No fileId to delete');
-        }
-
-        // If physical row deletion failed but status update succeeded, this is
-        // still a successful discard from the live queue.
-        if (!queueDeleted && !queueWarning) queueDeleted = true;
       } else {
         await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
         if (fileId) {
