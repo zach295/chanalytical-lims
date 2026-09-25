@@ -18,15 +18,9 @@ app.http('get-scan-queue', {
         return status !== 'Approved' && status !== 'Discarded' && status !== 'Processed';
       });
 
-      // ── Cross-reference: remove any pending item whose FileID is in Archived Intake ──
-      // When a scan is approved, approve-scan.js stores FileID in Archived Intake field_15.
-      // This is the server-side safety net in case the Review Queue row wasn't deleted.
-      let approvedFileIds = new Set();
-      try {
-        const aiItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
-        aiItems.forEach(r => { if (r.field_15) approvedFileIds.add(String(r.field_15).trim()); });
-      } catch(e) { context.log('[get-scan-queue] Archived Intake cross-ref failed:', e.message); }
-
+      // Review Queue is authoritative for what is pending. Do not suppress a new
+      // row merely because its SharePoint FileID appeared in Archived Intake in
+      // the past; scanner/SharePoint workflows can reuse an item ID.
       const parseTests = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return [];
@@ -39,9 +33,7 @@ app.http('get-scan-queue', {
         return raw.split(/,\s+(?!(?:Total|Speciation)\b)/i).map(t => t.trim()).filter(Boolean);
       };
 
-      const pending = filtered
-        .filter(r => !approvedFileIds.has(String(r.FileID || r.FileId || '').trim()))
-        .map(r => ({
+      const pending = filtered.map(r => ({
         fileId:           r.FileID       || r.FileId       || '',
         barcodeId:        r.BarcodeID    || r.BarcodeId    || '',
         baseId:           (r.BarcodeID    || r.BarcodeId    || '').split(' ')[0].trim(),
