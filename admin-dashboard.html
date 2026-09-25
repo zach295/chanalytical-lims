@@ -4907,41 +4907,22 @@ document.addEventListener('DOMContentLoaded', function() {
     btn.disabled = true;
     btn.textContent = '⏳ Scanning drive...';
     try {
-      // Trigger OCR scan of incoming SharePoint folder
+      // /api/scan-folder does not return until OCR/extraction has completed and
+      // the Review Queue row has already been written. Do not poll for a future
+      // queue-count increase after that point; the new row may already be included.
       const res  = await fetch('/api/scan-folder', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Scan failed');
+
       const found = data.newScans ?? data.processed ?? data.count ?? 0;
       if (found > 0) {
-        showToast('✅ Processing scan — checking queue...');
-        // Poll get-scan-queue directly (no card rebuilds) until new item appears
-        let attempts = 0;
-        let prevQueueCount = 0;
-        try {
-          const initRes = await fetch('/api/get-scan-queue');
-          prevQueueCount = ((await initRes.json()).pending || []).length;
-        } catch(e) {}
-
-        const poll = async () => {
-          attempts++;
-          await new Promise(res => setTimeout(res, 2500));
-          try {
-            const res  = await fetch('/api/get-scan-queue');
-            const data = await res.json();
-            const curr = (data.pending || []).length;
-            if (curr > prevQueueCount || attempts >= 12) {
-              // New card detected — do ONE full reload
-              await loadReviewQueue();
-              showToast(curr > prevQueueCount ? '✅ Scan added to queue' : '✅ Queue refreshed');
-              return;
-            }
-          } catch(e) {}
-          return poll();
-        };
-        await poll();
+        // One refresh is sufficient because scan-folder has completed the queue write.
+        await loadReviewQueue();
+        showToast(`✅ ${found} scan${found === 1 ? '' : 's'} added to queue`);
       } else {
         showToast('✅ Drive checked — no new scans');
       }
+
       await loadScans();
     } catch(e) {
       showToast('⚠️ ' + e.message);
