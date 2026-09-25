@@ -4719,15 +4719,18 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Delete failed (${res.status})`);
+      if (!data.queueDeleted) throw new Error('Review Queue row was not deleted');
       if (data.driveDeleted) {
-        showToast('✅ Scan deleted.');
+        showToast('✅ Scan and PDF deleted.');
       } else {
-        showToast('✅ Removed from queue.');
+        showToast('✅ Scan removed from Review Queue.');
       }
     } catch(err) {
-      // Don't freeze — card is already removed from UI, failure is non-critical
+      // The server is authoritative. If cleanup failed, reload the queue so the
+      // card reflects reality instead of pretending the delete succeeded.
       console.warn('Delete scan cleanup failed:', err.message);
-      showToast('✅ Removed from queue.');
+      showToast('⚠️ Delete did not complete: ' + err.message);
+      await loadReviewQueue();
     }
   }
 
