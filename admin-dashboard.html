@@ -4696,6 +4696,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Mark as deleted immediately in localStorage so it survives F5
     const _cardEl   = document.getElementById(`scan-card-${fileId}`);
+    const _fileName  = _cardEl?.dataset?.filename || '';
     const _barcodeId = _cardEl?.dataset?.barcode || _cardEl?.dataset?.baseid || '';
     console.log('[approve] addDeletedScan:', fileId, 'barcode:', _barcodeId);
     addDeletedScan(fileId);
@@ -4714,9 +4715,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch('/api/mark-scan-processed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId, fileName: document.getElementById(`scan-card-${fileId}`)?.dataset?.filename || '', rowIndex, outcome: 'discarded', processedBy: getAdminName() }),
+        body: JSON.stringify({ fileId, fileName: _fileName, rowIndex, outcome: 'discarded', processedBy: getAdminName() }),
       });
       const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Delete failed (${res.status})`);
       if (data.driveDeleted) {
         showToast('✅ Scan deleted.');
       } else {
