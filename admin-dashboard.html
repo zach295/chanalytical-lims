@@ -4959,9 +4959,39 @@ document.addEventListener('DOMContentLoaded', function() {
       const timedResult = (data.results || []).find(r => r && r.timing);
       if (timedResult) showScanTiming(timedResult);
       if (found > 0) {
-        // One refresh is sufficient because scan-folder has completed the queue write.
+        const expectedIds = (data.results || [])
+          .filter(r => !r.error && r.fileId)
+          .map(r => String(r.fileId));
+
+        showToast('✅ Scan processed — loading review queue...');
+
+        // SharePoint list reads can lag briefly behind the successful create.
+        // Wait for the exact FileID returned by scan-folder instead of relying on
+        // queue counts or an immediate read that may still be stale.
+        let confirmed = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          try {
+            const qRes = await fetch('/api/get-scan-queue?fresh=' + Date.now(), { cache:'no-store' });
+            const qData = await qRes.json();
+            const pendingIds = new Set((qData.pending || []).map(r => String(r.fileId || '')));
+            if (!expectedIds.length || expectedIds.some(id => pendingIds.has(id))) {
+              confirmed = true;
+              break;
+            }
+          } catch(e) {}
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Guarantee the renderer runs after any older queue load has completed.
+        let waitForExistingLoad = 0;
+        while (_rqLoading && waitForExistingLoad < 40) {
+          await new Promise(r => setTimeout(r, 250));
+          waitForExistingLoad++;
+        }
         await loadReviewQueue();
-        showToast(`✅ ${found} scan${found === 1 ? '' : 's'} added to queue`);
+        showToast(confirmed
+          ? `✅ ${found} scan${found === 1 ? '' : 's'} added to queue`
+          : '✅ Scan processed — queue refreshed');
       } else {
         showToast('✅ Drive checked — no new scans');
       }
