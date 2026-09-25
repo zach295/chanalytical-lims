@@ -78,7 +78,7 @@ function sheetConfig(sheetType, ctrlDrivePath) {
   if (sheetType === 'rw') {
     return {
       filePrefix:   'RCS_',
-      templatePath: `${ctrlDrivePath}/Master Radon Control Sheet.xlsx`,
+      templatePath: toDrivePath(process.env.SP_RADON_TEMPLATE || '/sites/Laboratory/Shared Documents/Documents/Control Sheets/Master Radon Control Sheet.xlsx'),
       radonFolder:   true,
     };
   }
@@ -142,7 +142,7 @@ app.http('control-sheet', {
         return { status:200, jsonBody:{ success:true, alreadyExists:true, fileName, monthFolder:targetFolder,
             message:`${fileName} already exists in Control Sheets/${targetFolder}` } };
       } catch {}
-      await ensureMonthFolder(ctrlDrivePath, monthFolder:targetFolder, token);
+      await ensureMonthFolder(ctrlDrivePath, targetFolder, token);
       const tpl  = await graphGet(`/sites/${SITE_ID}/drive/root:/${templatePath}:?$select=id`, token);
       const dest = await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}/${targetFolder}:?$select=id`, token);
       await graphPost(`/sites/${SITE_ID}/drive/items/${tpl.id}/copy`,
