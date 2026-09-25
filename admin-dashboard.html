@@ -2487,7 +2487,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const container = document.getElementById('rq-scan-cards');
     if (!container) return;
     _rqLoading = true;
-    container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
+    // Keep existing cards visible while refreshing. Replacing them with a
+    // "Loading" placeholder caused the just-scanned preview to flash/disappear.
+    const hadVisibleCards = !!container.querySelector('.card');
+    if (!hadVisibleCards) {
+      container.innerHTML = '<div class="empty-state" style="padding:32px;">Loading scan queue...</div>';
+    }
     try {
       await refreshClientList(); // ensure emails/abbrevs are fresh before rendering cards
       let data = preloadedData;
@@ -2601,13 +2606,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
-      container.innerHTML = '';
+      // Build the refreshed queue off-DOM, then swap it in one operation.
+      // This avoids a blank frame between clearing the old cards and rendering new ones.
+      const nextCards = document.createDocumentFragment();
       scans.forEach((r, i) => {
         const card = document.createElement('div');
         card.innerHTML = buildScanCard(r);
         if (r._ocrDebug) _ocrDebugMap[r.fileId] = r._ocrDebug;
-        container.appendChild(card.firstElementChild);
+        if (card.firstElementChild) nextCards.appendChild(card.firstElementChild);
       });
+      container.replaceChildren(nextCards);
 
       // Initialize any post-render card logic
       container.querySelectorAll('[data-rejected="true"]').forEach(div => {
