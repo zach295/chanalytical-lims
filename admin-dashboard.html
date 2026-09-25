@@ -4951,6 +4951,40 @@ document.addEventListener('DOMContentLoaded', function() {
     panel.style.display = 'block';
   }
 
+  function renderLiveScanResults(results) {
+    const container = document.getElementById('rq-scan-cards');
+    if (!container) return;
+    const records = (results || []).map(r => r?.queueRecord).filter(Boolean);
+    if (!records.length) return;
+
+    // Remove the loading/empty placeholder, but preserve any existing scan cards.
+    const placeholder = container.querySelector('.empty-state');
+    if (placeholder) placeholder.remove();
+
+    for (const record of records) {
+      if (!record.fileId || document.getElementById('scan-card-' + record.fileId)) continue;
+      const holder = document.createElement('div');
+      holder.innerHTML = buildScanCard(record);
+      const card = holder.firstElementChild;
+      if (card) container.prepend(card);
+    }
+
+    // Apply the same post-render rejection initialization as a normal queue load.
+    container.querySelectorAll('[data-rejected="true"]').forEach(div => {
+      const cb = div.querySelector('input[value="Rejected - Timeout"]');
+      if (cb && typeof setRejectedTimeoutExclusion === 'function') {
+        setRejectedTimeoutExclusion(div, true);
+      }
+    });
+
+    const badge = document.getElementById('rq-badge');
+    if (badge) {
+      const count = container.querySelectorAll(':scope > .card').length;
+      badge.style.display = count ? 'inline-block' : 'none';
+      badge.textContent = count;
+    }
+  }
+
   async function triggerScanNow(btn) {
     const orig = btn.textContent;
     btn.disabled = true;
@@ -4967,6 +5001,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const timedResult = (data.results || []).find(r => r && r.timing);
       if (timedResult) showScanTiming(timedResult);
       if (found > 0) {
+        // scan-folder has already written the Review Queue row. Render the exact
+        // returned record immediately so the live page does not depend on a
+        // second SharePoint GET becoming consistent.
+        renderLiveScanResults(data.results);
         const expectedIds = (data.results || [])
           .filter(r => !r.error && r.fileId)
           .map(r => String(r.fileId));
