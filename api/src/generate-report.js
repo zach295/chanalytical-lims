@@ -797,8 +797,15 @@ app.http('generate-report', {
             analDT = String(c.field_5 || ''); // End Date/Time bacteria
             break;
           case 'calc': {
-            const ca = parseFloat(c.Calcium_x0028_Ca43_x0029_  || '');
-            const mg = parseFloat(c.Magnesium_x0028_Mg24_x0029_ || '');
+            // Hardness uses Calcium + Magnesium, but a result below that
+            // element's reporting limit contributes zero to the calculation.
+            // This applies both to numeric sub-RL values and explicit "<..." values.
+            const caRaw = String(c.Calcium_x0028_Ca43_x0029_ || '').trim();
+            const mgRaw = String(c.Magnesium_x0028_Mg24_x0029_ || '').trim();
+            const caParsed = parseFloat(caRaw.replace(/^</, ''));
+            const mgParsed = parseFloat(mgRaw.replace(/^</, ''));
+            const ca = caRaw.startsWith('<') || (!isNaN(caParsed) && caParsed < 0.2) ? 0 : caParsed;
+            const mg = mgRaw.startsWith('<') || (!isNaN(mgParsed) && mgParsed < 0.1) ? 0 : mgParsed;
             if (!isNaN(ca) && !isNaN(mg)) {
               rawVal = (Math.round((ca*2.497 + mg*4.118)*100)/100).toString();
             }
