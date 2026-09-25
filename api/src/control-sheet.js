@@ -104,12 +104,12 @@ async function getSheetIds(token, destFilePath, fileName) {
   return _fileCache[fileName];
 }
 
-async function ensureMonthFolder(ctrlDrivePath, monthFolder:targetFolder, token) {
+async function ensureMonthFolder(ctrlDrivePath, monthFolder, token) {
   try { await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}/${monthFolder}:?$select=id`, token); }
   catch {
     const p = await graphGet(`/sites/${SITE_ID}/drive/root:/${ctrlDrivePath}:?$select=id`, token);
     await graphPost(`/sites/${SITE_ID}/drive/items/${p.id}/children`,
-      { name:monthFolder:targetFolder, folder:{}, '@microsoft.graph.conflictBehavior':'replace' }, token);
+      { name:monthFolder, folder:{}, '@microsoft.graph.conflictBehavior':'replace' }, token);
   }
 }
 
