@@ -81,10 +81,15 @@ const COL = {
   BROMIDE:29, DT_BROMIDE:30,
 };
 
-function cellVal(ws, r, c) {
+function cellVal(ws, r, c, raw = false) {
   const cell = ws[XLSX.utils.encode_cell({ r, c })];
   if (!cell || cell.v === undefined || cell.v === null) return '';
-  const v = String(cell.w || cell.v).trim();
+  // Chemistry results must use Excel's underlying value (cell.v), not the
+  // formatted display value (cell.w). A format such as 0 decimals can display
+  // 0.8 as "1", which destroys the information needed to apply the reporting
+  // limit correctly. Dates/times and text can continue using cell.w.
+  const source = raw ? cell.v : (cell.w !== undefined ? cell.w : cell.v);
+  const v = String(source).trim();
   return (v === 'N/A' || v === '#N/A') ? '' : v;
 }
 
@@ -119,29 +124,29 @@ function parseControlFile(buffer, targetIds) {
     if (targetIds && targetIds.size > 0 && !targetIds.has(baseId)) continue;
     rows.push({
       baseId, barcode,
-      ph:           cellVal(ws, r, COL.PH),
+      ph:           cellVal(ws, r, COL.PH, true),
       dt_ph:        cellVal(ws, r, COL.DT_PH),
       coliform:     cellVal(ws, r, COL.COLIFORM),
       ecoli:        cellVal(ws, r, COL.ECOLI),
       start_dt:     cellVal(ws, r, COL.START_DT),
       end_dt:       cellVal(ws, r, COL.END_DT),
-      chloride:     cellVal(ws, r, COL.CHLORIDE),
+      chloride:     cellVal(ws, r, COL.CHLORIDE, true),
       dt_chloride:  cellVal(ws, r, COL.DT_CHLORIDE),
-      fluoride:     cellVal(ws, r, COL.FLUORIDE),
+      fluoride:     cellVal(ws, r, COL.FLUORIDE, true),
       dt_fluoride:  cellVal(ws, r, COL.DT_FLUORIDE),
-      nitrite:      cellVal(ws, r, COL.NITRITE),
+      nitrite:      cellVal(ws, r, COL.NITRITE, true),
       dt_nitrite:   cellVal(ws, r, COL.DT_NITRITE),
-      nitrate:      cellVal(ws, r, COL.NITRATE),
+      nitrate:      cellVal(ws, r, COL.NITRATE, true),
       dt_nitrate:   cellVal(ws, r, COL.DT_NITRATE),
-      alkalinity:   cellVal(ws, r, COL.ALKALINITY),
+      alkalinity:   cellVal(ws, r, COL.ALKALINITY, true),
       dt_alkalinity:cellVal(ws, r, COL.DT_ALKALINITY),
-      sulfate:      cellVal(ws, r, COL.SULFATE),
+      sulfate:      cellVal(ws, r, COL.SULFATE, true),
       dt_sulfate:   cellVal(ws, r, COL.DT_SULFATE),
-      tannins:      cellVal(ws, r, COL.TANNINS),
+      tannins:      cellVal(ws, r, COL.TANNINS, true),
       dt_tannins:   cellVal(ws, r, COL.DT_TANNINS),
-      tds:          cellVal(ws, r, COL.TDS),
+      tds:          cellVal(ws, r, COL.TDS, true),
       dt_tds:       cellVal(ws, r, COL.DT_TDS),
-      bromide:      cellVal(ws, r, COL.BROMIDE),
+      bromide:      cellVal(ws, r, COL.BROMIDE, true),
       dt_bromide:   cellVal(ws, r, COL.DT_BROMIDE),
     });
   }
