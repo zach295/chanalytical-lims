@@ -2473,6 +2473,9 @@ document.addEventListener('DOMContentLoaded', function() {
   var _rqLoading = false;
   var _rqReloadPending = false;
   var _rqQueuedData = null;
+  // Keep newly scanned cards alive locally while SharePoint list reads catch up.
+  // Without this, a stale GET can erase the card that scan-folder just returned.
+  const _rqLiveRecords = new Map();
   async function loadReviewQueue(preloadedData = null) {
     // Never discard a refresh request. Preserve a confirmed queue snapshot so
     // the follow-up render cannot lose the newly-created row to a stale refetch.
@@ -2493,6 +2496,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!res.ok) throw new Error('Failed to load Review Queue (' + res.status + ')');
         data = await res.json();
       }
+      // Merge any just-created live records into the server snapshot until
+      // SharePoint itself returns those exact FileIDs. This prevents a later stale
+      // refresh from making a card flash on screen and then disappear.
+      const serverPending = data.pending || [];
+      const serverIds = new Set(serverPending.map(r => String(r.fileId || '')));
+      const nowMs = Date.now();
+      const livePending = [];
+      for (const [id, entry] of _rqLiveRecords.entries()) {
+        if (serverIds.has(String(id))) {
+          _rqLiveRecords.delete(id); // SharePoint has caught up; server is authoritative.
+        } else if (entry.expiresAt > nowMs) {
+          livePending.push(entry.record);
+        } else {
+          _rqLiveRecords.delete(id);
+        }
+      }
+      data = { ...data, pending: [...livePending, ...serverPending] };
+
       // Filter out locally-deleted scans (prevents re-appearance after F5)
       const deletedScans = getDeletedScans();
       console.log('[queue] deletedScans:', [...deletedScans], '| pending fileIds:', (data.pending||[]).map(r=>r.fileId));
@@ -4605,6 +4626,8 @@ document.addEventListener('DOMContentLoaded', function() {
         render();
       }
 
+      _rqLiveRecords.delete(String(fileId));
+
       // Fade out and remove THIS card only — do not refresh entire queue
       // (refreshing would wipe edits the user has made to other pending cards)
       const card = document.getElementById(`scan-card-${fileId}`);
@@ -4664,6 +4687,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function discardScanCard(fileId, rowIndex) {
     if (!confirm('Delete this scan? This will permanently remove it from the queue AND delete the PDF from SharePoint.')) return;
+
+    _rqLiveRecords.delete(String(fileId));
 
     // Mark as deleted immediately in localStorage so it survives F5
     const _cardEl   = document.getElementById(`scan-card-${fileId}`);
@@ -4962,7 +4987,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (placeholder) placeholder.remove();
 
     for (const record of records) {
-      if (!record.fileId || document.getElementById('scan-card-' + record.fileId)) continue;
+      if (!record.fileId) continue;
+      _rqLiveRecords.set(String(record.fileId), {
+        record,
+        // More than enough time for normal SharePoint propagation; F5 still reads server state.
+        expiresAt: Date.now() + 120000,
+      });
+      if (document.getElementById('scan-card-' + record.fileId)) continue;
       const holder = document.createElement('div');
       holder.innerHTML = buildScanCard(record);
       const card = holder.firstElementChild;
