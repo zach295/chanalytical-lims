@@ -99,14 +99,20 @@ app.http('mark-scan-processed', {
         let matchingRows = [];
         if (fileId) {
           try {
-            const escaped = String(fileId).replace(/'/g, "''");
-            matchingRows = await listItems(LISTS.REVIEW_QUEUE, {
-              filter: `fields/FileID eq '${escaped}'`
-            });
+            // Do not rely on a SharePoint OData filter here. FileID filtering has
+            // intermittently failed because of internal-column naming/propagation.
+            // Read the queue and match the stable drive item ID in JavaScript.
+            const allQueueRows = await listItems(LISTS.REVIEW_QUEUE);
+            matchingRows = allQueueRows.filter(item =>
+              String(item.FileID || item.FileId || '').trim() === String(fileId).trim()
+            );
+            context.log(`[mark-scan-processed] Found ${matchingRows.length} queue row(s) for FileID ${fileId}`);
           } catch (lookupErr) {
             context.log(`[mark-scan-processed] FileID lookup failed: ${lookupErr.message}`);
           }
         }
+        // rowIndex is only a fallback. It can be stale after a live refresh, so a
+        // 404 on this row must be treated as already removed rather than fatal.
         if (!matchingRows.length && row) matchingRows = [{ _id: row }];
 
         let queueWarning = null;
@@ -143,10 +149,10 @@ app.http('mark-scan-processed', {
         // Re-query by FileID and make sure no live duplicate can render again.
         if (fileId) {
           try {
-            const escaped = String(fileId).replace(/'/g, "''");
-            const remaining = await listItems(LISTS.REVIEW_QUEUE, {
-              filter: `fields/FileID eq '${escaped}'`
-            });
+            const allRemaining = await listItems(LISTS.REVIEW_QUEUE);
+            const remaining = allRemaining.filter(item =>
+              String(item.FileID || item.FileId || '').trim() === String(fileId).trim()
+            );
             for (const rem of remaining) {
               const status = String(rem.ReviewStatus || rem.Title || '').toLowerCase();
               if (status !== 'discarded') {
@@ -156,10 +162,10 @@ app.http('mark-scan-processed', {
                 }).catch(e => context.log(`[mark-scan-processed] Final discard mark ${rem._id}: ${e.message}`));
               }
             }
-            // The row is safely hidden if it is absent OR all remaining copies are discarded.
-            const finalRows = await listItems(LISTS.REVIEW_QUEUE, {
-              filter: `fields/FileID eq '${escaped}'`
-            }).catch(() => remaining);
+            const verifyRows = await listItems(LISTS.REVIEW_QUEUE).catch(() => allRemaining);
+            const finalRows = verifyRows.filter(item =>
+              String(item.FileID || item.FileId || '').trim() === String(fileId).trim()
+            );
             queueDeleted = !finalRows.length || finalRows.every(rem =>
               String(rem.ReviewStatus || rem.Title || '').toLowerCase() === 'discarded'
             );
