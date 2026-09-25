@@ -1,5 +1,5 @@
 const { app } = require('@azure/functions');
-const { updateItem, deleteItem, getToken, LISTS } = require('../shared/graph');
+const { updateItem, deleteItem, findItem, getToken, LISTS } = require('../shared/graph');
 const { writeActivityLog } = require('../shared/audit');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -72,10 +72,10 @@ async function deleteSpFile(itemId, token) {
     });
     if (!res.ok && res.status !== 404) {
       const txt = await res.text().catch(() => '');
-      console.warn(`[deleteSpFile] Failed ${res.status}: ${txt.slice(0, 100)}`);
-    } else {
-      console.log(`[deleteSpFile] Deleted ${itemId} (status ${res.status})`);
+      throw new Error(`File delete failed (${res.status}): ${txt.slice(0, 180)}`);
     }
+    console.log(`[deleteSpFile] Deleted/already absent ${itemId} (status ${res.status})`);
+    return true;
   } catch(e) { console.warn('[deleteSpFile]', e.message); throw e; }
 }
 
@@ -91,18 +91,37 @@ app.http('mark-scan-processed', {
       const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
 
+      let queueDeleted = false;
+      let driveDeleted = false;
       if (outcome === 'discarded') {
+        // Delete the Review Queue row and do not hide failures. If the row id
+        // supplied by the browser is stale, resolve the current row by FileID.
+        let targetRow = row;
         try {
-          // Delete the row entirely from Review Queue
-          await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
-          context.log(`[mark-scan-processed] Deleted discarded item ${row} from Review Queue`);
-        } catch(deleteErr) {
-          context.log(`[mark-scan-processed] Update failed for row ${row}:`, deleteErr.message);
+          await deleteItem(LISTS.REVIEW_QUEUE, targetRow);
+          queueDeleted = true;
+          context.log(`[mark-scan-processed] Deleted discarded item ${targetRow} from Review Queue`);
+        } catch (deleteErr) {
+          context.log(`[mark-scan-processed] Row ${targetRow} delete failed: ${deleteErr.message}`);
+          if (fileId) {
+            const current = await findItem(LISTS.REVIEW_QUEUE, 'FileID', String(fileId)).catch(() => null);
+            if (current?._id && String(current._id) !== String(targetRow)) {
+              targetRow = current._id;
+              await deleteItem(LISTS.REVIEW_QUEUE, targetRow);
+              queueDeleted = true;
+              context.log(`[mark-scan-processed] Deleted Review Queue item by FileID fallback: ${targetRow}`);
+            } else {
+              throw deleteErr;
+            }
+          } else {
+            throw deleteErr;
+          }
         }
+
         if (fileId) {
           const token = await getToken();
           context.log(`[mark-scan-processed] Deleting file ${fileId}`);
-          await deleteSpFile(fileId, token);
+          driveDeleted = await deleteSpFile(fileId, token);
         } else {
           context.log('[mark-scan-processed] No fileId to delete');
         }
@@ -129,7 +148,7 @@ app.http('mark-scan-processed', {
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, driveDeleted: !!fileId, row, outcome, auditWarning }),
+        body: JSON.stringify({ success: true, queueDeleted, driveDeleted, row, outcome, auditWarning }),
       };
     } catch(e) {
       context.log('[mark-scan-processed] Error:', e.message);
