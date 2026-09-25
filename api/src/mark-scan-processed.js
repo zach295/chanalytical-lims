@@ -44,16 +44,14 @@ async function deleteSpFile(itemId, token) {
       const parentPath = (meta.parentReference?.path || '').toLowerCase();
       const itemName   = (meta.name || '');
 
-      // HARD CHECK 1: path contains archive-related keywords
+      // HARD CHECK: anything already in Archive is immutable.
+      // A COC that is still in the Review folder MUST remain deletable from the
+      // Review Queue's "Delete Scan" action; filename alone is not an archive signal.
       const archiveKeywords = ['archived', 'archive', 'lab scans/arch'];
       const inArchive = archiveKeywords.some(kw => parentPath.includes(kw));
 
-      // HARD CHECK 2: item name matches COC scan pattern (MMDDYY-NNN format = lab sample)
-      const looksLikeCOA = /^\d{6}-\d{3}.*\.pdf$/i.test(itemName);
-      const looksLikeCOC = /^scan.*\.pdf$|^coc.*\.pdf$/i.test(itemName);
-
-      if (inArchive || looksLikeCOA || looksLikeCOC) {
-        const msg = `HARD BLOCK: Cannot delete "${itemName}" — it is a COC scan or is in the Archive. Path: ${parentPath}`;
+      if (inArchive) {
+        const msg = `HARD BLOCK: Cannot delete "${itemName}" — it is in the Archive. Path: ${parentPath}`;
         console.error(`[deleteSpFile] ${msg}`);
         throw new Error(msg);
       }
