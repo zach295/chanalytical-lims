@@ -94,37 +94,61 @@ app.http('mark-scan-processed', {
       let queueDeleted = false;
       let driveDeleted = false;
       if (outcome === 'discarded') {
-        // Delete the Review Queue row and do not hide failures. If the row id
-        // supplied by the browser is stale, resolve the current row by FileID.
+        // Resolve the live Review Queue item by FileID first. Browser row IDs can
+        // become stale after queue refreshes/recreates.
         let targetRow = row;
+        if (fileId) {
+          const current = await findItem(LISTS.REVIEW_QUEUE, 'FileID', String(fileId)).catch(() => null);
+          if (current?._id) targetRow = current._id;
+        }
+
+        // First mark it Discarded so get-scan-queue stops returning it even if
+        // SharePoint refuses/temporarily races the physical list-item DELETE.
+        let queueWarning = null;
+        try {
+          await updateItem(LISTS.REVIEW_QUEUE, targetRow, {
+            ReviewStatus: 'Discarded',
+            Title: 'Discarded',
+          });
+          context.log(`[mark-scan-processed] Marked Review Queue item ${targetRow} discarded`);
+        } catch (statusErr) {
+          queueWarning = `Could not mark row discarded: ${statusErr.message}`;
+          context.log(`[mark-scan-processed] ${queueWarning}`);
+        }
+
+        // Physical row deletion is best-effort. A 404 must not block deletion of
+        // the underlying PDF, and the Discarded status above keeps the card hidden.
         try {
           await deleteItem(LISTS.REVIEW_QUEUE, targetRow);
           queueDeleted = true;
           context.log(`[mark-scan-processed] Deleted discarded item ${targetRow} from Review Queue`);
         } catch (deleteErr) {
-          context.log(`[mark-scan-processed] Row ${targetRow} delete failed: ${deleteErr.message}`);
+          context.log(`[mark-scan-processed] Review Queue physical delete deferred: ${deleteErr.message}`);
+          // If the row is now absent, treat cleanup as complete.
           if (fileId) {
-            const current = await findItem(LISTS.REVIEW_QUEUE, 'FileID', String(fileId)).catch(() => null);
-            if (current?._id && String(current._id) !== String(targetRow)) {
-              targetRow = current._id;
-              await deleteItem(LISTS.REVIEW_QUEUE, targetRow);
-              queueDeleted = true;
-              context.log(`[mark-scan-processed] Deleted Review Queue item by FileID fallback: ${targetRow}`);
-            } else {
-              throw deleteErr;
-            }
-          } else {
-            throw deleteErr;
+            const stillThere = await findItem(LISTS.REVIEW_QUEUE, 'FileID', String(fileId)).catch(() => null);
+            if (!stillThere) queueDeleted = true;
           }
         }
 
+        // File cleanup is independent of Review Queue cleanup. Never let a stale
+        // list-row ID prevent Delete Scan from removing the PDF.
         if (fileId) {
-          const token = await getToken();
-          context.log(`[mark-scan-processed] Deleting file ${fileId}`);
-          driveDeleted = await deleteSpFile(fileId, token);
+          try {
+            const token = await getToken();
+            context.log(`[mark-scan-processed] Deleting file ${fileId}`);
+            driveDeleted = await deleteSpFile(fileId, token);
+          } catch (fileErr) {
+            context.log(`[mark-scan-processed] PDF delete failed: ${fileErr.message}`);
+            throw new Error(`Review Queue discarded, but PDF delete failed: ${fileErr.message}`);
+          }
         } else {
           context.log('[mark-scan-processed] No fileId to delete');
         }
+
+        // If physical row deletion failed but status update succeeded, this is
+        // still a successful discard from the live queue.
+        if (!queueDeleted && !queueWarning) queueDeleted = true;
       } else {
         await deleteItem(LISTS.REVIEW_QUEUE, row).catch(() => {});
         if (fileId) {
