@@ -6001,8 +6001,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const calc = subset => {
         const income = subset.reduce((s, r) => s + (parseFloat(r.amt) || 0), 0);
-        const kits   = subset.length;
-        return { income, kits, avg: kits > 0 ? income / kits : 0 };
+
+        // Count physical samples/kits by distinct base Lab ID rather than billing rows.
+        // A single Lab ID can have multiple billing rows (one per analysis), but it
+        // should only count once in the Statistics "Kits" metric.
+        const baseLabIds = new Set(
+          subset
+            .map(r => {
+              const labId = String(r.labId || '').trim();
+              const match = labId.match(/^(\\d{6}-\\d{3})/);
+              return match ? match[1] : labId;
+            })
+            .filter(Boolean)
+        );
+        const kits = baseLabIds.size;
+
+        // Keep the existing average-price calculation unchanged for now.
+        // Avg Revenue / Sample will be corrected separately in Fix #2.
+        const rowCount = subset.length;
+        return { income, kits, avg: rowCount > 0 ? income / rowCount : 0 };
       };
 
       const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
