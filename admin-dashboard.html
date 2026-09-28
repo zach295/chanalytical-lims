@@ -5979,13 +5979,8 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       const getDate = r => {
-        // Statistics are based on the sample accession date encoded in the Lab ID.
-        // Lab IDs use MMDDYY-NNN, e.g. 092826-001 → 2026-09-28.
-        const m = String(r.labId || '').trim().match(/^(\d{2})(\d{2})(\d{2})-/);
-        if (m) return `20${m[3]}-${m[1]}-${m[2]}`;
-
-        // Fallback only for legacy/malformed rows that do not have a valid Lab ID.
-        return toISO(r.dateRec || r.reportDate || r.stmtDate || r.datePaid || '');
+        // Statistics use Report Date only.
+        return toISO(r.reportDate || '');
       };
 
       // Week start = most recent Monday
