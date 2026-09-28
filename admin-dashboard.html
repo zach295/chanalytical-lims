@@ -5970,12 +5970,21 @@ document.addEventListener('DOMContentLoaded', function() {
       // Normalize any date string to YYYY-MM-DD for comparison
       const toISO = d => {
         if (!d) return '';
-        // Already ISO: 2026-08-26
-        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0,10);
-        // MM/DD/YYYY or M/D/YYYY
-        const m = d.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-        return d.slice(0,10);
+        const raw = String(d).trim();
+
+        // SharePoint / ISO date: 2026-09-28 or 2026-09-28T04:00:00Z
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+
+        // Report Date may be entered with slashes or hyphens and with
+        // either a 2-digit or 4-digit year:
+        // 9/28/26, 09/28/2026, 9-28-26, 09-28-2026
+        const m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})(?:\s|$)/);
+        if (m) {
+          const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+          return `${year}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+        }
+
+        return '';
       };
 
       const getDate = r => {
