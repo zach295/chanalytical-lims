@@ -6027,9 +6027,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const fmt$ = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-      const ws = calc(rows.filter(r => getDate(r) >= weekISO));
-      const ms = calc(rows.filter(r => getDate(r) >= monthISO));
-      const ys = calc(rows.filter(r => getDate(r) >= yearISO));
+      const todayISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+      // Keep each current-period metric bounded through today. Previously these
+      // filters only had a start date, so future Report Dates could be counted.
+      const ws = calc(rows.filter(r => {
+        const d = getDate(r);
+        return d && d >= weekISO && d <= todayISO;
+      }));
+      const ms = calc(rows.filter(r => {
+        const d = getDate(r);
+        return d && d >= monthISO && d <= todayISO;
+      }));
+      const ys = calc(rows.filter(r => {
+        const d = getDate(r);
+        return d && d >= yearISO && d <= todayISO;
+      }));
 
       console.log('[stats] total rows:', rows.length, 'week:', ws.kits, 'month:', ms.kits, 'year:', ys.kits);
       console.log('[stats] sample dates:', rows.slice(0,3).map(r => getDate(r)));
