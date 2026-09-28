@@ -6013,7 +6013,7 @@ document.addEventListener('DOMContentLoaded', function() {
           subset
             .map(r => {
               const labId = String(r.labId || '').trim();
-              const match = labId.match(/^(\\d{6}-\\d{3})/);
+              const match = labId.match(/^(\d{6}-\d{3})/);
               return match ? match[1] : labId;
             })
             .filter(Boolean)
