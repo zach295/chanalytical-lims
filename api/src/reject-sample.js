@@ -291,10 +291,10 @@ app.http('reject-sample', {
         do {
           d.setDate(d.getDate() + 1);
         } while (d.getDay() === 0 || d.getDay() === 6);
-        const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const dd = String(d.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
+        const yy = String(d.getFullYear()).slice(-2);
+        return `${mm}/${dd}/${yy}`;
       };
 
       // ── Update Reports to be Billed ───────────────────────────────────────
