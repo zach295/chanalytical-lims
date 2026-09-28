@@ -309,11 +309,21 @@ app.http('reject-sample', {
           const colMap  = {};
           if (colsRes.ok) { ((await colsRes.json()).value || []).forEach(c => { colMap[c.displayName] = c.name; }); }
 
-          const billedRes   = await fetch(
-            `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title)&$top=500`,
-            { headers: authHdr2 }
-          );
-          const billedItems = ((await billedRes.json()).value || [])
+          // Read the entire Reports to be Billed list. A single Graph page can
+          // contain only the first 500 items, which caused older samples to be missed.
+          let allBilledItems = [];
+          let billedNext = `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title)&$top=500`;
+          while (billedNext) {
+            const billedRes = await fetch(billedNext, { headers: authHdr2 });
+            if (!billedRes.ok) {
+              throw new Error(`RTB read failed ${billedRes.status}: ${(await billedRes.text()).slice(0,120)}`);
+            }
+            const billedData = await billedRes.json();
+            allBilledItems.push(...(billedData.value || []));
+            billedNext = billedData['@odata.nextLink'] || null;
+          }
+
+          const billedItems = allBilledItems
             .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
           let billedOk = 0;
           for (const item of billedItems) {
