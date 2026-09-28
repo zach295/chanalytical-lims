@@ -280,6 +280,23 @@ app.http('reject-sample', {
         }
       } catch(e) { log.push(`⚠️ Accession Log: ${e.message}`); }
 
+
+      // Report Date for rejected samples = next business day after the Lab ID date.
+      // Lab ID format: MMDDYY-NNN.
+      const nextBusinessDayFromLabId = id => {
+        const m = String(id || '').match(/^(\d{2})(\d{2})(\d{2})-/);
+        if (!m) return '';
+        const d = new Date(Number(`20${m[3]}`), Number(m[1]) - 1, Number(m[2]));
+        if (isNaN(d.getTime())) return '';
+        do {
+          d.setDate(d.getDate() + 1);
+        } while (d.getDay() === 0 || d.getDay() === 6);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
       // ── Update Reports to be Billed ───────────────────────────────────────
       try {
         const GRAPH2   = 'https://graph.microsoft.com/v1.0';
@@ -301,8 +318,14 @@ app.http('reject-sample', {
           let billedOk = 0;
           for (const item of billedItems) {
             const pFields = {};
+            pFields[colMap['Lab ID'] || 'Title'] = rejLabId;
             pFields[colMap['Item/Service']  || 'Item_x002F_Service']         = rejectionType;
             pFields[colMap['Test Type SKU'] || 'Test_x0020_Type_x0020_SKU']  = 'REJ';
+
+            const rejectionReportDate = nextBusinessDayFromLabId(baseId);
+            if (rejectionReportDate) {
+              pFields[colMap['Report Date'] || 'Report_x0020_Date'] = rejectionReportDate;
+            }
             const pRes = await fetch(
               `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items/${item.id}/fields`,
               { method: 'PATCH', headers: { ...authHdr2, 'Content-Type': 'application/json' },
