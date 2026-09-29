@@ -1,4 +1,4 @@
-const { createItem } = require('./graph');
+const { createItem, getListId, graphGet } = require('./graph');
 
 function easternStamp() {
   const now = new Date();
@@ -18,6 +18,29 @@ function cleanText(value, max = 3000) {
   return String(value ?? '').trim().slice(0, max);
 }
 
+let _activitySchema = null;
+
+async function getActivitySchema() {
+  if (_activitySchema) return _activitySchema;
+  const listId = await getListId('Activity Log');
+  const data = await graphGet(`/sites/${process.env.SP_SITE_ID}/lists/${listId}/columns?$select=name,displayName,choice&$top=100`);
+  const cols = data.value || [];
+  const names = new Set(cols.map(c => c.name));
+  const display = new Map(cols.map(c => [c.displayName, c.name]));
+  _activitySchema = { names, display };
+  return _activitySchema;
+}
+
+function legacyType(activityType) {
+  const t = String(activityType || '').toLowerCase();
+  if (t.includes('approve') || t.includes('receive') || t.includes('check')) return 'received';
+  if (t.includes('reject') || t.includes('correct') || t.includes('adjust') || t.includes('delete') || t.includes('restore')) return 'adjust';
+  if (t.includes('send')) return 'sent';
+  if (t.includes('initial')) return 'initial';
+  if (t.includes('assemble')) return 'assemble';
+  return 'adjust';
+}
+
 async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', quantity = 0, context } = {}) {
   const id = cleanText(labId, 255);
   const activityType = cleanText(type, 255);
@@ -27,16 +50,39 @@ async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', qua
 
   const stamp = easternStamp();
   try {
-    await createItem('Activity Log', {
+    const schema = await getActivitySchema();
+    const fields = {
       Title: `${stamp.date} ${id}`,
       Client: id,
-      ActivityType: activityType,
       Notes: cleanText(notes, 3000),
       By: actor,
-      LogDate: stamp.date,
-      LogTime: stamp.time,
-      Quantity: Number(quantity) || 0,
-    });
+    };
+
+    if (schema.names.has('ActivityType') || schema.display.has('Activity Type')) {
+      fields[schema.names.has('ActivityType') ? 'ActivityType' : schema.display.get('Activity Type')] = activityType;
+    } else if (schema.names.has('Type') || schema.display.has('Type')) {
+      fields[schema.names.has('Type') ? 'Type' : schema.display.get('Type')] = legacyType(activityType);
+    }
+
+    if (schema.names.has('LogDate') || schema.display.has('Log Date')) {
+      fields[schema.names.has('LogDate') ? 'LogDate' : schema.display.get('Log Date')] = stamp.date;
+    } else if (schema.names.has('Date') || schema.display.has('Date')) {
+      fields[schema.names.has('Date') ? 'Date' : schema.display.get('Date')] = stamp.date;
+    }
+
+    if (schema.names.has('LogTime') || schema.display.has('Log Time')) {
+      fields[schema.names.has('LogTime') ? 'LogTime' : schema.display.get('Log Time')] = stamp.time;
+    } else if (schema.names.has('Time') || schema.display.has('Time')) {
+      fields[schema.names.has('Time') ? 'Time' : schema.display.get('Time')] = stamp.time;
+    }
+
+    if (schema.names.has('Quantity') || schema.display.has('Quantity')) {
+      fields[schema.names.has('Quantity') ? 'Quantity' : schema.display.get('Quantity')] = Number(quantity) || 0;
+    } else if (schema.names.has('Qty') || schema.display.has('Qty')) {
+      fields[schema.names.has('Qty') ? 'Qty' : schema.display.get('Qty')] = Number(quantity) || 0;
+    }
+
+    await createItem('Activity Log', fields);
     return { success: true, date: stamp.date, time: stamp.time };
   } catch (e) {
     if (context) context.log(`[ActivityLog] ${activityType} for ${id} failed: ${e.message}`);
