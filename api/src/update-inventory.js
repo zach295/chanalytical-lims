@@ -8,6 +8,7 @@
  */
 const { app }   = require('@azure/functions');
 const { findItem, createItem, updateItem, LISTS } = require('../shared/graph');
+const { writeActivityLog } = require('../shared/audit');
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -58,20 +59,17 @@ app.http('update-inventory', {
       }
 
       // ── Log to Activity Log ──────────────────────────────────────────────────
-      const now      = new Date();
-      const timeStr  = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true });
-      const ts       = now.toISOString();
-
-      await createItem(LISTS.ACTIVITY_LOG, {
-        Title:  `${activityDate} ${clientKey}`,
-        Date:   activityDate,
-        Time:   timeStr,
-        Client: clientKey,
-        Type:   'sampled',
-        Qty:    1,
-        Notes:  `Sample ${sampleId || ''}`,
-        By:     customerName || clientKey,
-      }).catch(e => context.log('[update-inventory] Activity log failed:', e.message));
+      const activityResult = await writeActivityLog({
+        labId: sampleId || clientKey,
+        type: 'Sampled',
+        notes: `Client: ${clientKey}`,
+        by: customerName || clientKey,
+        quantity: 1,
+        context,
+      });
+      if (!activityResult.success) {
+        context.log('[update-inventory] Activity log failed:', activityResult.error);
+      }
 
       context.log(`[update-inventory] ${clientKey} — inStock-1, sampled+1`);
 
