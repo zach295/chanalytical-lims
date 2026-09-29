@@ -8,9 +8,17 @@ function easternStamp() {
     }),
     // Always store Activity Log time as 24-hour military time (HH:MM).
     // hourCycle h23 guarantees midnight is 00:xx rather than 24:xx.
-    time: now.toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }),
+    time: (() => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(now);
+      const hh = parts.find(p => p.type === 'hour')?.value || '00';
+      const mm = parts.find(p => p.type === 'minute')?.value || '00';
+      return `${hh}:${mm}`;
+    })(),
   };
 }
 
