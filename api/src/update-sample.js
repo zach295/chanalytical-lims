@@ -6,6 +6,7 @@
 const { app }   = require('@azure/functions');
 const { listItems, updateItem, createItem, getToken, LISTS } = require('../shared/graph');
 const { syncCoaFromArchivedRows } = require('../shared/coa-sheet');
+const { writeActivityLog } = require('../shared/audit');
 
 const SUFFIX_MAP = {
   'Basic Safety (FHA)':'BS','Basic Safety':'BS','Standard Safety':'SS',
@@ -666,16 +667,15 @@ app.http('update-sample', {
         const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
         const fullNotes = [changes && `Changed: ${changes}`, updateResults && `Updates: ${updateResults}`]
           .filter(Boolean).join('\n');
-        await createItem('Activity Log', {
-          Title:        `${logDate} ${baseId}`,
-          Client:       baseId,
-          ActivityType: 'Sample Correction',
-          Notes:        fullNotes.slice(0, 3000),
-          By:           updatedBy || 'Lab Staff',
-          LogDate:      logDate,
-          LogTime:      logTime,
-          Quantity:     0,
+        const activityResult = await writeActivityLog({
+          labId: baseId,
+          type: 'Sample Correction',
+          notes: fullNotes,
+          by: updatedBy || 'Lab Staff',
+          quantity: 0,
+          context,
         });
+        if (!activityResult.success) throw new Error(activityResult.error || 'Activity Log write failed');
         log.push('✅ Written to Activity Log');
       } catch(e) {
         log.push('⚠️ Activity Log: ' + e.message);
