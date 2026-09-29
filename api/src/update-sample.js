@@ -284,13 +284,18 @@ app.http('update-sample', {
       let archivedItems = [];
       if (listId) {
         try {
-          const itemsRes  = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`,
-            { headers: authHdr }
-          );
-          const itemsData = await itemsRes.json();
-          const allItems  = (itemsData.value || []).map(i => ({ ...i.fields, _id: i.id }));
-          archivedItems   = allItems.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+          const allItems = [];
+          let itemsNext = `${GRAPH}/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`;
+          while (itemsNext) {
+            const itemsRes = await fetch(itemsNext, { headers: authHdr });
+            if (!itemsRes.ok) {
+              throw new Error(`Archived Intake read failed (${itemsRes.status}): ${(await itemsRes.text()).slice(0,160)}`);
+            }
+            const itemsData = await itemsRes.json();
+            allItems.push(...(itemsData.value || []).map(i => ({ ...i.fields, _id: i.id })));
+            itemsNext = itemsData['@odata.nextLink'] || null;
+          }
+          archivedItems = allItems.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
           context.log(`[update-sample] total=${allItems.length} matched=${archivedItems.length} baseId=${baseId}`);
         } catch(e) { log.push('⚠️ Archived Intake read error: ' + e.message); }
       }
@@ -406,11 +411,18 @@ app.http('update-sample', {
             const rtbListId  = await getRTBListId(siteId, token, GRAPH, authHdr);
             if (rtbListId) {
               const colMap     = await getRTBColMap(siteId, rtbListId, token, GRAPH, authHdr);
-              const billedRes  = await fetch(
-                `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title,Customer)&$top=500`,
-                { headers: authHdr }
-              );
-              const billedItems = ((await billedRes.json()).value || [])
+              const allBilledItems = [];
+              let billedNext = `${GRAPH}/sites/${siteId}/lists/${rtbListId}/items?$expand=fields($select=Title,Customer)&$top=500`;
+              while (billedNext) {
+                const billedRes = await fetch(billedNext, { headers: authHdr });
+                if (!billedRes.ok) {
+                  throw new Error(`Reports to be Billed read failed (${billedRes.status}): ${(await billedRes.text()).slice(0,160)}`);
+                }
+                const billedData = await billedRes.json();
+                allBilledItems.push(...(billedData.value || []));
+                billedNext = billedData['@odata.nextLink'] || null;
+              }
+              const billedItems = allBilledItems
                 .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
 
               // Look up rate from Current Pricing-V1 for new test type
@@ -483,11 +495,18 @@ app.http('update-sample', {
         const rtbListId2 = await getRTBListId(siteId, token, GRAPH, authHdr);
         if (rtbListId2) {
           const colMap2 = await getRTBColMap(siteId, rtbListId2, token, GRAPH, authHdr);
-          const bRes    = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/${rtbListId2}/items?$expand=fields($select=Title)&$top=500`,
-            { headers: authHdr }
-          );
-          const bItems  = ((await bRes.json()).value || [])
+          const allBItems = [];
+          let bNext = `${GRAPH}/sites/${siteId}/lists/${rtbListId2}/items?$expand=fields($select=Title)&$top=500`;
+          while (bNext) {
+            const bRes = await fetch(bNext, { headers: authHdr });
+            if (!bRes.ok) {
+              throw new Error(`Reports to be Billed read failed (${bRes.status}): ${(await bRes.text()).slice(0,160)}`);
+            }
+            const bData = await bRes.json();
+            allBItems.push(...(bData.value || []));
+            bNext = bData['@odata.nextLink'] || null;
+          }
+          const bItems = allBItems
             .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
           for (const item of bItems) {
             const bFields = {};
@@ -600,10 +619,19 @@ app.http('update-sample', {
       // Re-read Archived Intake after all correction writes so the COA sheet mirrors
       // the final authoritative values rather than the pre-correction snapshot.
       try {
-        const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
-        const correctedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
-        const coaSync = await syncCoaFromArchivedRows(baseId, correctedRows, context);
-        log.push(`✅ COA sheet synchronized (${coaSync.updated} row(s)${coaSync.cleared ? `, ${coaSync.cleared} old row(s) cleared` : ''})`);
+        const correctionRequested = updates && Object.keys(updates).some(k => updates[k] !== undefined);
+        if (correctionRequested && archivedItems.length === 0) {
+          log.push('⚠️ COA sheet not synchronized because Archived Intake sample was not found/updated.');
+        } else {
+          const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
+          const correctedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+          if (!correctedRows.length) {
+            log.push('⚠️ COA sheet not synchronized because no matching Archived Intake rows were found.');
+          } else {
+            const coaSync = await syncCoaFromArchivedRows(baseId, correctedRows, context);
+            log.push(`✅ COA sheet synchronized (${coaSync.updated} row(s)${coaSync.cleared ? `, ${coaSync.cleared} old row(s) cleared` : ''})`);
+          }
+        }
       } catch(e) {
         log.push(`⚠️ COA sheet: ${e.message}`);
       }
