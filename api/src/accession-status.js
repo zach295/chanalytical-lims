@@ -180,7 +180,20 @@ app.http('accession-status', {
             notes:  f.Notes        || '',
             by:     f.By           || '',
             date:   normalizeLogDate(f.LogDate || f.Date || ''),
-            time:   f.LogTime      || f.Time || '',
+            time:   (() => {
+              const raw = String(f.LogTime || f.Time || '').trim();
+              if (!raw) return '';
+              const h24 = raw.match(/^(\d{1,2}):(\d{2})$/);
+              if (h24) return `${String(h24[1]).padStart(2,'0')}:${h24[2]}`;
+              const ap = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+              if (ap) {
+                let h = Number(ap[1]);
+                if (ap[3].toUpperCase() === 'PM' && h < 12) h += 12;
+                if (ap[3].toUpperCase() === 'AM' && h === 12) h = 0;
+                return `${String(h).padStart(2,'0')}:${ap[2]}`;
+              }
+              return raw;
+            })(),
             qty:    f.Quantity     ?? f.Qty ?? '',
           }));
           return { status: 200, jsonBody: { success: true, items } };
