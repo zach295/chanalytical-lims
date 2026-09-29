@@ -85,12 +85,15 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   const rr = await gReq('GET',
     `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/usedRange?$select=values,columnCount,address`,
     token, undefined, sid);
-  if (!rr.ok) { context.log('usedRange failed:', rr.status); return; }
+  if (!rr.ok) {
+    const errText = await rr.text().catch(() => '');
+    throw new Error(`Report worksheet could not be read (${rr.status}): ${errText.slice(0,160)}`);
+  }
   const { values: rows, columnCount: nc, address: rangeAddr } = await rr.json();
   // Parse the starting row from the range address (e.g. "Sheet1!B12:J60" → startRow = 12)
   const startRowMatch = (rangeAddr || '').match(/[A-Z]+(\d+):/);
   const startRow = startRowMatch ? parseInt(startRowMatch[1]) : 1;
-  if (!rows?.length) return;
+  if (!rows?.length) throw new Error('Report worksheet is empty or unreadable');
 
   const base        = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates = [];
@@ -218,9 +221,16 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
   // Send cell value updates first
   for (let i = 0; i < cellUpdates.length; i += 20) {
-    const resp = await graphBatch(cellUpdates.slice(i, i + 20), token, sid);
+    const batch = cellUpdates.slice(i, i + 20);
+    const resp = await graphBatch(batch, token, sid);
+    if (!resp.length && batch.length) {
+      throw new Error(`Report cell batch write failed for cells ${i + 1}-${i + batch.length}`);
+    }
     const errs = resp.filter(r => parseInt(r.status) >= 400);
-    if (errs.length) context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 2)));
+    if (errs.length) {
+      context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 5)));
+      throw new Error(`Report cell write failed for ${errs.length} required field(s)`);
+    }
   }
 
   // ── Write comment and protect its row before deletions ───────────────────────
@@ -606,6 +616,12 @@ app.http('render-report-pdf', {
           .map(p => String(p?.value ?? '').trim())
           .filter(Boolean)
           .map(normalizeCell);
+
+        const missingResults = expectedResultValues.filter(v => !flatNorm.includes(v));
+        if (missingResults.length) {
+          throw new Error(`${missingResults.length} expected result value(s) were not written into the report`);
+        }
+
         const metadataCandidates = [
           meta.location,
           meta.clientName,
@@ -615,16 +631,14 @@ app.http('render-report-pdf', {
           reviewDate
         ].map(v => String(v || '').trim()).filter(Boolean).map(normalizeCell);
 
-        const hasExpectedResult = expectedResultValues.length > 0 &&
-          expectedResultValues.some(v => flatNorm.includes(v));
-        const hasMetadata = metadataCandidates.length > 0 &&
+        const hasMetadata = metadataCandidates.length === 0 ||
           metadataCandidates.some(v => flatNorm.includes(v));
 
-        if (!hasExpectedResult && !hasMetadata) {
+        if (!expectedResultValues.length && !hasMetadata) {
           throw new Error('report contains no verified sample data beyond the Lab ID');
         }
 
-        context.log(`[pdf] Verification passed for ${labId}: sheet="${expectedSheet.name}", result=${hasExpectedResult}, metadata=${hasMetadata}`);
+        context.log(`[pdf] Verification passed for ${labId}: sheet="${expectedSheet.name}", results=${expectedResultValues.length}, metadata=${hasMetadata}`);
       } finally {
         await gReq('POST',
           `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
