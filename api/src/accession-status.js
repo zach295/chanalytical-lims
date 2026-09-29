@@ -164,15 +164,24 @@ app.http('accession-status', {
           const allItems = await listItems('Activity Log', { top: 2000 }).catch(e => {
             throw new Error('Activity Log fetch failed: ' + e.message);
           });
+          const normalizeLogDate = value => {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+            let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return `${m[2]}/${m[3]}/${m[1].slice(-2)}`;
+            m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+            if (m) return `${String(m[1]).padStart(2,'0')}/${String(m[2]).padStart(2,'0')}/${m[3].slice(-2)}`;
+            return raw;
+          };
           const items = allItems.map(f => ({
             title:  f.Title        || '',
             client: f.Client       || '',
             type:   f.ActivityType || f.Type || '',
             notes:  f.Notes        || '',
             by:     f.By           || '',
-            date:   f.LogDate      || '',
-            time:   f.LogTime      || '',
-            qty:    f.Quantity     || '',
+            date:   normalizeLogDate(f.LogDate || f.Date || ''),
+            time:   f.LogTime      || f.Time || '',
+            qty:    f.Quantity     ?? f.Qty ?? '',
           }));
           return { status: 200, jsonBody: { success: true, items } };
         }
