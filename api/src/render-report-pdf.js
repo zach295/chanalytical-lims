@@ -374,6 +374,17 @@ app.http('render-report-pdf', {
       token, { persistChanges: true });
     if (sr.ok) sid = (await sr.json()).id || null;
     context.log('[pdf] Session:', sid ? 'OK' : 'none');
+    if (!sid) {
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      return {
+        status: 409,
+        jsonBody: {
+          error: 'Report preparation failed before data could be written. Nothing was sent. Please retry.',
+          retry: true,
+          code: 'REPORT_PREP_SESSION_FAILED'
+        }
+      };
+    }
 
     // ── Step 4: Get all sheets ──────────────────────────────────────────────
     const wr     = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
@@ -548,6 +559,89 @@ app.http('render-report-pdf', {
         token, {}, sid).catch(() => {});
     }
     await new Promise(r => setTimeout(r, 3000));
+
+    // ── Step 8b: Fail-safe verification before PDF export ───────────────────
+    // Read back the exact workbook copy that is about to be converted. A report
+    // must have the expected sheet, the Lab ID written into that sheet, and at
+    // least one expected populated result/metadata value. If not, stop here.
+    try {
+      const verifySessionRes = await gReq('POST',
+        `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
+        token, { persistChanges: false });
+      if (!verifySessionRes.ok) throw new Error(`verification session failed (${verifySessionRes.status})`);
+      const verifySid = (await verifySessionRes.json()).id;
+      if (!verifySid) throw new Error('verification session did not return an ID');
+
+      try {
+        const verifySheetsRes = await gReq('GET',
+          `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`,
+          token, undefined, verifySid);
+        if (!verifySheetsRes.ok) throw new Error(`worksheet verification failed (${verifySheetsRes.status})`);
+        const verifySheets = (await verifySheetsRes.json()).value || [];
+
+        let expectedSheet = null;
+        if (isRadon) {
+          expectedSheet = verifySheets.find(s => /^radon/i.test(s.name));
+        } else if (isArsenicSpec) {
+          expectedSheet = verifySheets.find(s => /arsenic.*spec/i.test(s.name));
+        } else {
+          expectedSheet = verifySheets.find(s => /^lab report/i.test(s.name));
+        }
+        if (!expectedSheet) throw new Error('expected report worksheet is missing');
+
+        const usedRes = await gReq('GET',
+          `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${expectedSheet.id}/usedRange?$select=values`,
+          token, undefined, verifySid);
+        if (!usedRes.ok) throw new Error(`report read-back failed (${usedRes.status})`);
+        const verifyRows = (await usedRes.json()).values || [];
+        const flat = verifyRows.flat().map(v => String(v ?? '').trim()).filter(Boolean);
+        const flatNorm = flat.map(normalizeCell);
+
+        const labNorm = normalizeCell(labId);
+        const labBaseNorm = normalizeCell(String(labId).match(/(\d{6}-\d{3})/)?.[1] || labId);
+        const hasLabId = flatNorm.some(v => v === labNorm || v === labBaseNorm || v.includes(labBaseNorm));
+        if (!hasLabId) throw new Error('Lab ID was not written into the report');
+
+        const expectedResultValues = [...params, ...fhaParams]
+          .map(p => String(p?.value ?? '').trim())
+          .filter(Boolean)
+          .map(normalizeCell);
+        const metadataCandidates = [
+          meta.location,
+          meta.clientName,
+          meta.customer,
+          meta.city,
+          authorizedBy,
+          reviewDate
+        ].map(v => String(v || '').trim()).filter(Boolean).map(normalizeCell);
+
+        const hasExpectedResult = expectedResultValues.length > 0 &&
+          expectedResultValues.some(v => flatNorm.includes(v));
+        const hasMetadata = metadataCandidates.length > 0 &&
+          metadataCandidates.some(v => flatNorm.includes(v));
+
+        if (!hasExpectedResult && !hasMetadata) {
+          throw new Error('report contains no verified sample data beyond the Lab ID');
+        }
+
+        context.log(`[pdf] Verification passed for ${labId}: sheet="${expectedSheet.name}", result=${hasExpectedResult}, metadata=${hasMetadata}`);
+      } finally {
+        await gReq('POST',
+          `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
+          token, {}, verifySid).catch(() => {});
+      }
+    } catch (verifyErr) {
+      context.log('[pdf] VERIFICATION FAILED:', verifyErr.message);
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      return {
+        status: 409,
+        jsonBody: {
+          error: `Report validation failed: ${verifyErr.message}. Nothing was sent. Please retry the report.`,
+          retry: true,
+          code: 'BLANK_REPORT_BLOCKED'
+        }
+      };
+    }
 
     // ── Step 9: Export as PDF ───────────────────────────────────────────────
     let pdfBase64;
