@@ -350,7 +350,7 @@ async function doDelete(group, reason, admin, token, context) {
   for (const s of group.controlSheets) await clearSheetSnapshot(s, token);
   results['Control Sheets'] = group.controlSheets.length;
 
-  await writeActivityLog({
+  const audit = await writeActivityLog({
     labId:group.requestedBaseId,
     type:'Admin Sample Deletion',
     by:admin.name || admin.email,
@@ -364,8 +364,19 @@ async function doDelete(group, reason, admin, token, context) {
       `Removed: ${Object.entries(results).map(([k,v])=>`${k}=${v}`).join(', ')}`,
     ].join('\n'),
     context,
+    preserveType:true,
   });
-  return { deletionId, expiresAt:expiresAt.toISOString(), recoveryPath:saved.path, results };
+  if (!audit.success) {
+    context.log(`[sample-admin] WARNING: deletion completed but audit logging failed: ${audit.error}`);
+  }
+  return {
+    deletionId,
+    expiresAt:expiresAt.toISOString(),
+    recoveryPath:saved.path,
+    results,
+    auditLogged:audit.success,
+    auditWarning:audit.success ? null : audit.error,
+  };
 }
 
 async function doRestore(snapshot, admin, token, context) {
@@ -382,6 +393,7 @@ async function doRestore(snapshot, admin, token, context) {
     labId:snapshot.requestedBaseId,
     type:'Sample Deletion Reversed',
     by:admin.name || admin.email,
+    preserveType:true,
     notes:[
       `Recovery ID: ${snapshot.deletionId}`,
       `Original deletion reason: ${snapshot.reason}`,
