@@ -331,9 +331,10 @@ app.http('send-report', {
         }
       } catch(e) { context.log('[send-report] Archive save (non-fatal):', e.message); }
 
-      // Write Report Date to every matching Reports to be Billed row when report is sent.
-      // Billing rows are keyed by BASE Lab ID, even when the report is sent using a suffixed Lab ID.
+      // Write Report Date only on the FIRST report.
+      // Revised/re-reports preserve the original Report Date.
       let billingDateWarning = null;
+      if (!alreadyReported) {
       try {
         const siteId4   = process.env.SP_SITE_ID;
         const reportBaseId4 = String(labId).match(/(\d{6}-\d{3})/)?.[1] || String(labId).split(' ')[0].trim();
@@ -416,11 +417,15 @@ app.http('send-report', {
           context,
         }).catch(() => {});
       }
+      } else {
+        context.log(`[RTB Report Date] Re-report detected for ${labId}; preserving original Report Date.`);
+      }
 
-      // Write the actual sent Report Date to COA/Form Responses column G.
+      // Write the actual sent Report Date to COA/Form Responses column G on FIRST report only.
       // Column H stores the base Lab ID; update every matching row because one sample
       // can have multiple COA rows (package + separately ordered elements).
       let coaReportDateWarning = null;
+      if (!alreadyReported) {
       try {
         const COA_SHEETS_ID = '15403E6ZaZFQuKNTtgJcb6-2jmlLnk02eq04BGPATqTw';
         const COA_TAB = 'Form Responses';
@@ -503,6 +508,9 @@ app.http('send-report', {
           by: body.authorizedBy || 'Lab Staff',
           context,
         }).catch(() => {});
+      }
+      } else {
+        context.log(`[COA Report Date] Re-report detected for ${labId}; preserving original Report Date.`);
       }
 
       // Results Cache kept as permanent record for report regeneration
