@@ -1,4 +1,4 @@
-const { createItem, getListId, graphGet } = require('./graph');
+const { createItem, getListId, graphGet, graphPost } = require('./graph');
 
 function easternStamp() {
   const now = new Date();
@@ -28,15 +28,32 @@ function cleanText(value, max = 3000) {
 
 let _activitySchema = null;
 
-async function getActivitySchema() {
-  if (_activitySchema) return _activitySchema;
+async function getActivitySchema(forceRefresh = false) {
+  if (_activitySchema && !forceRefresh) return _activitySchema;
   const listId = await getListId('Activity Log');
   const data = await graphGet(`/sites/${process.env.SP_SITE_ID}/lists/${listId}/columns?$select=name,displayName,choice&$top=100`);
   const cols = data.value || [];
   const names = new Set(cols.map(c => c.name));
   const display = new Map(cols.map(c => [c.displayName, c.name]));
-  _activitySchema = { names, display };
+  _activitySchema = { listId, names, display };
   return _activitySchema;
+}
+
+async function ensureExactActivityTypeColumn(context) {
+  let schema = await getActivitySchema();
+  if (schema.names.has('ActivityType') || schema.display.has('Activity Type')) return schema;
+
+  try {
+    await graphPost(
+      `/sites/${process.env.SP_SITE_ID}/lists/${schema.listId}/columns`,
+      { name: 'ActivityType', displayName: 'Activity Type', text: { allowMultipleLines: false } }
+    );
+    schema = await getActivitySchema(true);
+    if (context) context.log('[ActivityLog] Added Activity Type column so administrative events retain their exact label.');
+  } catch (e) {
+    if (context) context.log('[ActivityLog] Could not add Activity Type column:', e.message);
+  }
+  return schema;
 }
 
 function legacyType(activityType) {
@@ -49,7 +66,7 @@ function legacyType(activityType) {
   return 'adjust';
 }
 
-async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', quantity = 0, context } = {}) {
+async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', quantity = 0, context, preserveType = false } = {}) {
   const id = cleanText(labId, 255);
   const activityType = cleanText(type, 255);
   const actor = cleanText(by, 255) || 'Lab Staff';
@@ -58,7 +75,7 @@ async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', qua
 
   const stamp = easternStamp();
   try {
-    const schema = await getActivitySchema();
+    const schema = preserveType ? await ensureExactActivityTypeColumn(context) : await getActivitySchema();
     const fields = {
       Title: `${stamp.date} ${id}`,
       Client: id,
@@ -69,6 +86,8 @@ async function writeActivityLog({ labId, type, notes = '', by = 'Lab Staff', qua
     if (schema.names.has('ActivityType') || schema.display.has('Activity Type')) {
       fields[schema.names.has('ActivityType') ? 'ActivityType' : schema.display.get('Activity Type')] = activityType;
     } else if (schema.names.has('Type') || schema.display.has('Type')) {
+      // Legacy fallback. Administrative delete/restore callers request preserveType,
+      // so this path should only be used if the exact-type column could not be created.
       fields[schema.names.has('Type') ? 'Type' : schema.display.get('Type')] = legacyType(activityType);
     }
 
