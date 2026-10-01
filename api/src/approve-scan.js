@@ -859,6 +859,26 @@ async function writeRadonControlSheet(siteId, token, labId, dateDrawn, timeDrawn
   }
 }
 
+async function ensureRadonMitigationColumn(listId, token) {
+  const siteId = process.env.SP_SITE_ID;
+  const colsRes = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=100`, {
+    headers:{ Authorization:`Bearer ${token}` }
+  });
+  if (!colsRes.ok) throw new Error(`Archived Intake column lookup failed (${colsRes.status})`);
+  const cols = (await colsRes.json()).value || [];
+  let col = cols.find(c => c.name === 'Radon_x0020_Mitigation' || c.name === 'RadonMitigation' || c.displayName === 'Radon Mitigation');
+  if (!col) {
+    const createRes = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/columns`, {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ name:'RadonMitigation', displayName:'Radon Mitigation', boolean:{} }),
+    });
+    if (!createRes.ok) throw new Error(`Could not create Radon Mitigation column (${createRes.status}): ${(await createRes.text()).slice(0,180)}`);
+    col = await createRes.json();
+  }
+  return col.name || 'RadonMitigation';
+}
+
 app.http('approve-scan', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -867,7 +887,7 @@ app.http('approve-scan', {
       const {
         fileId, reviewQueueRow, reviewedBy,
         customer, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
-        location, city, state, zip, tests, hasRadon, wqReject, rwReject, notes, email,
+        location, city, state, zip, tests, hasRadon, radonMitigation, wqReject, rwReject, notes, email,
         phone, billingAddress,
       } = await request.json();
 
@@ -1000,6 +1020,10 @@ app.http('approve-scan', {
         return (d.value||[]).find(l=>l.displayName==='Archived Intake')?.id || null;
       })();
       if (!archivedIntakeListId) context.log('[ArchivedIntake] WARNING: list not found!');
+      const mitigationField = archivedIntakeListId
+        ? await ensureRadonMitigationColumn(archivedIntakeListId, _token)
+        : null;
+      const mitigationYes = !!radonMitigation && radonRequested;
 
       for (const item of labItems) {
         const intakeFields = {
@@ -1018,6 +1042,7 @@ app.http('approve-scan', {
           field_12: reviewedBy || 'Lab Staff',
           field_14: item.isRejection ? 'Rejected' : 'Pending',
         };
+        if (mitigationField) intakeFields[mitigationField] = mitigationYes;
         if (notes && notes.trim()) intakeFields.field_13 = notes;
         // For rejections, also store rejection type in notes if no other note
         if (item.isRejection && !notes?.trim()) {
@@ -1655,6 +1680,7 @@ app.http('approve-scan', {
           `Test types: ${_tests}`,
           `Customer: ${formalName || customer || '—'}`,
           `Written to: Archived Intake | Accession Log | Reports to be Billed | Results Cache`,
+          mitigationYes ? 'Radon Mitigation: Yes' : '',
           `COA scan archived | Review Queue row deleted`,
           `COA Google Sheet: ${coaSheetStatus}${coaSheetWarning ? ' — ' + coaSheetWarning : ''}`,
         ].join('\n');
