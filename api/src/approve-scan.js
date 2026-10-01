@@ -1683,7 +1683,7 @@ app.http('approve-scan', {
           mitigationYes ? 'Radon Mitigation: Yes' : '',
           `COA scan archived | Review Queue row deleted`,
           `COA Google Sheet: ${coaSheetStatus}${coaSheetWarning ? ' — ' + coaSheetWarning : ''}`,
-        ].join('\n');
+        ].filter(Boolean).join('\n');
         await createItem('Activity Log', {
           Title: `${_ld} ${labItems[0]?.baseId||''}`,
           Client: labItems[0]?.baseId||'',
