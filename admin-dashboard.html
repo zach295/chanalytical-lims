@@ -6149,8 +6149,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // rwResults is populated.
       // State: only exclude if explicitly set to non-ME (blank state = Maine by default).
       const rows = billingRows.filter(r => {
+        // Rejected samples must never appear on the state radon report, even if
+        // an RW result or old Radon Water billing data remains on the row.
+        const labIdText = String(r.labId || '').trim().toUpperCase();
+        const serviceText = String(r.service || r.item || '').trim().toLowerCase();
+        const isRejected = /(?:^|\s)REJ(?:\s|$)/.test(labIdText) ||
+          serviceText.includes('rejected');
+        if (isRejected) return false;
+
         const isRadonRow = r.rwResults ||
-          (r.service || r.item || '').toLowerCase().includes('radon');
+          serviceText.includes('radon');
         if (!isRadonRow) return false;
         const state = String(r.state || '').trim().toLowerCase();
         if (state && state !== 'me' && state !== 'maine') return false;
