@@ -6187,7 +6187,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return [
           'LAB480', 'Water',
           client.radonLic || '',
-          client.billingZip || '',
+          r.zip || intake.zip || '',
           r.labId || '',
           (() => { 
             if (!r.rwResults) return '';
