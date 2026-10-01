@@ -1373,6 +1373,12 @@ document.addEventListener('DOMContentLoaded', function() {
               <label>Notes</label>
               <input type="text" id="sc-edit-notes" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;" />
             </div>
+            <div class="form-field" style="display:flex;align-items:flex-end;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 0;">
+                <input type="checkbox" id="sc-edit-radonMitigation" style="width:17px;height:17px;" />
+                Radon Mitigation
+              </label>
+            </div>
           </div>
 
           <div style="display:flex;gap:10px;align-items:center;">
@@ -3794,6 +3800,7 @@ document.addEventListener('DOMContentLoaded', function() {
         state:        raw.field_10 || 'ME',
         zip:          raw.field_11 || '',
         notes:        raw.field_13 || '',
+        radonMitigation: !!(raw.Radon_x0020_Mitigation ?? raw.RadonMitigation),
         _id:          raw._id,
       };
       _scCurrentData = { ...found, baseId };
@@ -3810,6 +3817,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('sc-edit-state').value        = raw.field_10 || 'ME';
       document.getElementById('sc-edit-zip').value          = raw.field_11 ? String(raw.field_11).padStart(5,'0') : '';
       document.getElementById('sc-edit-notes').value        = raw.field_13 || '';
+      document.getElementById('sc-edit-radonMitigation').checked = !!(raw.Radon_x0020_Mitigation ?? raw.RadonMitigation);
       document.getElementById('sc-save-status').textContent = '';
 
       statusEl.textContent = `✅ Found: ${found.labId} — ${found.customer||'Unknown'}`;
@@ -3842,6 +3850,7 @@ document.addEventListener('DOMContentLoaded', function() {
       state:        g('sc-edit-state'),
       zip:          g('sc-edit-zip'),
       notes:        g('sc-edit-notes'),
+      radonMitigation: !!document.getElementById('sc-edit-radonMitigation')?.checked,
     };
     const origMap = {
       coaTest:      orig.coaTest      || '',
@@ -3855,9 +3864,14 @@ document.addEventListener('DOMContentLoaded', function() {
       state:        orig.state        || '',
       zip:          orig.zip          || '',
       notes:        orig.notes        || '',
+      radonMitigation: !!orig.radonMitigation,
     };
     const updates = {};
     for (const [k, v] of Object.entries(allFields)) {
+      if (k === 'radonMitigation') {
+        if (!!v !== !!origMap[k]) updates[k] = !!v;
+        continue;
+      }
       const original = String(origMap[k] || '').trim();
       if (v !== original) updates[k] = v;
     }
@@ -4801,6 +4815,14 @@ document.addEventListener('DOMContentLoaded', function() {
           <div id="sc-${r.fileId}-tests" data-fileid="${r.fileId}" data-rejected="${displayTests.includes('Rejected - Timeout')}" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px;">${testCheckboxes}</div>
         </div>
 
+        <div style="margin-bottom:16px;padding:11px 13px;border:1px solid var(--border);border-radius:8px;background:var(--off-white);">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;">
+            <input type="checkbox" id="sc-${r.fileId}-radonMitigation" style="width:17px;height:17px;cursor:pointer;" />
+            Radon Mitigation
+          </label>
+          <div style="font-size:11px;color:var(--slate);margin:4px 0 0 25px;">Check when the sampled property has a radon mitigation system.</div>
+        </div>
+
         <div class="form-field" style="margin-bottom:16px;">
           <label for="sc-${r.fileId}-notes">Notes</label>
           <input type="text" id="sc-${r.fileId}-notes"
@@ -4849,6 +4871,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const hasRadon = tests.includes('Radon Water');
     const wqReject = tests.includes('WQ - Reject');
     const rwReject = tests.includes('RW - Reject');
+    const radonMitigation = !!document.getElementById(`sc-${fileId}-radonMitigation`)?.checked;
 
     // ── REQUIRED FIELD VALIDATION ─────────────────────────────────────────
     const missing = [];
@@ -4932,6 +4955,7 @@ document.addEventListener('DOMContentLoaded', function() {
           billingAddress: document.getElementById(`sc-${fileId}-billingaddr`)?.value?.trim() || '',
           tests,
           hasRadon,
+          radonMitigation,
           wqReject,
           rwReject,
           notes:        g('notes'),
@@ -6603,7 +6627,8 @@ document.addEventListener('DOMContentLoaded', function() {
           r.location || '',
           town,
           excelDate || '',
-          '', '',
+          '',
+          intake.radonMitigation ? 'Yes' : '',
         ];
       });
 
