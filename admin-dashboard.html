@@ -925,6 +925,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">State</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Drawn</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Received</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Report Date</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Tests</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Status</th>
             </tr>
@@ -6465,18 +6466,35 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function loadIntake() {
     const tbody = document.getElementById('intake-table-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
     try {
-      const res  = await fetch('/api/accession-status', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'all-intake' }),
-      });
+      const [res, billingRes] = await Promise.all([
+        fetch('/api/accession-status', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'all-intake' }),
+        }),
+        fetch('/api/billing-read'),
+      ]);
       const data = await res.json().catch(() => ({}));
+      const billingData = await billingRes.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
-      _intakeRows = (data.items || []).sort((a, b) => (b.labId || '').localeCompare(a.labId || ''));
+
+      // Report Date is authoritative in Reports to be Billed. Join it to Archived
+      // Intake for display only, using the base Lab ID so suffixed IDs still match.
+      const reportDateByBaseId = {};
+      for (const b of (billingData.rows || [])) {
+        const baseId = String(b.labId || '').match(/(\d{6}-\d{3})/)?.[1] || '';
+        if (baseId && b.reportDate && !reportDateByBaseId[baseId]) {
+          reportDateByBaseId[baseId] = b.reportDate;
+        }
+      }
+      _intakeRows = (data.items || []).map(r => {
+        const baseId = String(r.labId || '').match(/(\d{6}-\d{3})/)?.[1] || '';
+        return { ...r, reportDate: reportDateByBaseId[baseId] || '' };
+      }).sort((a, b) => (b.labId || '').localeCompare(a.labId || ''));
       filterIntake();
     } catch(e) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--error);">⚠️ ${e.message}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--error);">⚠️ ${e.message}</td></tr>`;
     }
   }
 
@@ -6491,12 +6509,13 @@ document.addEventListener('DOMContentLoaded', function() {
           (r.clientName||r.customer||'').toLowerCase().includes(q) ||
           (r.location||'').toLowerCase().includes(q) ||
           (r.state||'').toLowerCase().includes(q) ||
+          (r.reportDate||'').toLowerCase().includes(q) ||
           (r.services||'').toLowerCase().includes(q)
         )
       : _intakeRows;
 
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
       if (count) count.textContent = '';
       return;
     }
@@ -6516,6 +6535,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.state||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateDrawn||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateReceived||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.reportDate||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);font-size:12px;max-width:200px;">${r.services||r.tests||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${statusLabel(r.status)}</td>
       </tr>`).join('');
