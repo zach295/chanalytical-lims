@@ -253,6 +253,23 @@ async function getRTBColMap(siteId, listId, token, GRAPH, authHdr) {
   return colMap;
 }
 
+async function ensureRadonMitigationColumn(listId, token) {
+  const siteId = process.env.SP_SITE_ID;
+  const colsRes = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/columns?$select=name,displayName&$top=100`, { headers:{ Authorization:`Bearer ${token}` } });
+  if (!colsRes.ok) throw new Error(`Archived Intake column lookup failed (${colsRes.status})`);
+  const cols = (await colsRes.json()).value || [];
+  let col = cols.find(c => c.name === 'Radon_x0020_Mitigation' || c.name === 'RadonMitigation' || c.displayName === 'Radon Mitigation');
+  if (!col) {
+    const cr = await fetch(`${GRAPH}/sites/${siteId}/lists/${listId}/columns`, {
+      method:'POST', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ name:'RadonMitigation', displayName:'Radon Mitigation', boolean:{} }),
+    });
+    if (!cr.ok) throw new Error(`Could not create Radon Mitigation column (${cr.status})`);
+    col = await cr.json();
+  }
+  return col.name || 'RadonMitigation';
+}
+
 app.http('update-sample', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -302,6 +319,9 @@ app.http('update-sample', {
       }
 
       // ── Update standard fields (Archived Intake uses field_N internal names) ────
+      const mitigationField = (updates.radonMitigation !== undefined && listId)
+        ? await ensureRadonMitigationColumn(listId, token)
+        : null;
       for (const item of archivedItems) {
         const fields = {};
         // field_2=coaTest, field_3=customer, field_4=dateDrawn, field_5=timeDrawn
@@ -317,6 +337,7 @@ app.http('update-sample', {
         if (updates.state        !== undefined) fields.field_10 = updates.state;
         if (updates.zip          !== undefined) fields.field_11 = updates.zip;
         if (updates.notes        !== undefined) fields.field_13 = updates.notes;
+        if (updates.radonMitigation !== undefined && mitigationField) fields[mitigationField] = !!updates.radonMitigation;
 
         if (Object.keys(fields).length > 0 && listId) {
           // Treat each Archived Intake row independently. A failed SharePoint write
@@ -644,7 +665,7 @@ app.http('update-sample', {
         const logTime = actNow.toLocaleTimeString('en-US', { timeZone:'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
         const fieldLabels = { coaTest:'Test Type', customer:'Customer', dateDrawn:'Date Drawn',
           timeDrawn:'Time Drawn', receivedDate:'Date Received', receivedTime:'Time Received',
-          location:'Address', city:'City', state:'State', zip:'Zip', notes:'Notes' };
+          location:'Address', city:'City', state:'State', zip:'Zip', notes:'Notes', radonMitigation:'Radon Mitigation' };
         const firstOld = archivedItems[0] || {};
         const oldValues = {
           coaTest: [...new Set(archivedItems.map(r => r.field_2).filter(Boolean))].join(' | '),
@@ -658,10 +679,14 @@ app.http('update-sample', {
           state: firstOld.field_10 || '',
           zip: firstOld.field_11 || '',
           notes: firstOld.field_13 || '',
+          radonMitigation: !!(firstOld.Radon_x0020_Mitigation ?? firstOld.RadonMitigation),
         };
         const changes = Object.entries(updates)
           .filter(([,v]) => v !== undefined && v !== '')
-          .map(([k,v]) => `${fieldLabels[k] || k}: "${oldValues[k] ?? ''}" → "${v}"`)
+          .map(([k,v]) => {
+            if (k === 'radonMitigation') return `${fieldLabels[k]}: "${oldValues[k] ? 'Yes' : 'No'}" → "${v ? 'Yes' : 'No'}"`;
+            return `${fieldLabels[k] || k}: "${oldValues[k] ?? ''}" → "${v}"`;
+          })
           .join('; ');
         // Combine what changed with where it was written
         const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
