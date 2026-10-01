@@ -922,6 +922,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Lab ID</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Client</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Location</th>
+              <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">State</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Drawn</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);white-space:nowrap;">Date Received</th>
               <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--navy);">Tests</th>
@@ -6456,7 +6457,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   async function loadIntake() {
     const tbody = document.getElementById('intake-table-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--slate);">Loading...</td></tr>';
     try {
       const res  = await fetch('/api/accession-status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6467,7 +6468,7 @@ document.addEventListener('DOMContentLoaded', function() {
       _intakeRows = (data.items || []).sort((a, b) => (b.labId || '').localeCompare(a.labId || ''));
       filterIntake();
     } catch(e) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--error);">⚠️ ${e.message}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--error);">⚠️ ${e.message}</td></tr>`;
     }
   }
 
@@ -6481,12 +6482,13 @@ document.addEventListener('DOMContentLoaded', function() {
           (r.labId||'').toLowerCase().includes(q) ||
           (r.clientName||r.customer||'').toLowerCase().includes(q) ||
           (r.location||'').toLowerCase().includes(q) ||
+          (r.state||'').toLowerCase().includes(q) ||
           (r.services||'').toLowerCase().includes(q)
         )
       : _intakeRows;
 
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--slate);">No results</td></tr>';
       if (count) count.textContent = '';
       return;
     }
@@ -6503,6 +6505,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <td style="padding:10px 12px;font-weight:600;color:var(--navy);white-space:nowrap;">${r.labId||'—'}</td>
         <td style="padding:10px 12px;color:var(--navy);">${r.clientName||r.customer||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);">${r.location||'—'}</td>
+        <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.state||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateDrawn||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);white-space:nowrap;">${r.dateReceived||'—'}</td>
         <td style="padding:10px 12px;color:var(--slate);font-size:12px;max-width:200px;">${r.services||r.tests||'—'}</td>
