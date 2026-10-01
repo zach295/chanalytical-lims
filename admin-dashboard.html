@@ -6218,6 +6218,17 @@ document.addEventListener('DOMContentLoaded', function() {
         { wch: 10 }, // MIT_SYS
       ];
 
+      // Right-align every RESULT cell, including text values such as "<100".
+      // Excel right-aligns numbers automatically but text defaults left, so set
+      // the alignment explicitly for the full RESULT column.
+      for (let i = 1; i <= dataRows.length; i++) {
+        const cell = ws[`F${i+1}`];
+        if (cell) {
+          cell.s = cell.s || {};
+          cell.s.alignment = { ...(cell.s.alignment || {}), horizontal: 'right' };
+        }
+      }
+
       // Format Report Date column (index 8) as date
       const dateColLetter = 'I';
       for (let i = 1; i <= dataRows.length; i++) {
