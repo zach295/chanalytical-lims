@@ -6139,12 +6139,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return s.slice(0,10);
       };
 
-      const getDate = r => {
-        const id = (r.labId || '').slice(0,6);
-        const mm = id.slice(0,2), dd = id.slice(2,4), yy = id.slice(4,6);
-        if (mm && dd && yy) return `20${yy}-${mm}-${dd}`;
-        return toISO(r.reportDate || r.stmtDate || '');
-      };
+      const getReportDate = r => toISO(r.reportDate || '');
 
       // Filter: include all radon billing rows in date range matching company.
       // rwResults is only written to billing when a report is sent — samples with
@@ -6156,9 +6151,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const isRadonRow = r.rwResults ||
           (r.service || r.item || '').toLowerCase().includes('radon');
         if (!isRadonRow) return false;
-        if (r.state && (r.state || '').toUpperCase() !== 'ME') return false;
-        const d = getDate(r);
-        if (d < fromVal || d > toVal) return false;
+        const state = String(r.state || '').trim().toLowerCase();
+        if (state && state !== 'me' && state !== 'maine') return false;
+        const d = getReportDate(r);
+        if (!d || d < fromVal || d > toVal) return false;
         if (company) {
           const coMatch = r.clientCode === company ||
             (r.customer||'').toLowerCase().includes(company.toLowerCase());
@@ -6175,19 +6171,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const client    = clientMap[r.clientCode] || clientMap[(r.customer||'').toLowerCase().trim()] || {};
         const intake    = intakeMap[r.labId] || {};
         const town      = r.city || intake.city || '';
-        // Calculate report date as next business day from lab ID date
-        const labDate   = getDate(r);
-        const reportDt  = toISO(r.reportDate || r.stmtDate || '');
-        const calcDate  = (() => {
-          if (reportDt) return reportDt;
-          if (!labDate) return '';
-          const d = new Date(labDate + 'T00:00:00');
-          d.setDate(d.getDate() + 1);
-          if (d.getDay() === 6) d.setDate(d.getDate() + 2);
-          if (d.getDay() === 0) d.setDate(d.getDate() + 1);
-          return d.toISOString().slice(0,10);
-        })();
-        const excelDate = calcDate ? toExcelDate(calcDate) : '';
+        // State report uses the actual Report Date from Reports to be Billed.
+        const reportDt  = getReportDate(r);
+        const excelDate = reportDt ? toExcelDate(reportDt) : '';
         return [
           'LAB480', 'Water',
           client.radonLic || '',
