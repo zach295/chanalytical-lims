@@ -222,4 +222,74 @@ async function syncCoaFromArchivedRows(baseId, archivedRows, context) {
   throw lastError || new Error('COA sync failed');
 }
 
-module.exports = { syncCoaFromArchivedRows, toCoaDate, nextBusinessDayCoa, displayTest };
+
+async function getCoaRowsByBaseIds(baseIds) {
+  const ids = new Set((baseIds || []).map(v => String(v || '').trim()).filter(Boolean));
+  if (!ids.size) return [];
+  const token = await getSheetsToken();
+  const range = `${SHEETS_TAB}!A1:N`;
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${encodeURIComponent(range)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`COA read failed (${res.status})`);
+  const grid = (await res.json()).values || [];
+  const rows = [];
+  for (let i = 1; i < grid.length; i++) {
+    const vals = grid[i] || [];
+    const id = String(vals[7] || '').trim();
+    if (ids.has(id)) rows.push({ rowNum: i + 1, values: Array.from({length:14}, (_,c) => vals[c] ?? '') });
+  }
+  return rows;
+}
+
+async function clearCoaRows(snapshotRows) {
+  const rows = snapshotRows || [];
+  if (!rows.length) return 0;
+  const token = await getSheetsToken();
+  const data = rows.map(r => ({
+    range: `${SHEETS_TAB}!A${r.rowNum}:N${r.rowNum}`,
+    values: [Array(14).fill('')],
+  }));
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values:batchUpdate`,
+    {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ valueInputOption:'RAW', data }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`COA clear failed (${res.status}): ${err.slice(0,250)}`);
+  }
+  return rows.length;
+}
+
+async function restoreCoaRows(snapshotRows) {
+  const rows = snapshotRows || [];
+  if (!rows.length) return 0;
+  const token = await getSheetsToken();
+  const data = rows.map(r => ({
+    range: `${SHEETS_TAB}!A${r.rowNum}:N${r.rowNum}`,
+    values: [Array.from({length:14}, (_,c) => r.values?.[c] ?? '')],
+  }));
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values:batchUpdate`,
+    {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body:JSON.stringify({ valueInputOption:'RAW', data }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`COA restore failed (${res.status}): ${err.slice(0,250)}`);
+  }
+  return rows.length;
+}
+
+module.exports = {
+  syncCoaFromArchivedRows, toCoaDate, nextBusinessDayCoa, displayTest,
+  getCoaRowsByBaseIds, clearCoaRows, restoreCoaRows,
+};
