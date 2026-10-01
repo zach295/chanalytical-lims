@@ -239,6 +239,7 @@ app.http('accession-status', {
             zip:          r.field_11 || '',
             approvedBy:   r.field_12 || '',
             notes:        r.field_13 || '',
+            radonMitigation: !!(r.Radon_x0020_Mitigation ?? r.RadonMitigation),
             status:       r.field_14 || '',
           }));
           return { status: 200, jsonBody: { success: true, items } };
