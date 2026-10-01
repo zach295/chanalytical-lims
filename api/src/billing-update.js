@@ -72,17 +72,34 @@ app.http('billing-update', {
 
         let updated = 0;
         const failures = [];
-        for (const item of pending) {
-          const pr = await fetch(
-            `${GRAPH}/sites/${siteId}/lists/${listId}/items/${item.id}/fields`,
-            {
-              method:'PATCH',
-              headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-              body:JSON.stringify({ [fieldName]:true }),
-            }
-          );
-          if (pr.ok) updated++;
-          else failures.push(`${item.fields?.Title || item.id}: HTTP ${pr.status}`);
+        // Microsoft Graph batch accepts up to 20 requests. Batching keeps large
+        // date ranges from requiring hundreds of sequential browser/server round trips.
+        for (let offset = 0; offset < pending.length; offset += 20) {
+          const chunk = pending.slice(offset, offset + 20);
+          const requests = chunk.map((item, idx) => ({
+            id:String(idx + 1),
+            method:'PATCH',
+            url:`/sites/${siteId}/lists/${listId}/items/${item.id}/fields`,
+            headers:{ 'Content-Type':'application/json' },
+            body:{ [fieldName]:true },
+          }));
+          const br = await fetch(`${GRAPH}/$batch`, {
+            method:'POST',
+            headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+            body:JSON.stringify({ requests }),
+          });
+          if (!br.ok) {
+            const err = await br.text().catch(()=>'');
+            chunk.forEach(item => failures.push(`${item.fields?.Title || item.id}: batch HTTP ${br.status} ${err.slice(0,80)}`));
+            continue;
+          }
+          const bd = await br.json();
+          const responses = bd.responses || [];
+          for (let idx = 0; idx < chunk.length; idx++) {
+            const rr = responses.find(x => x.id === String(idx + 1));
+            if (rr && rr.status >= 200 && rr.status < 300) updated++;
+            else failures.push(`${chunk[idx].fields?.Title || chunk[idx].id}: HTTP ${rr?.status || 'no response'}`);
+          }
         }
 
         const audit = await writeActivityLog({
