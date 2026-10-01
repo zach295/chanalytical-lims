@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="display:flex;gap:16px;align-items:flex-start;margin-top:4px;">
           <div>
             <div class="stat-value" id="rq-high-conf" style="margin:0;">0</div>
-            <div class="stat-sub" style="margin-top:2px;">Madden, Yankee, Defender, Elliott's</div>
+            <div class="stat-sub" style="margin-top:2px;">Madden, Yankee, Defender, Elliott's, Summit to Shore</div>
           </div>
           <div id="rq-northern-breakdown" style="flex:1;font-size:11px;color:var(--slate);padding-left:12px;border-left:1px solid rgba(0,0,0,0.08);display:none;margin-top:2px;"></div>
         </div>
@@ -2947,7 +2947,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const todayBreakEl = document.getElementById('rq-today-breakdown');
 
       const NORTHERN_CLIENTS = ['madden home inspections','yankee home inspections',
-        'defender home inspections',"elliott's information service"];
+        'defender home inspections',"elliott's information service",'summit to shore property inspections'];
 
       try {
         const todayRes  = await fetch('/api/accession-status', {
@@ -6718,7 +6718,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Filter to selected month using labId prefix MMDDYY
     const NORTHERN_CLIENTS = ['madden home inspections','yankee home inspections',
-      'defender home inspections',"elliott's information service"];
+      'defender home inspections',"elliott's information service",'summit to shore property inspections'];
 
     const rows = _intakeRows.filter(r => {
       const id = r.labId || '';
