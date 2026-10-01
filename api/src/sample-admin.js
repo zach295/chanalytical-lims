@@ -2,6 +2,7 @@ const { app } = require('@azure/functions');
 const crypto = require('crypto');
 const { getToken, listItems, createItem, deleteItem, LISTS } = require('../shared/graph');
 const { writeActivityLog } = require('../shared/audit');
+const { getCoaRowsByBaseIds, clearCoaRows, restoreCoaRows } = require('../shared/coa-sheet');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const TZ = 'America/New_York';
@@ -303,6 +304,10 @@ async function buildGroup(baseId, token) {
     'Rejected': rejected.filter(r => inSet(r.field_1)),
   };
 
+  // Snapshot matching COA/Form Responses rows before deletion so they can
+  // be cleared now and restored exactly during the 30-day recovery window.
+  const coaRows = await getCoaRowsByBaseIds(baseIds);
+
   const controlSheets = [];
   for (const id of baseIds) {
     const f = await findControlFile(id, false, token);
@@ -315,7 +320,7 @@ async function buildGroup(baseId, token) {
     if (snap) controlSheets.push({ baseId:id, ...snap });
   }
 
-  return { requestedBaseId:baseId, createdAt, baseIds, radonBaseIds, lists, controlSheets };
+  return { requestedBaseId:baseId, createdAt, baseIds, radonBaseIds, lists, controlSheets, coaRows };
 }
 
 function groupSummary(group) {
@@ -325,7 +330,10 @@ function groupSummary(group) {
     baseIds: group.baseIds,
     radonBaseIds: group.radonBaseIds,
     tests: group.lists['Accession Log'].map(r => ({ baseId:baseOf(r.field_1||r.field_2), fullId:r.field_2||'', test:r.field_3||'', suffix:r.field_4||'' })),
-    counts: Object.fromEntries(Object.entries(group.lists).map(([k,v])=>[k,v.length])),
+    counts: {
+      ...Object.fromEntries(Object.entries(group.lists).map(([k,v])=>[k,v.length])),
+      'COA Google Sheet': (group.coaRows || []).length,
+    },
     controlSheets: group.controlSheets.map(s => ({ kind:s.kind, baseId:s.baseId, file:s.filePath, row:s.row })),
   };
 }
@@ -339,6 +347,7 @@ async function doDelete(group, reason, admin, token, context) {
     deletedBy:admin.name || admin.email, deletedByEmail:admin.email, reason,
     requestedBaseId:group.requestedBaseId, createdAt:group.createdAt, baseIds:group.baseIds, radonBaseIds:group.radonBaseIds,
     lists:Object.fromEntries(Object.entries(group.lists).map(([k,v])=>[k,v.map(cleanFields)])),
+    coaRows:(group.coaRows || []).map(r => ({ rowNum:r.rowNum, values:r.values })),
     controlSheets:group.controlSheets.map(s => ({ ...s, fileId:undefined, worksheetId:undefined })),
   };
   const saved = await saveSnapshot(snapshot, token);
@@ -347,6 +356,7 @@ async function doDelete(group, reason, admin, token, context) {
   for (const [name, rows] of Object.entries(group.lists)) {
     results[name] = await deleteListRaw(name, rows.map(r=>r._id), token);
   }
+  results['COA Google Sheet'] = await clearCoaRows(group.coaRows || []);
   for (const s of group.controlSheets) await clearSheetSnapshot(s, token);
   results['Control Sheets'] = group.controlSheets.length;
 
@@ -386,6 +396,7 @@ async function doRestore(snapshot, admin, token, context) {
   for (const [name, rows] of Object.entries(snapshot.lists || {})) {
     results[name] = await restoreListRaw(name, rows);
   }
+  results['COA Google Sheet'] = await restoreCoaRows(snapshot.coaRows || []);
   for (const s of snapshot.controlSheets || []) await restoreSheetSnapshot(s, token);
   results['Control Sheets'] = (snapshot.controlSheets || []).length;
 
@@ -468,7 +479,10 @@ app.http('sample-admin', {
         return { status:200, jsonBody:{ success:true, snapshot:{
           deletionId:snap.deletionId, requestedBaseId:snap.requestedBaseId, baseIds:snap.baseIds, radonBaseIds:snap.radonBaseIds,
           deletedAt:snap.deletedAt, expiresAt:snap.expiresAt, deletedBy:snap.deletedBy, reason:snap.reason, createdAt:snap.createdAt,
-          counts:Object.fromEntries(Object.entries(snap.lists || {}).map(([k,v])=>[k,v.length])),
+          counts:{
+            ...Object.fromEntries(Object.entries(snap.lists || {}).map(([k,v])=>[k,v.length])),
+            'COA Google Sheet': (snap.coaRows || []).length,
+          },
           controlSheets:(snap.controlSheets || []).map(s=>({kind:s.kind,baseId:s.baseId,file:s.filePath,row:s.row})), path:body.path,
         } } };
       }
