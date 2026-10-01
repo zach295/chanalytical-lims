@@ -723,6 +723,28 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-header"><div class="card-title">💰 Billing Status Bulk Update</div></div>
+      <div style="padding:20px;">
+        <div style="font-size:13px;color:var(--slate);margin-bottom:14px;line-height:1.5;">
+          Update billing status for samples by <strong>Report Date</strong>. Only rows whose Report Date falls within the selected range are changed.
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">From Report Date</label>
+            <input id="admin-bulk-from" type="date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:7px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--slate);margin-bottom:5px;">To Report Date</label>
+            <input id="admin-bulk-to" type="date" style="padding:9px 10px;border:1.5px solid var(--border);border-radius:7px;">
+          </div>
+          <button class="action-btn" onclick="adminBulkBilling('qb')">📘 Mark In QB</button>
+          <button class="btn-ok" style="padding:9px 16px;" onclick="adminBulkBilling('paid')">💵 Mark Paid</button>
+        </div>
+        <div id="admin-bulk-status" style="font-size:12px;color:var(--slate);margin-top:12px;min-height:18px;"></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header">
         <div>
@@ -2597,6 +2619,109 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   window.adminDeleteSampleGroup = adminDeleteSampleGroup;
+
+  function adminBillingToISO(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0,10);
+    let m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (m) return `${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+    m = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2})$/);
+    if (m) return `20${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+    return '';
+  }
+
+  async function adminBulkBilling(action) {
+    if (!adminToken()) {
+      openSecureAdmin(document.getElementById('sb-secure-admin-btn'));
+      return;
+    }
+    const from = document.getElementById('admin-bulk-from')?.value || '';
+    const to = document.getElementById('admin-bulk-to')?.value || '';
+    const status = document.getElementById('admin-bulk-status');
+    if (!from || !to) { showToast('Select both Report Date fields.'); return; }
+    if (from > to) { showToast('From date must be before To date.'); return; }
+
+    try {
+      status.textContent = 'Loading billing rows...';
+      const res = await fetch('/api/billing-read');
+      const data = await res.json().catch(()=>({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to load billing rows.');
+
+      const rows = (data.rows || []).filter(r => {
+        const d = adminBillingToISO(r.reportDate);
+        return d && d >= from && d <= to;
+      });
+      if (!rows.length) {
+        status.textContent = 'No billing rows found in that Report Date range.';
+        return;
+      }
+
+      const pending = action === 'qb'
+        ? rows.filter(r => !r.qb)
+        : rows.filter(r => !r.paid);
+      if (!pending.length) {
+        status.textContent = action === 'qb'
+          ? `All ${rows.length} row(s) in this range are already marked In QB.`
+          : `All ${rows.length} row(s) in this range are already marked Paid.`;
+        return;
+      }
+
+      let datePaid = '';
+      if (action === 'paid') {
+        const defaultDate = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'2-digit'});
+        datePaid = prompt(`Date paid for ${pending.length} row(s) (MM/DD/YY):`, defaultDate);
+        if (datePaid === null) { status.textContent = 'Bulk update cancelled.'; return; }
+        datePaid = String(datePaid).trim();
+        if (!/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(datePaid)) {
+          showToast('Enter Date Paid as MM/DD/YY.');
+          return;
+        }
+      }
+
+      const label = action === 'qb' ? 'In QB' : 'Paid';
+      if (!confirm(`Mark ${pending.length} billing row(s) with Report Dates ${from} through ${to} as ${label}?\n\nThis will not change rows already marked ${label}.`)) {
+        status.textContent = 'Bulk update cancelled.';
+        return;
+      }
+
+      status.textContent = `Updating 0 of ${pending.length}...`;
+      let updated = 0;
+      const failed = [];
+      for (const r of pending) {
+        const fields = action === 'qb'
+          ? { qb:true }
+          : { paid:true, amtPaid:Number(r.amt || 0), datePaid };
+        try {
+          const ur = await fetch('/api/billing-update', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              itemId:r.id,
+              labId:r.labId,
+              fields,
+              updatedBy:_session?.name || _session?.email || 'Admin Bulk Update',
+            }),
+          });
+          const ud = await ur.json().catch(()=>({}));
+          if (!ur.ok || !ud.success) throw new Error(ud.error || `HTTP ${ur.status}`);
+          updated++;
+        } catch(e) {
+          failed.push(`${r.labId || r.id}: ${e.message}`);
+        }
+        status.textContent = `Updating ${updated + failed.length} of ${pending.length}...`;
+      }
+
+      if (failed.length) {
+        status.textContent = `⚠️ Updated ${updated}; ${failed.length} failed. ${failed.slice(0,3).join(' | ')}`;
+      } else {
+        status.textContent = `✅ ${updated} billing row(s) marked ${label}.`;
+      }
+    } catch(e) {
+      status.textContent = `⚠️ ${e.message}`;
+    }
+  }
+  window.adminBulkBilling = adminBulkBilling;
 
   async function adminLoadRecoveries() {
     const body = document.getElementById('admin-recovery-body');
