@@ -6550,7 +6550,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Build intake lookup by lab ID for city/town
       const intakeMap = {};
-      for (const r of intakeRows) { if (r.labId) intakeMap[r.labId.trim()] = r; }
+      for (const r of intakeRows) {
+        if (!r.labId) continue;
+        const fullId = String(r.labId).trim();
+        const baseId = fullId.match(/(\d{6}-\d{3})/)?.[1] || fullId;
+        intakeMap[fullId] = r;
+        // Prefer the Radon Water row when multiple Archived Intake rows share an accession/base.
+        if (!intakeMap[baseId] || /radon water/i.test(String(r.services || ''))) intakeMap[baseId] = r;
+      }
 
       // Build client lookup
       const clientMap = {};
@@ -6609,7 +6616,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const dataRows = rows.map(r => {
         const client    = clientMap[r.clientCode] || clientMap[(r.customer||'').toLowerCase().trim()] || {};
-        const intake    = intakeMap[r.labId] || {};
+        const billingBaseId = String(r.labId || '').match(/(\d{6}-\d{3})/)?.[1] || String(r.labId || '').trim();
+        const intake    = intakeMap[String(r.labId || '').trim()] || intakeMap[billingBaseId] || {};
         const town      = r.city || intake.city || '';
         // State report uses the actual Report Date from Reports to be Billed.
         const reportDt  = getReportDate(r);
