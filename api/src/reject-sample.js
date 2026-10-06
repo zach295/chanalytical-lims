@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
-const { createItem, listItems, updateItem, LISTS } = require('../shared/graph');
-const { syncCoaFromArchivedRows } = require('../shared/coa-sheet');
+const { createItem, listItems, updateItem, deleteItem, LISTS } = require('../shared/graph');
+const { syncCoaFromArchivedRows, getCoaRowsByBaseIds, clearCoaRows } = require('../shared/coa-sheet');
 
 // ── Control Sheet Helper ──────────────────────────────────────────────────────
 // Finds C_MMDDYY.xlsx in Test C folder and updates the lab ID cell in column A
@@ -149,18 +149,24 @@ app.http('reject-sample', {
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const { labId, rejectionType, reason, rejectedBy } = await request.json();
+      const { labId, rejectionType, reason, rejectedBy, duplicateOf } = await request.json();
+      const isDuplicate = rejectionType === 'Rejected - Duplicate';
       if (!labId)          return { status: 400, body: JSON.stringify({ error: 'labId required' }) };
       if (!rejectionType)  return { status: 400, body: JSON.stringify({ error: 'rejectionType required' }) };
-      if (!reason?.trim()) return { status: 400, body: JSON.stringify({ error: 'reason required' }) };
+      if (!reason?.trim() && !isDuplicate) return { status: 400, body: JSON.stringify({ error: 'reason required' }) };
 
       const siteId = process.env.SP_SITE_ID;
       const { getToken } = require('../shared/graph');
       const token  = await getToken();
       const now    = new Date().toISOString();
       const baseId = labId.split(' ')[0].trim();
-      const rejNote = `${rejectionType}: ${reason.trim()}`;
-      const rejLabId = `${baseId} REJ`;
+      const cleanReason = String(reason || '').trim();
+      const cleanDuplicateOf = String(duplicateOf || '').trim();
+      const rejNote = isDuplicate
+        ? ['Duplicate', cleanDuplicateOf && `Duplicate of ${cleanDuplicateOf}`, cleanReason].filter(Boolean).join(': ')
+        : `${rejectionType}: ${cleanReason}`;
+      const rejLabId = isDuplicate ? `${baseId} Dup` : `${baseId} REJ`;
+      const archivedService = isDuplicate ? 'Duplicate' : rejectionType;
       const log = [];
 
       // 1. Write to Rejected list
@@ -169,7 +175,9 @@ app.http('reject-sample', {
         Title:   now,
         field_1: labId,
         field_2: rejectionType,
-        field_3: reason.trim(),
+        field_3: isDuplicate
+          ? [cleanDuplicateOf && `Duplicate of ${cleanDuplicateOf}`, cleanReason].filter(Boolean).join(' | ')
+          : cleanReason,
         field_4: rejectedBy || 'Lab Staff',
       }).catch(e => context.log('[Rejected] Error:', e.message));
       log.push('✅ Written to Rejected list');
