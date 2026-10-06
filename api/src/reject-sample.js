@@ -241,27 +241,36 @@ app.http('reject-sample', {
       }).catch(e => context.log('[Rejected] Error:', e.message));
       log.push('✅ Written to Rejected list');
 
-      // ── Update Control Sheet — change suffix to REJ ───────────────────────
+      // ── Control sheets ───────────────────────────────────────────────────
       const datePrefix = baseId.slice(0, 6);
-      try {
-        const csResult = await updateControlSheet(siteId, datePrefix, baseId, rejLabId, token, context);
-        log.push(csResult.updated
-          ? `✅ Control sheet updated to REJ (row ${csResult.row})`
-          : `ℹ️ Control sheet: ${csResult.reason || 'row not found'}`);
-      } catch(e) { log.push(`⚠️ Control sheet: ${e.message}`); }
-
-      // ── Update Radon Sheet if applicable ─────────────────────────────────
-      const archivedAll = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
+      const archivedAll = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
       const isRadonSample = archivedAll.some(r =>
         r.field_1?.startsWith(baseId) && (r.field_2||'').toLowerCase().includes('radon')
       );
-      if (isRadonSample) {
-        try {
-          const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, rejLabId, token, context);
-          log.push(rwResult.updated ? `✅ Radon sheet updated to REJ` : `ℹ️ Radon: ${rwResult.reason}`);
-        } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
-      }
 
+      if (isDuplicate) {
+        // Duplicate cleanup removes the operational row entirely rather than
+        // relabeling it. Always attempt both regular and radon control sheets.
+        try {
+          const cs = await clearDuplicateControlRow(siteId, datePrefix, baseId, false, token, context);
+          log.push(cs.cleared ? `✅ Control sheet row cleared (row ${cs.row})` : `ℹ️ Control sheet: ${cs.reason}`);
+        } catch(e) { log.push(`⚠️ Control sheet: ${e.message}`); }
+        try {
+          const rs = await clearDuplicateControlRow(siteId, datePrefix, baseId, true, token, context);
+          log.push(rs.cleared ? `✅ Radon control sheet row cleared (row ${rs.row})` : `ℹ️ Radon control sheet: ${rs.reason}`);
+        } catch(e) { log.push(`⚠️ Radon control sheet: ${e.message}`); }
+      } else {
+        try {
+          const csResult = await updateControlSheet(siteId, datePrefix, baseId, rejLabId, token, context);
+          log.push(csResult.updated ? `✅ Control sheet updated to REJ (row ${csResult.row})` : `ℹ️ Control sheet: ${csResult.reason || 'row not found'}`);
+        } catch(e) { log.push(`⚠️ Control sheet: ${e.message}`); }
+        if (isRadonSample) {
+          try {
+            const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, rejLabId, token, context);
+            log.push(rwResult.updated ? '✅ Radon sheet updated to REJ' : `ℹ️ Radon: ${rwResult.reason}`);
+          } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
+        }
+      }
       // ── Delete from Review Queue ─────────────────────────────────────────
       try {
         const rqItems = await listItems(LISTS.REVIEW_QUEUE, { top: 500 });
