@@ -3365,6 +3365,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (cb.checked) {
       document.querySelectorAll('.rej-type-cb').forEach(c => { if (c !== cb) c.checked = false; });
     }
+    if (typeof toggleDuplicateFields === 'function') toggleDuplicateFields();
   }
 
   // Review Queue — called by all Rejection section checkboxes.
