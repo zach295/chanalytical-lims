@@ -290,12 +290,19 @@ app.http('reject-sample', {
       const timeStr = actNow.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour:'2-digit', minute:'2-digit', hour12:false });
       try {
         const updateResults = log.filter(l => !l.includes('Written to Activity Log')).join(' | ');
-        const fullNotes = [`Rejection Type: ${rejectionType}`, `Reason: ${reason.trim()}`, updateResults && `Updates: ${updateResults}`]
-          .filter(Boolean).join('\n');
+        const fullNotes = isDuplicate
+          ? [
+              'Type: Duplicate',
+              cleanDuplicateOf && `Duplicate of: ${cleanDuplicateOf}`,
+              cleanReason && `Reason: ${cleanReason}`,
+              updateResults && `Updates: ${updateResults}`,
+            ].filter(Boolean).join('\n')
+          : [`Rejection Type: ${rejectionType}`, `Reason: ${cleanReason}`, updateResults && `Updates: ${updateResults}`]
+              .filter(Boolean).join('\n');
         await createItem('Activity Log', {
           Title:        `${dateStr} ${labId}`,
           Client:       labId,
-          ActivityType: 'Sample Rejected',
+          ActivityType: isDuplicate ? 'Duplicate Sample' : 'Sample Rejected',
           Notes:        fullNotes.slice(0, 3000),
           By:           rejectedBy || 'Lab Staff',
           LogDate:      dateStr,
