@@ -1238,10 +1238,18 @@ document.addEventListener('DOMContentLoaded', function() {
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
               <input type="checkbox" class="rej-type-cb" value="Rejected - Other" onchange="enforceOneRejType(this)" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Other
             </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" class="rej-type-cb" value="Rejected - Duplicate" onchange="enforceOneRejType(this); toggleDuplicateFields()" style="width:16px;height:16px;cursor:pointer;" /> Rejected — Duplicate
+            </label>
           </div>
         </div>
+        <div class="form-field" id="rej-duplicate-of-wrap" style="display:none;">
+          <label for="rej-duplicate-of">Duplicate Of Lab ID <span style="font-size:11px;color:var(--slate);font-weight:400;">(optional)</span></label>
+          <input type="text" id="rej-duplicate-of" placeholder="Original Lab ID (e.g. 100626-008)"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:monospace;" />
+        </div>
         <div class="form-field">
-          <label for="rej-reason">Reason <span style="color:var(--error);">*</span></label>
+          <label for="rej-reason">Reason <span id="rej-reason-required" style="color:var(--error);">*</span></label>
           <textarea id="rej-reason" rows="3" placeholder="Required — explain why the sample is being rejected"
             style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;resize:vertical;"></textarea>
         </div>
@@ -3611,6 +3619,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function toggleDuplicateFields() {
+    const isDup = document.querySelector('.rej-type-cb:checked')?.value === 'Rejected - Duplicate';
+    const wrap = document.getElementById('rej-duplicate-of-wrap');
+    const req = document.getElementById('rej-reason-required');
+    const reason = document.getElementById('rej-reason');
+    if (wrap) wrap.style.display = isDup ? 'block' : 'none';
+    if (req) req.style.display = isDup ? 'none' : '';
+    if (reason) reason.placeholder = isDup ? 'Optional — add any notes about the duplicate' : 'Required — explain why the sample is being rejected';
+    if (!isDup) {
+      const d = document.getElementById('rej-duplicate-of');
+      if (d) d.value = '';
+    }
+  }
+  window.toggleDuplicateFields = toggleDuplicateFields;
+
   async function doRejectSample() {
     const labId = document.getElementById('rej-labid').value.trim();
     const rejTypeEl = document.querySelector('.rej-type-cb:checked');
@@ -3618,9 +3641,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const reason = document.getElementById('rej-reason').value.trim();
     const statusEl = document.getElementById('rej-status');
 
+    const isDuplicate = rejType === 'Rejected - Duplicate';
+    const duplicateOf = document.getElementById('rej-duplicate-of')?.value?.trim() || '';
     if (!labId)   { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Lab ID is required.'; return; }
     if (!rejType) { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Select a rejection type.'; return; }
-    if (!reason)  { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Reason is required.'; return; }
+    if (!reason && !isDuplicate) { statusEl.style.color='var(--error)'; statusEl.textContent='⚠️ Reason is required.'; return; }
 
     statusEl.style.color = 'var(--slate)';
     statusEl.textContent = '⏳ Saving rejection...';
@@ -3629,7 +3654,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res = await fetch('/api/reject-sample', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ labId, rejectionType: rejType, reason, rejectedBy: getAdminName() }),
+        body: JSON.stringify({ labId, rejectionType: rejType, reason, duplicateOf, rejectedBy: getAdminName() }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -3637,7 +3662,10 @@ document.addEventListener('DOMContentLoaded', function() {
       statusEl.textContent = `✅ Sample ${labId} marked as ${rejType}`;
       document.getElementById('rej-labid').value = '';
       document.getElementById('rej-reason').value = '';
+      const dupOfEl = document.getElementById('rej-duplicate-of');
+      if (dupOfEl) dupOfEl.value = '';
       document.querySelectorAll('.rej-type-cb').forEach(c => c.checked = false);
+      toggleDuplicateFields();
       document.getElementById('rej-lookup-result').style.display = 'none';
       await loadRejectionHistory();
     } catch(e) {
