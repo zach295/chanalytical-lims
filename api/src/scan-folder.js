@@ -726,6 +726,7 @@ RULES:
 - customer: BUSINESS=company name next to [CHECKED] in Report To, or what's written on fill-in line. "". PUBLIC=person's name from Customer & Property Information "Name:" field. "" if blank.
 - location: BUSINESS=well owner street address. PUBLIC=sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use Report To address as location.
 - city/state/zip: BUSINESS=from the Well Owner section as before. PUBLIC=from the MIDDLE (Well Owner) sample/property section.
+- billingAddress: BUSINESS=use the existing Report To billing-address behavior. PUBLIC=use the billing/mailing address from the TOP Customer/Billing section, including street, city, state, and ZIP when present. Do NOT use the MIDDLE sample/property address as billingAddress when a TOP billing address is present. If the PUBLIC TOP billing address is blank, return "" so the application can fall back to the sample address.
 - dateDrawn: Date Sampled → YYYY-MM-DD. "" if blank.
 - timeDrawn: Time Sampled → HH:MM 24hr. "" if blank.
 - receivedDate/receivedTime: Lab Use Only box only.
