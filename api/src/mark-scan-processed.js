@@ -86,7 +86,12 @@ app.http('mark-scan-processed', {
     try {
       const { fileId, outcome, reviewQueueRow, rowIndex, processedBy, labId, fileName } = await request.json();
       const row = reviewQueueRow || rowIndex;
-      if (!row) return { status: 400, body: JSON.stringify({ error: 'rowIndex required' }) };
+      // FileID is the preferred identity for Review Queue cleanup because rowIndex can
+      // be absent on a just-scanned live card or stale after a refresh. rowIndex remains
+      // a fallback for older callers/records that do not have a FileID.
+      if (!fileId && !row) {
+        return { status: 400, body: JSON.stringify({ error: 'fileId or rowIndex required' }) };
+      }
 
       const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
         '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
@@ -203,9 +208,9 @@ app.http('mark-scan-processed', {
       let auditWarning = null;
       if (outcome === 'discarded') {
         const audit = await writeActivityLog({
-          labId: labId || fileName || `Scan ${row}`,
+          labId: labId || fileName || (row ? `Scan ${row}` : `Scan ${fileId}`),
           type: 'Scan Discarded',
-          notes: `Review Queue row ${row} discarded${fileName ? ` | File: ${fileName}` : ''}${fileId ? ` | File ID: ${fileId}` : ''}${fileId ? ' | Underlying file deletion requested' : ''}`,
+          notes: `Review Queue ${row ? `row ${row}` : 'FileID cleanup'} discarded${fileName ? ` | File: ${fileName}` : ''}${fileId ? ` | File ID: ${fileId}` : ''}${fileId ? ' | Underlying file deletion requested' : ''}`,
           by: processedBy || 'Lab Staff',
           context,
         });
