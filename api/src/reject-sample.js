@@ -149,7 +149,7 @@ async function clearDuplicateControlRow(siteId, datePrefix, baseId, radon, token
   const controlFolder = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
   const marker = 'Shared Documents/';
   const idx = controlFolder.indexOf(marker);
-  const relPath = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\\/+/, '');
+  const relPath = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\/+/, '');
   const monthNum = parseInt(datePrefix.slice(0, 2), 10) - 1;
   const year = '20' + datePrefix.slice(4, 6);
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -186,8 +186,8 @@ async function clearDuplicateControlRow(siteId, datePrefix, baseId, radon, token
     let row = -1;
     for (let i = 0; i < vals.length; i++) {
       const cell = String(vals[i]?.[0] || '').trim();
-      const cellBase = cell.split(' ')[0].replace(/[^\\w-]/g, '').trim();
-      if (cellBase === baseId.replace(/[^\\w-]/g, '') || cell.startsWith(baseId)) { row = i + 1; break; }
+      const cellBase = cell.split(' ')[0].replace(/[^\w-]/g, '').trim();
+      if (cellBase === baseId.replace(/[^\w-]/g, '') || cell.startsWith(baseId)) { row = i + 1; break; }
     }
     if (row < 0) return { cleared:false, reason:baseId + ' not found' };
     const endCol = radon ? 'G' : 'AE';
