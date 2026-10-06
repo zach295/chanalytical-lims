@@ -439,42 +439,49 @@ app.http('reject-sample', {
         }
       } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
 
-      // 2. Update Archived Intake — change suffix to REJ and append notes
-      // field_1=fullId, field_2=coaTest, field_13=notes, field_14=status
-      const archived = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+      // 2. Update Archived Intake. Duplicate samples remain as the permanent
+      // historical record but use "[Lab ID] Dup" + service "Duplicate".
+      const archived = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
       const matches  = archived.filter(r => (r.field_1 || '').startsWith(baseId));
 
       for (const item of matches) {
         const existingNotes = item.field_13 || '';
         const newNotes = existingNotes ? `${existingNotes} | ${rejNote}` : rejNote;
-        // Change full lab ID suffix to REJ (e.g. "072826-003 COMP" → "072826-003 REJ")
-        const newFullId = `${baseId} REJ`;
         await updateItem(LISTS.ARCHIVED_INTAKE, item._id, {
-          field_1:  newFullId,
-          field_2:  rejectionType,
+          field_1:  rejLabId,
+          field_2:  archivedService,
           field_13: newNotes,
           field_14: 'Rejected',
         }).catch(e => context.log('[ArchivedIntake] Error:', e.message));
       }
-      log.push(`✅ Archived Intake: updated ${matches.length} row(s) → suffix changed to REJ`);
+      log.push(`✅ Archived Intake: updated ${matches.length} row(s) → ${rejLabId} / ${archivedService} / Rejected`);
 
-      // ── Synchronize COA / Form Responses ─────────────────────────────────
-      // This updates the existing COA row(s) to the rejection type and assigns the
-      // next-business-day Report Date. If an older sample never had a COA row, the
-      // helper uses an existing blank sheet row rather than inserting duplicates.
-      try {
-        const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
-        const rejectedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
-        const coaSync = await syncCoaFromArchivedRows(baseId, rejectedRows, context);
-        log.push(`✅ COA sheet synchronized to rejection (${coaSync.updated} row(s))`);
-      } catch(e) {
-        log.push(`⚠️ COA sheet: ${e.message}`);
+      // ── COA / Form Responses ─────────────────────────────────────────────
+      if (isDuplicate) {
+        try {
+          const coaRows = await getCoaRowsByBaseIds([baseId]);
+          const cleared = await clearCoaRows(coaRows);
+          log.push(cleared
+            ? `✅ COA row(s) deleted/cleared (${cleared})`
+            : 'ℹ️ COA: no matching rows found');
+        } catch(e) {
+          log.push(`⚠️ COA delete: ${e.message}`);
+        }
+      } else {
+        try {
+          const refreshed = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 });
+          const rejectedRows = refreshed.filter(r => (r.field_1 || '').split(' ')[0].trim() === baseId);
+          const coaSync = await syncCoaFromArchivedRows(baseId, rejectedRows, context);
+          log.push(`✅ COA sheet synchronized to rejection (${coaSync.updated} row(s))`);
+        } catch(e) {
+          log.push(`⚠️ COA sheet: ${e.message}`);
+        }
       }
 
       return {
         status: 200,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ success: true, labId, newLabId: `${baseId} REJ`, rejectionType, log }),
+        body: JSON.stringify({ success: true, labId, newLabId: rejLabId, rejectionType, duplicateOf: cleanDuplicateOf, log }),
       };
     } catch(e) {
       context.log('[reject-sample] Error:', e.message);
