@@ -144,6 +144,65 @@ async function updateRadonSheet(siteId, datePrefix, baseId, newLabId, token, con
   }
 }
 
+async function clearDuplicateControlRow(siteId, datePrefix, baseId, radon, token, context) {
+  const GRAPH = 'https://graph.microsoft.com/v1.0';
+  const controlFolder = process.env.SP_CONTROL_FOLDER || '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Test C';
+  const marker = 'Shared Documents/';
+  const idx = controlFolder.indexOf(marker);
+  const relPath = idx >= 0 ? controlFolder.slice(idx + marker.length) : controlFolder.replace(/^\\/+/, '');
+  const monthNum = parseInt(datePrefix.slice(0, 2), 10) - 1;
+  const year = '20' + datePrefix.slice(4, 6);
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthName = months[monthNum] || datePrefix.slice(0, 2);
+  const fileName = 'C_' + datePrefix + '.xlsx';
+  const paths = radon
+    ? [relPath + '/' + monthName + ' Radon ' + year + '/' + fileName]
+    : [relPath + '/' + monthName + ' ' + year + '/' + fileName, relPath + '/' + fileName];
+  const auth = { Authorization:'Bearer ' + token, 'Content-Type':'application/json' };
+
+  let fileId = null;
+  for (const p of paths) {
+    const enc = p.split('/').map(encodeURIComponent).join('/');
+    const fr = await fetch(GRAPH + '/sites/' + siteId + '/drive/root:/' + enc, { headers:auth });
+    if (fr.ok) { fileId = (await fr.json()).id; break; }
+  }
+  if (!fileId) return { cleared:false, reason:radon ? 'Radon control sheet not found' : 'Control sheet not found' };
+
+  const sr = await fetch(GRAPH + '/sites/' + siteId + '/drive/items/' + fileId + '/workbook/createSession', {
+    method:'POST', headers:auth, body:JSON.stringify({ persistChanges:true })
+  });
+  const sd = await sr.json().catch(()=>({}));
+  if (!sr.ok || !sd.id) throw new Error('Could not open ' + (radon ? 'radon ' : '') + 'control sheet session');
+  const wbHdr = { ...auth, 'workbook-session-id':sd.id };
+  const wbBase = GRAPH + '/sites/' + siteId + '/drive/items/' + fileId + '/workbook';
+
+  try {
+    const wr = await fetch(wbBase + '/worksheets', { headers:wbHdr });
+    const ws = ((await wr.json()).value || [])[0];
+    if (!ws) throw new Error('No worksheet found');
+    const ar = await fetch(wbBase + "/worksheets/" + ws.id + "/range(address='A1:A250')?$select=values", { headers:wbHdr });
+    if (!ar.ok) throw new Error('Control sheet row lookup failed (' + ar.status + ')');
+    const vals = (await ar.json()).values || [];
+    let row = -1;
+    for (let i = 0; i < vals.length; i++) {
+      const cell = String(vals[i]?.[0] || '').trim();
+      const cellBase = cell.split(' ')[0].replace(/[^\\w-]/g, '').trim();
+      if (cellBase === baseId.replace(/[^\\w-]/g, '') || cell.startsWith(baseId)) { row = i + 1; break; }
+    }
+    if (row < 0) return { cleared:false, reason:baseId + ' not found' };
+    const endCol = radon ? 'G' : 'AE';
+    const width = radon ? 7 : 31;
+    const range = "A" + row + ":" + endCol + row;
+    const cr = await fetch(wbBase + "/worksheets/" + ws.id + "/range(address='" + range + "')", {
+      method:'PATCH', headers:wbHdr, body:JSON.stringify({ values:[Array(width).fill('')] })
+    });
+    if (!cr.ok) throw new Error((radon ? 'Radon ' : '') + 'control sheet clear failed (' + cr.status + ')');
+    if (context) context.log('[duplicate] Cleared ' + (radon ? 'radon ' : '') + 'control sheet row ' + row + ' for ' + baseId);
+    return { cleared:true, row };
+  } finally {
+    await fetch(wbBase + '/closeSession', { method:'POST', headers:wbHdr }).catch(()=>{});
+  }
+}
 app.http('reject-sample', {
   methods: ['POST'],
   authLevel: 'anonymous',
