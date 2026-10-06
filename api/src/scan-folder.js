@@ -803,8 +803,78 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ocr.email = '';
           }
 
-          // If the TOP section has no billing address, fall back to the
-          // complete sample/property address from the MIDDLE Well Owner section.
+          // PUBLIC COCs: Billing Address must come from the TOP customer/billing
+          // section. If the general extraction left it blank OR copied the MIDDLE
+          // sample/property address into it, do one focused TOP-section extraction
+          // before allowing the sample-address fallback. Business COCs do not use
+          // this path and retain their existing behavior.
+          if (String(ocr.formType || '').toLowerCase() === 'public') {
+            const sampleFull = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean).join(', ');
+            const normAddr = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const billingNorm = normAddr(ocr.billingAddress);
+            const sampleNorm = normAddr(sampleFull);
+            const locNorm = normAddr(ocr.location);
+            const cityNorm = normAddr(ocr.city);
+            const billingLooksLikeSample =
+              !!billingNorm && (
+                (sampleNorm && billingNorm === sampleNorm) ||
+                (locNorm && billingNorm.includes(locNorm) && (!cityNorm || billingNorm.includes(cityNorm)))
+              );
+
+            if (!ocr.billingAddress || billingLooksLikeSample) {
+              try {
+                const topMatch = azureText.match(/=== TOP OF FORM[^=]*===\s*([\s\S]*?)(?=\n=== (?:MIDDLE|BOTTOM|DETECTED)|$)/i);
+                const topOnly = (topMatch?.[1] || '').trim();
+                if (topOnly) {
+                  const billingRes = await fetch('https://api.anthropic.com/v1/messages', {
+                    method:'POST',
+                    headers:{
+                      'Content-Type':'application/json',
+                      'x-api-key':process.env.ANTHROPIC_API_KEY,
+                      'anthropic-version':'2023-06-01',
+                    },
+                    body:JSON.stringify({
+                      model:'claude-haiku-4-5',
+                      max_tokens:180,
+                      system:'You are a JSON extraction API. Output ONLY valid JSON.',
+                      messages:[{role:'user',content:
+`This is ONLY the TOP customer/billing section of a PUBLIC Chanalytical Chain of Custody form.
+
+Extract the customer's BILLING/MAILING ADDRESS from this TOP section. Include street, city, state, and ZIP when they are present. Do not use or infer the sample/property/well address. If no billing/mailing address is actually present in this TOP section, return an empty string.
+
+TOP SECTION:
+${topOnly}
+
+Return ONLY: {"billingAddress":""}`}],
+                    }),
+                  });
+                  if (billingRes.ok) {
+                    const billingRaw = (await billingRes.json()).content?.find(x => x.type === 'text')?.text || '';
+                    const bs = billingRaw.indexOf('{'), be = billingRaw.lastIndexOf('}');
+                    if (bs >= 0 && be > bs) {
+                      const focused = JSON.parse(billingRaw.slice(bs, be + 1));
+                      const topBilling = String(focused.billingAddress || '').trim();
+                      if (topBilling) {
+                        ocr.billingAddress = topBilling;
+                        context.log(`[scan] Public TOP billing extraction: "${topBilling}"`);
+                      } else {
+                        ocr.billingAddress = '';
+                        context.log('[scan] Public TOP billing extraction found no billing address');
+                      }
+                    }
+                  } else {
+                    context.log(`[scan] Public TOP billing extraction failed HTTP ${billingRes.status}`);
+                  }
+                }
+              } catch (billingErr) {
+                context.log(`[scan] Public TOP billing extraction error: ${billingErr.message}`);
+              }
+            }
+          }
+
+          // If no TOP billing address was found, use the complete sample/property
+          // address as the billing fallback. This preserves the requested public
+          // fallback and the existing business behavior.
           if (!ocr.billingAddress) {
             const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
             if (parts.length) ocr.billingAddress = parts.join(', ');
