@@ -621,8 +621,8 @@ RULES:
 - Extract only what is present in the OCR text. Do not infer or guess a known client identity; local matching happens after extraction.
 - formType: "business" if Report To section has a company/person name other than Chanalytical. "public" if Report To is blank or shows Chanalytical.
 - customer: BUSINESS — find the company name next to [CHECKED] in Report To section. If fill-in line, copy what's written. "" if blank/nothing marked. PUBLIC — person's name from Customer & Property Information "Name:" field. "" if blank.
-- location: for BOTH BUSINESS and PUBLIC, use the sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use the TOP/Report To billing address as location.
-- city/state/zip: for BOTH BUSINESS and PUBLIC, use the sample/property/well owner city, state, and ZIP from the MIDDLE (Well Owner) section only.
+- location: BUSINESS=well owner street address (MIDDLE section). PUBLIC=sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use Report To address as location.
+- city/state/zip: BUSINESS=from the Well Owner section as before. PUBLIC=from the MIDDLE (Well Owner) sample/property section.
 - dateDrawn: "Date Sampled" field → YYYY-MM-DD. "" if blank or crossed out.
 - timeDrawn: "Time Sampled" → HH:MM 24hr (convert AM/PM). "" if blank.
 - receivedDate/receivedTime: from "Lab Use Only" box ONLY → YYYY-MM-DD / HH:MM.
@@ -632,7 +632,7 @@ RULES:
 - individualElements: individual element rows with [CHECKED]. "TDS"="Total Dissolved Solids (TDS)".
 - email: only if contains @. PUBLIC forms only. "" otherwise.
 - phone: from Daytime Phone/Phone/Cell field. "" if blank.
-- billingAddress: for BOTH BUSINESS and PUBLIC, use the billing/mailing street+city+state+zip from the TOP (Report To / Customer Billing) section as one line. If no billing address is present in the TOP section, return "" here; the application will fall back to the sample address after extraction.
+- billingAddress: BUSINESS=street+city+state+zip from Report To section as before. PUBLIC=billing/mailing street+city+state+zip from the TOP Customer/Billing section. If the PUBLIC top billing address is blank, return ""; the application will fall back to the sample address after extraction.
 - waterType: "Raw" or "Treated" if stated. "" otherwise.
 - confidence: 0-100
 
@@ -724,8 +724,8 @@ Return ONLY: {"customer":"","tests":[],"hasRadon":false,"dateDrawn":"","location
 RULES:
 - formType: "business" if Report To has a company/person name other than Chanalytical. "public" if Report To blank or shows Chanalytical.
 - customer: BUSINESS=company name next to [CHECKED] in Report To, or what's written on fill-in line. "". PUBLIC=person's name from Customer & Property Information "Name:" field. "" if blank.
-- location: for BOTH BUSINESS and PUBLIC, use the sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use the TOP/Report To billing address as location.
-- city/state/zip: for BOTH BUSINESS and PUBLIC, use the sample/property/well owner city, state, and ZIP from the MIDDLE (Well Owner) section.
+- location: BUSINESS=well owner street address. PUBLIC=sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use Report To address as location.
+- city/state/zip: BUSINESS=from the Well Owner section as before. PUBLIC=from the MIDDLE (Well Owner) sample/property section.
 - dateDrawn: Date Sampled → YYYY-MM-DD. "" if blank.
 - timeDrawn: Time Sampled → HH:MM 24hr. "" if blank.
 - receivedDate/receivedTime: Lab Use Only box only.
