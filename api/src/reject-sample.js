@@ -355,7 +355,7 @@ app.http('reject-sample', {
             await fetch(
               `${GRAPH}/sites/${siteId}/lists/${accListId}/items/${item.id}/fields`,
               { method: 'PATCH', headers: { ...authHdr, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field_2: rejLabId, field_3: rejectionType, field_4: 'REJ' }) }
+                body: JSON.stringify({ field_2: rejLabId, field_3: archivedService, field_4: isDuplicate ? 'Dup' : 'REJ' }) }
             );
           }
           if (accItems.length) log.push(`✅ Accession Log updated (${accItems.length} row(s))`);
@@ -410,24 +410,32 @@ app.http('reject-sample', {
             .filter(i => (i.fields?.Title || '').split(' ')[0].trim() === baseId);
           let billedOk = 0;
           for (const item of billedItems) {
+            if (isDuplicate) {
+              const dRes = await fetch(
+                `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items/${item.id}`,
+                { method:'DELETE', headers:authHdr2 }
+              );
+              if (dRes.ok || dRes.status === 204 || dRes.status === 404) billedOk++;
+              else { const t = await dRes.text(); log.push(`⚠️ RTB DELETE failed ${dRes.status}: ${t.slice(0,100)}`); }
+              continue;
+            }
+
             const pFields = {};
             pFields[colMap['Lab ID'] || 'Title'] = rejLabId;
-            pFields[colMap['Item/Service']  || 'Item_x002F_Service']         = rejectionType;
-            pFields[colMap['Test Type SKU'] || 'Test_x0020_Type_x0020_SKU']  = 'REJ';
-
+            pFields[colMap['Item/Service']  || 'Item_x002F_Service'] = rejectionType;
+            pFields[colMap['Test Type SKU'] || 'Test_x0020_Type_x0020_SKU'] = 'REJ';
             const rejectionReportDate = nextBusinessDayFromLabId(baseId);
-            if (rejectionReportDate) {
-              pFields[colMap['Report Date'] || 'Report_x0020_Date'] = rejectionReportDate;
-            }
+            if (rejectionReportDate) pFields[colMap['Report Date'] || 'Report_x0020_Date'] = rejectionReportDate;
             const pRes = await fetch(
               `${GRAPH2}/sites/${siteId}/lists/${rtbListId}/items/${item.id}/fields`,
-              { method: 'PATCH', headers: { ...authHdr2, 'Content-Type': 'application/json' },
-                body: JSON.stringify(pFields) }
+              { method:'PATCH', headers:{ ...authHdr2, 'Content-Type':'application/json' }, body:JSON.stringify(pFields) }
             );
             if (pRes.ok) billedOk++;
             else { const t = await pRes.text(); log.push(`⚠️ RTB PATCH failed ${pRes.status}: ${t.slice(0,100)}`); }
           }
-          if (billedOk > 0) log.push(`✅ Reports to be Billed updated (${billedOk} row(s))`);
+          if (billedOk > 0) log.push(isDuplicate
+            ? `✅ Reports to be Billed deleted (${billedOk} row(s))`
+            : `✅ Reports to be Billed updated (${billedOk} row(s))`);
         }
       } catch(e) { log.push(`⚠️ Reports to be Billed: ${e.message}`); }
 
