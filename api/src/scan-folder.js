@@ -975,7 +975,8 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             ApprovedBy:       '',
             WaterType:        ocr.waterType    || '',
           };
-          await writeToReviewQueue(queueFields, token);
+          const createdQueueItem = await writeToReviewQueue(queueFields, token);
+          const createdQueueRowId = createdQueueItem?.id || createdQueueItem?._id || '';
 
           timing.reviewQueueMs = Date.now() - queueStartedAt;
 
@@ -1007,6 +1008,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
             queueRecord: {
               fileId: file.id,
               fileName: file.name,
+              _rowIndex: createdQueueRowId,
               barcodeId: queueFields.BarcodeID || '',
               baseId: (queueFields.BarcodeID || '').split(' ')[0].trim(),
               customer: queueFields.ClientName || '',
