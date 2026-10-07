@@ -1,0 +1,18 @@
+const assert = require('node:assert/strict');
+const { calcFillColor } = require('../shared/report-colors');
+const green = '#00CC44', red = '#FF0000';
+assert.equal(calcFillColor('Fluoride, Total', '<0.2'), green);
+assert.equal(calcFillColor('Fluoride, Total', '<0.20'), red);
+assert.equal(calcFillColor('Fluoride, Total', '<0.3'), red);
+assert.equal(calcFillColor('Fluoride, Total', 'ND'), red);
+assert.equal(calcFillColor('Fluoride, Total', 'N/A'), red);
+assert.equal(calcFillColor('Fluoride, Total', '0.5'), green);
+assert.equal(calcFillColor('Fluoride, Total', '4'), red);
+assert.equal(calcFillColor('Chloride, Total', '<2'), green);
+assert.equal(calcFillColor('Chloride, Total', '<2.00'), red);
+assert.equal(calcFillColor('Arsenic, Total', '<1'), green);
+assert.equal(calcFillColor('Arsenic, Total', '<1.0'), red);
+assert.equal(calcFillColor('E. Coli', '<1'), green);
+assert.equal(calcFillColor('E. Coli', '<2'), red);
+assert.equal(calcFillColor('pH Electrometric', 'ND'), red);
+console.log('Strict reporting-limit color regression checks passed');
