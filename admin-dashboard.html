@@ -7195,11 +7195,11 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   
-  function getColor(paramName, value) {
+  function getColor(paramName, value, sheetType = 'lab') {
     if (!value && value !== 0) return '#e8e8e8';
     // Check manual override first
     if (currentReportData?._colorOverrides?.[paramName]) return currentReportData._colorOverrides[paramName];
-    return _calcColor(paramName, String(value).trim()) || '#e8e8e8';
+    return _calcColor(paramName, String(value).trim(), sheetType) || '#e8e8e8';
   }
 
   function buildParamTable(params, resultsMap, reportData) {
@@ -7225,7 +7225,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res    = resultsMap[p.name] || {};
       const val    = res.value !== undefined ? res.value : '';
       // Use exact color from template CF rules if available, otherwise JS fallback
-      const boxBg = getColor(p.name, val);
+      const boxBg = getColor(p.name, val, params === reportData.fhaParams ? 'fha' : reportData.isRadon ? 'radon' : reportData.isArsenicSpec ? 'spec' : 'lab');
       const prepDT = fmtDisplayDT(res.prepDT || '');
       const analDT = fmtDisplayDT(res.analDT || res.time || '');
       const bac      = isBac(p.name);
