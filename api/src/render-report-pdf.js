@@ -81,7 +81,7 @@ async function hideSheet(siteId, itemId, wsId, token, sid) {
   ).catch(() => {});
 }
 
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments='', commentsCell='') {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments='', commentsCell='', sheetType = 'lab') {
   const _dbg = []; // debug collector
   _dbg.push('dtCollected=' + (meta?.dtCollected||'EMPTY') + ' location=' + (meta?.location||'EMPTY') + ' city=' + (meta?.city||'EMPTY'));
   const rr = await gReq('GET',
@@ -217,7 +217,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
       // Write the same explicit indicator color as the report preview.
       if (colResult > 0 && String(p.value ?? '').trim()) {
-        const hex = calcFillColor(p.name, p.value);
+        const hex = calcFillColor(p.name, p.value, sheetType);
         if (hex) colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
       }
     }
@@ -500,7 +500,7 @@ app.http('render-report-pdf', {
       await writeHeaders(radonSheet.id, [
         ['I7','labId'], ['I8','dc'], ['J8','tc'], ['I9','dr'], ['J9','tr'], ['I10','today']
       ]);
-      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', '');
+      await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', '', 'radon');
 
       // Write known cells directly: authorized by, review date, analysis date/time
       const wsBase3 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${radonSheet.id}`;
@@ -524,7 +524,7 @@ app.http('render-report-pdf', {
       await writeHeaders(specSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24');
+      await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A24', 'spec');
       // Write authorized by and review date to D32/I32 for Arsenic Spec report
       const wsBaseSpec = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`;
       const wbHdrSpec  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
@@ -564,7 +564,7 @@ app.http('render-report-pdf', {
       await writeHeaders(fhaSheet.id, [
         ['H7','labId'], ['H8','dc'], ['I8','tc'], ['H9','dr'], ['I9','tr'], ['H10','today']
       ]);
-      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27');
+      await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments || '', 'A27', 'fha');
       // Write authorized by and review date
       const wsBaseFHA = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${fhaSheet.id}`;
       const wbHdrFHA  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
@@ -689,7 +689,7 @@ app.http('render-report-pdf', {
             if (idx < 0) throw new Error(`${sheet.name}: missing result row for ${p.name}`);
             const actualValue = String(sheetRows[idx][resultCol] ?? '').trim();
             if (actualValue !== expectedValue) throw new Error(`${p.name}: preview value "${expectedValue}" differs from Excel "${actualValue}"`);
-            const expectedColor = calcFillColor(p.name, expectedValue);
+            const expectedColor = calcFillColor(p.name, expectedValue, /^fha/i.test(sheet.name) ? 'fha' : /^radon/i.test(sheet.name) ? 'radon' : /arsenic.*spec/i.test(sheet.name) ? 'spec' : 'lab');
             if (!expectedColor) continue; // No configured threshold: neutral template formatting.
             const cell = `${colLetter(startCol + resultCol - 1)}${startRow + idx}`;
             const fill = await gReq('GET',
