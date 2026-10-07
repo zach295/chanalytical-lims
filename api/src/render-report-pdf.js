@@ -667,9 +667,15 @@ app.http('render-report-pdf', {
           const startRow = Number((sheetData.address || '').match(/[A-Z]+(\d+)(?::|$)/)?.[1] || 1);
           const startColLetters = (sheetData.address || '').match(/!\$?([A-Z]+)\$?\d+/)?.[1] || 'A';
           const startCol = [...startColLetters].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0)-1;
-          const headerRow = sheetRows.findIndex(row => row.some(v => /^(your result|result)$/i.test(String(v || '').trim())));
-          if (headerRow < 0) throw new Error(`Result header missing in ${sheet.name}`);
-          const resultCol = sheetRows[headerRow].findIndex(v => /^(your result|result)$/i.test(String(v || '').trim()));
+          // Use the same header recognition as fillSheet. The template may
+          // contain line breaks, trailing units, or other descriptive text.
+          const isResultHeader = v => {
+            const h = normalizeCell(v);
+            return h.includes('your result') || h === 'result';
+          };
+          const headerRow = sheetRows.findIndex(row => row.some(isResultHeader));
+          if (headerRow < 0) throw new Error(`Result header missing in ${sheet.name}; Excel template layout may have changed`);
+          const resultCol = sheetRows[headerRow].findIndex(isResultHeader);
           if (resultCol < 1) throw new Error(`Color indicator column missing in ${sheet.name}`);
           for (const p of sheetParams) {
             const expectedValue = String(p.value ?? '').trim();
