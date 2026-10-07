@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 /**
  * send-report.js — Azure Function
  * Sends COA PDF to client via labs@chanalytical.com using Gmail API
@@ -179,6 +180,26 @@ app.http('send-report', {
       const resolvedEmail = overrideEmail || overrideEmail2 || '';
       if (!labId)     return { status: 400, jsonBody: { error: 'labId required' } };
       if (!pdfBase64) return { status: 400, jsonBody: { error: 'pdfBase64 required' } };
+
+      // No email may be sent without a fresh, server-signed validation of
+      // the exact PDF bytes against the final workbook color indicators.
+      if (!body.saveOnly) {
+        const proof = body.reportValidation || {};
+        const expiry = Number(proof.expiry);
+        if (!Number.isSafeInteger(expiry) || expiry <= Date.now() || expiry > Date.now() + 10 * 60 * 1000 ||
+            !/^[a-f0-9]{64}$/i.test(String(proof.signature || ''))) {
+          return { status: 409, jsonBody: { code: 'REPORT_COLOR_MISMATCH',
+            error: 'Report color validation missing or expired. Regenerate the report and review mismatches before sending.' } };
+        }
+        const hash = crypto.createHash('sha256').update(Buffer.from(pdfBase64, 'base64')).digest('hex');
+        const payload = `${labId}:${hash}:${expiry}`;
+        const expected = crypto.createHmac('sha256', process.env.MS_CLIENT_SECRET).update(payload).digest();
+        const provided = Buffer.from(proof.signature, 'hex');
+        if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
+          return { status: 409, jsonBody: { code: 'REPORT_COLOR_MISMATCH',
+            error: 'Report validation mismatch: PDF differs from the validated workbook. Sending cancelled.' } };
+        }
+      }
 
       const siteId = process.env.SP_SITE_ID;
       const token  = await getToken();
