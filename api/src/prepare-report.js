@@ -80,7 +80,7 @@ async function graphBatch(reqs, token, sid) {
 
 // ── Fill one sheet ─────────────────────────────────────────────────────────────
 // Returns { paramName: hexColor } for all params written to this sheet
-async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell) {
+async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, comments, commentsCell, sheetType = 'lab') {
   const base         = `/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}`;
   const cellUpdates  = [];
   const colorUpdates = [];
@@ -181,7 +181,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
 
       // Write explicit fill color to color indicator cell (col before result)
       if (colResult > 0) {
-        const hex = calcFillColor(p.name, p.value);
+        const hex = calcFillColor(p.name, p.value, sheetType);
         if (hex) {
           colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
           cellColors[p.name] = hex;
@@ -448,12 +448,12 @@ app.http('prepare-report', {
 
     if (isRadon && radonSheet) {
       await writeHeaders(radonSheet.id, [['I7','labId'],['I8','dc'],['J8','tc'],['I9','dr'],['J9','tr'],['I10','today']]);
-      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '');
+      const c = await fillSheet(siteId, tempId, radonSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', '', 'radon');
       Object.assign(cellColors, c);
       if (specSheet) await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`, token, null, sid);
     } else if (isArsenicSpec && specSheet) {
       await writeHeaders(specSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
-      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24');
+      const c = await fillSheet(siteId, tempId, specSheet.id, params, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A24', 'spec');
       Object.assign(cellColors, c);
       const wsBaseSpec2 = `${GRAPH}/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${specSheet.id}`;
       const wbHdrSpec2  = { Authorization: `Bearer ${token}`, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
@@ -477,7 +477,7 @@ app.http('prepare-report', {
 
     if (fhaSheet && needsFHA && fhaParams.length) {
       await writeHeaders(fhaSheet.id, [['H7','labId'],['H8','dc'],['I8','tc'],['H9','dr'],['I9','tr'],['H10','today']]);
-      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27');
+      const c = await fillSheet(siteId, tempId, fhaSheet.id, fhaParams, meta, labId, authorizedBy, reviewDate, today, token, sid, context, reportData._comments||'', 'A27', 'fha');
       Object.assign(cellColors, c);
     }
 
