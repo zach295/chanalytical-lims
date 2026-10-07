@@ -10,6 +10,8 @@
  */
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
+const { calcFillColor } = require('../shared/report-colors');
+const crypto = require('crypto');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
 const TMPL_LAB   = 'Lab Report - Template';
@@ -213,7 +215,11 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (colPrepDT >= 0 && p.prepDT)             addCell(ri, colPrepDT,    p.prepDT);
       if (colAnalDT >= 0 && (p.analDT || p.time)) addCell(ri, colAnalDT,    p.analDT || p.time);
       if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
-
+      // Write the same explicit indicator color as the report preview.
+      if (colResult > 0 && String(p.value ?? '').trim()) {
+        const hex = calcFillColor(p.name, p.value);
+        if (hex) colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
+      }
     }
   }
 
@@ -230,6 +236,14 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     if (errs.length) {
       context.log('[pdf] Cell batch errors:', JSON.stringify(errs.slice(0, 5)));
       throw new Error(`Report cell write failed for ${errs.length} required field(s)`);
+    }
+  }
+
+  for (let i = 0; i < colorUpdates.length; i += 20) {
+    const batch = colorUpdates.slice(i, i + 20);
+    const resp = await graphBatch(batch, token, sid);
+    if (resp.length !== batch.length || resp.some(r => Number(r.status) >= 400)) {
+      throw new Error('Report color indicator write failed; report cannot be released');
     }
   }
 
@@ -638,6 +652,51 @@ app.http('render-report-pdf', {
           throw new Error('report contains no verified sample data beyond the Lab ID');
         }
 
+        // Compare every preview result with the final workbook's value and indicator fill.
+        // Fail closed if a parameter is missing, changed, or has a mismatched color.
+        for (const sheet of verifySheets) {
+          const sheetParams = /^fha/i.test(sheet.name) ? fhaParams :
+            (/^(lab report|radon|arsenic.*spec)/i.test(sheet.name) ? params : []);
+          if (!sheetParams.length) continue;
+          const sr = await gReq('GET',
+            `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/usedRange?$select=values,address`,
+            token, undefined, verifySid);
+          if (!sr.ok) throw new Error(`color verification read failed for ${sheet.name} (${sr.status})`);
+          const sheetData = await sr.json();
+          const sheetRows = sheetData.values || [];
+          const startRow = Number((sheetData.address || '').match(/[A-Z]+(\\d+)(?::|$)/)?.[1] || 1);
+          const startColLetters = (sheetData.address || '').match(/!\\$?([A-Z]+)\\$?\\d+/)?.[1] || 'A';
+          const startCol = [...startColLetters].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0)-1;
+          const headerRow = sheetRows.findIndex(row => row.some(v => /^(your result|result)$/i.test(String(v || '').trim())));
+          if (headerRow < 0) throw new Error(`Result header missing in ${sheet.name}`);
+          const resultCol = sheetRows[headerRow].findIndex(v => /^(your result|result)$/i.test(String(v || '').trim()));
+          if (resultCol < 1) throw new Error(`Color indicator column missing in ${sheet.name}`);
+          for (const p of sheetParams) {
+            const expectedValue = String(p.value ?? '').trim();
+            if (!expectedValue) continue;
+            const name = normalizeCell(p.name);
+            const idx = sheetRows.findIndex((row, i) => i > headerRow &&
+              [row[0],row[1]].some(v => {
+                const key = normalizeCell(v);
+                return key && (key === name || key.startsWith(name) || name.startsWith(key));
+              }));
+            if (idx < 0) throw new Error(`${sheet.name}: missing result row for ${p.name}`);
+            const actualValue = String(sheetRows[idx][resultCol] ?? '').trim();
+            if (actualValue !== expectedValue) throw new Error(`${p.name}: preview value "${expectedValue}" differs from Excel "${actualValue}"`);
+            const expectedColor = calcFillColor(p.name, expectedValue);
+            if (!expectedColor) continue; // No configured threshold: neutral template formatting.
+            const cell = `${colLetter(startCol + resultCol - 1)}${startRow + idx}`;
+            const fill = await gReq('GET',
+              `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/range(address='${cell}')/format/fill`,
+              token, undefined, verifySid);
+            if (!fill.ok) throw new Error(`${p.name}: Excel color verification unavailable (${fill.status})`);
+            const actualColor = String((await fill.json()).color || '').toUpperCase();
+            if (actualColor !== expectedColor.toUpperCase()) {
+              throw new Error(`${p.name} ("${expectedValue}"): preview expects ${expectedColor}, Excel indicator is ${actualColor || 'missing'}`);
+            }
+          }
+        }
+
         context.log(`[pdf] Verification passed for ${labId}: sheet="${expectedSheet.name}", results=${expectedResultValues.length}, metadata=${hasMetadata}`);
       } finally {
         await gReq('POST',
@@ -664,7 +723,9 @@ app.http('render-report-pdf', {
         `${GRAPH}/sites/${siteId}/drive/items/${tempId}/content?format=pdf`,
         { headers: { Authorization: `Bearer ${token}` } });
       if (!pr.ok) throw new Error(`PDF export (${pr.status})`);
-      pdfBase64 = Buffer.from(await pr.arrayBuffer()).toString('base64');
+      const pdfBuffer = Buffer.from(await pr.arrayBuffer());
+      if (pdfBuffer.subarray(0, 5).toString() !== '%PDF-') throw new Error('PDF export did not return a valid PDF');
+      pdfBase64 = pdfBuffer.toString('base64');
       context.log('[pdf] PDF size:', pdfBase64.length);
     } catch(e) {
       await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
@@ -689,6 +750,12 @@ app.http('render-report-pdf', {
     const abbr  = safe(reportData?.meta?.abbrev || reportData?.meta?.clientCode || '');
     const parts = [addr, abbr, labId].filter(Boolean);
     const reportFileName = parts.join('_') + (isRadon ? ' RW Report.pdf' : ' Report.pdf');
-    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName } };
+    // Bind the successful Excel color check to these exact PDF bytes.
+    const expiry = Date.now() + 10 * 60 * 1000;
+    const pdfHash = crypto.createHash('sha256').update(Buffer.from(pdfBase64, 'base64')).digest('hex');
+    const payload = `${labId}:${pdfHash}:${expiry}`;
+    const signature = crypto.createHmac('sha256', process.env.MS_CLIENT_SECRET).update(payload).digest('hex');
+    return { status: 200, jsonBody: { success: true, pdfBase64, fileName: reportFileName,
+      reportValidation: { expiry, signature } } };
   }
 });
