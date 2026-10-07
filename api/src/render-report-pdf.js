@@ -664,8 +664,8 @@ app.http('render-report-pdf', {
           if (!sr.ok) throw new Error(`color verification read failed for ${sheet.name} (${sr.status})`);
           const sheetData = await sr.json();
           const sheetRows = sheetData.values || [];
-          const startRow = Number((sheetData.address || '').match(/[A-Z]+(\\d+)(?::|$)/)?.[1] || 1);
-          const startColLetters = (sheetData.address || '').match(/!\\$?([A-Z]+)\\$?\\d+/)?.[1] || 'A';
+          const startRow = Number((sheetData.address || '').match(/[A-Z]+(\d+)(?::|$)/)?.[1] || 1);
+          const startColLetters = (sheetData.address || '').match(/!\$?([A-Z]+)\$?\d+/)?.[1] || 'A';
           const startCol = [...startColLetters].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0)-1;
           const headerRow = sheetRows.findIndex(row => row.some(v => /^(your result|result)$/i.test(String(v || '').trim())));
           if (headerRow < 0) throw new Error(`Result header missing in ${sheet.name}`);
