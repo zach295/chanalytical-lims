@@ -872,14 +872,6 @@ Return ONLY: {"billingAddress":""}`}],
             }
           }
 
-          // If no TOP billing address was found, use the complete sample/property
-          // address as the billing fallback. This preserves the requested public
-          // fallback and the existing business behavior.
-          if (!ocr.billingAddress) {
-            const parts = [ocr.location, ocr.city, ocr.state, ocr.zip].filter(Boolean);
-            if (parts.length) ocr.billingAddress = parts.join(', ');
-          }
-
           // ── Hallucination check ───────────────────────────────────────────────
           let validatedCustomer = ocr.customer || '';
           if (validatedCustomer && azureText) {
@@ -966,6 +958,48 @@ Return ONLY: {"billingAddress":""}`}],
 
           const clientName = client?.clientName || validatedCustomer || '';
 
+          // Billing-address policy:
+          // Business: never copy the sample/property address into Billing Address.
+          // Public: use the sample/property address only when TOP billing is blank.
+          // A matched non-public client is business even if OCR mislabels formType.
+          const matchedBusiness = !!client &&
+            String(client.abbrev || '').toUpperCase() !== 'PUBLIC' &&
+            !/^public[-\\s]/i.test(String(client.clientName || ''));
+          const isBusinessCOC = matchedBusiness ||
+            String(ocr.formType || '').toLowerCase() === 'business';
+          const sampleBillingFallback = [ocr.location, ocr.city, ocr.state, ocr.zip]
+            .filter(Boolean).join(', ');
+          const addressKey = value => String(value || '').toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
+          const sampleStreetKey = addressKey(ocr.location);
+          const sameSampleAddress = value => {
+            const v = addressKey(value);
+            return !!v && !!sampleStreetKey &&
+              (v === addressKey(sampleBillingFallback) ||
+               v === sampleStreetKey ||
+               (v.includes(sampleStreetKey) &&
+                (!ocr.city || v.includes(addressKey(ocr.city)))));
+          };
+
+          if (isBusinessCOC) {
+            // Ignore an OCR hallucination that copied the middle sample address.
+            if (sameSampleAddress(ocr.billingAddress)) {
+              context.log('[scan] Business billing matched sample address; clearing inferred billing value');
+              ocr.billingAddress = '';
+            }
+            // Report To fields are a valid business billing source only if they
+            // contain a distinct address (never the sample/property address).
+            if (!ocr.billingAddress) {
+              const reportToBilling = [ocr.reportToAddress, ocr.reportToCity,
+                ocr.reportToState, ocr.reportToZip].filter(Boolean).join(', ');
+              if (reportToBilling && !sameSampleAddress(reportToBilling)) {
+                ocr.billingAddress = reportToBilling;
+              }
+            }
+          } else if (!ocr.billingAddress) {
+            ocr.billingAddress = sampleBillingFallback;
+          }
+
           // ── AIO conversion ────────────────────────────────────────────────────
           const isAIO = clientName.toLowerCase().includes('all in one') || clientName.toLowerCase().includes('aio');
           if (isAIO) {
@@ -1026,9 +1060,7 @@ Return ONLY: {"billingAddress":""}`}],
             Zip:              ocr.zip ? String(ocr.zip).padStart(5, '0') : '',
             Email:            client ? (client.reportEmail || client.email) : (ocr.email || ''),
             Phone:            ocr.phone || ocr.reportToPhone || '',
-            BillingAddress:   ocr.billingAddress || (ocr.formType === 'business'
-              ? [ocr.reportToAddress, ocr.reportToCity, ocr.reportToState, ocr.reportToZip].filter(Boolean).join(', ')
-              : ''),
+            BillingAddress:   ocr.billingAddress || '',
             IsNewClient:      client ? 'No' : 'Yes',
             FormType:         ocr.formType || 'public',
             SampleDate:       ocr.dateDrawn    || '',
