@@ -7597,6 +7597,17 @@ document.addEventListener('DOMContentLoaded', function() {
       const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
 
       if (sendEmail) {
+        // Block sending when a manually overridden preview color disagrees with
+        // the validated parameter rule. The server separately checks Excel fills.
+        const colorMismatches = [...(currentReportData.activeParams || []), ...(currentReportData.fhaParams || [])]
+          .filter(p => String(currentReportData.resultsMap?.[p.name]?.value ?? p.value ?? '').trim())
+          .filter(p => {
+            const value = currentReportData.resultsMap?.[p.name]?.value ?? p.value;
+            const expected = _calcColor(p.name, value);
+            return expected && getColor(p.name, value).toUpperCase() !== expected.toUpperCase();
+          }).map(p => p.name);
+        if (colorMismatches.length) throw new Error('Report color mismatch: ' + colorMismatches.join(', ') +
+          '. Sending cancelled. Reset the color overrides and regenerate the report.');
         // ── Step 1: Use cached PDF or generate now ──────────────────────────
         statusEl.textContent = '⏳ Preparing PDF...';
         // Generate PDF from currentReportData — always has all edits in memory
@@ -7619,6 +7630,7 @@ document.addEventListener('DOMContentLoaded', function() {
             labId,
             pdfBase64,
             fileName,
+            reportValidation: pdfData.reportValidation,
             reportType:  currentReportData.reportType,
             isRadon:     currentReportData.isRadon || false,
             location:    currentReportData.meta?.location || '',
