@@ -45,7 +45,7 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
   if (!r) return red;
   if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
   // Reject malformed text instead of letting parseFloat accept partial values.
-  if (!/^[+-]?\\d+(?:\\.\\d+)?$/.test(value)) return red;
+  if (!/^[+-]?\d+(?:\.\\d+)?$/.test(value)) return red;
   const n = Number(value);
   if (!Number.isFinite(n)) return red;
   if (r.between && n >= r.between[0] && n <= r.between[1]) return green;
