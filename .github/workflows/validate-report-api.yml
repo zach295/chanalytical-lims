@@ -1,0 +1,42 @@
+name: Validate report API registration
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/src/render-report-pdf.js'
+      - 'api/src/send-report.js'
+      - 'api/shared/report-colors.js'
+      - 'api/test/report-colors.test.js'
+      - '.github/workflows/validate-report-api.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check api/src/render-report-pdf.js
+          node --check api/src/send-report.js
+          node --check api/src/prepare-report.js
+          node --check api/src/patch-report-cell.js
+          node --check api/shared/report-colors.js
+      - name: Run reporting-limit regression tests
+        run: node api/test/report-colors.test.js
+      - name: Verify route registration
+        working-directory: api
+        run: |
+          npm ci --omit=dev
+          node - <<'NODE'
+          const { app } = require('@azure/functions');
+          const registered=[];
+          app.http = (name, options) => registered.push(name);
+          require('./src/render-report-pdf');
+          require('./src/send-report');
+          for (const name of ['render-report-pdf','send-report']) {
+            if (!registered.includes(name)) throw new Error('Missing API route: '+name);
+          }
+          console.log('Report API routes registered:', registered.join(', '));
+          NODE
