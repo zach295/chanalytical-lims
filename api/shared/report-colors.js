@@ -16,7 +16,7 @@ function calcFillColor(paramName, displayVal) {
     'Arsenic, III':'1', 'Arsenic, V':'1', 'Arsenic, Speciation':'1'
   };
   if (s.startsWith('<')) return s === '<' + exactLimits[paramName] ? '#00CC44' : '#FF0000';
-  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(s)) return '#FF0000';
+  if (!/^[+-]?\d+(?:\.\d+)?$/.test(s)) return '#FF0000';
   const n = Number(s);
   const num = Number.isFinite(n);
   const rl = false;
