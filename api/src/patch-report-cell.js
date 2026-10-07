@@ -1,3 +1,4 @@
+const { calcFillColor } = require('../shared/report-colors');
 /**
  * patch-report-cell.js — Phase 4
  */
@@ -5,39 +6,6 @@ const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const { writeActivityLog } = require('../shared/audit');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
-
-function calcColor(paramName, displayVal) {
-  if (!displayVal && displayVal !== 0) return null;
-  const s = String(displayVal).trim();
-  if (!s) return null;
-  const n = parseFloat(s);
-  const num = !isNaN(n);
-  const rl  = s.startsWith('<');
-  if (paramName === 'Chloride, Total')          { if (rl||(num&&n<250)) return '#00CC44'; if (num&&n>=250) return '#0070C0'; return null; }
-  if (paramName === 'Fluoride, Total')           { if (rl||(num&&n<1.9)) return '#00CC44'; if (num&&n>=1.9&&n<=3.9) return '#0070C0'; if (num&&n>=4) return '#FF0000'; return null; }
-  if (paramName === 'Nitrite-Nitrogen, Total')   { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#FF0000'; return null; }
-  if (paramName === 'Nitrate-Nitrogen, Total')   { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
-  if (paramName === 'Arsenic, Total')            { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
-  if (paramName === 'Arsenic, Speciation')       { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
-  if (paramName === 'Arsenic III')               { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
-  if (paramName === 'Arsenic V')                 { if (rl||(num&&n<10))  return '#00CC44'; if (num&&n>=10) return '#FF0000'; return null; }
-  if (paramName === 'Lead, Total')               { if (rl||(num&&n<15))  return '#00CC44'; if (num&&n>=15) return '#FF0000'; return null; }
-  if (paramName === 'Uranium, Total')            { if (rl||(num&&n<30))  return '#00CC44'; if (num&&n>=30) return '#FF0000'; return null; }
-  if (paramName === 'Copper, Total')             { if (rl||(num&&n<0.9)) return '#00CC44'; if (num&&n>=0.9&&n<=1.29) return '#0070C0'; if (num&&n>=1.3) return '#FF0000'; return null; }
-  if (paramName === 'Iron, Total')               { if (rl||(num&&n<0.3)) return '#00CC44'; if (num&&n>=0.3)  return '#0070C0'; return null; }
-  if (paramName === 'Manganese, Total')          { if (rl||(num&&n<0.05))return '#00CC44'; if (num&&n>=0.05) return '#0070C0'; return null; }
-  if (paramName === 'Sodium, Total')             { if (num&&n>=20) return '#0070C0'; return null; }
-  if (paramName === 'Antimony, Total')           { if (rl||(num&&n<0.006)) return '#00CC44'; if (num&&n>=0.006) return '#FF0000'; return null; }
-  if (paramName === 'Cadmium, Total')            { if (rl||(num&&n<0.005)) return '#00CC44'; if (num&&n>=0.005) return '#FF0000'; return null; }
-  if (paramName === 'Chromium, Total')           { if (rl||(num&&n<0.1))   return '#00CC44'; if (num&&n>=0.1)   return '#FF0000'; return null; }
-  if (paramName === 'pH Electrometric')          { if (num&&n>=6.5&&n<=8.5) return '#00CC44'; if (num&&(n<6.5||n>8.5)) return '#0070C0'; return null; }
-  if (paramName === 'Sulfate')                   { if (rl||(num&&n<250)) return '#00CC44'; if (num&&n>=250) return '#FF0000'; return null; }
-  if (paramName === 'Total Coliform')            { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#0070C0'; return null; }
-  if (paramName === 'E. Coli')                   { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)  return '#FF0000'; return null; }
-  if (paramName === 'Radon Water')               { if (rl||(num&&n<4000))return '#00CC44'; if (num&&n>=4000) return '#0070C0'; return null; }
-  if (paramName === 'Turbidity')                 { if (rl||(num&&n<1))   return '#00CC44'; if (num&&n>=1)    return '#0070C0'; return null; }
-  return null;
-}
 
 function colLetter(n) {
   let s = '';
@@ -160,7 +128,7 @@ app.http('patch-report-cell', {
       // Color indicator
       var newHex = null;
       if (field === 'value' && colResult > 0) {
-        newHex = calcColor(paramName, value);
+        newHex = calcFillColor(paramName, value);
         if (newHex) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult - 1) + (targetRow + 1) + '\')/format/fill', body: { color: newHex } });
       }
 
