@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 /**
  * send-report.js — Azure Function
  * Sends COA PDF to client via labs@chanalytical.com using Gmail API
