@@ -128,7 +128,7 @@ app.http('patch-report-cell', {
       // Color indicator
       var newHex = null;
       if (field === 'value' && colResult > 0) {
-        newHex = calcFillColor(paramName, value);
+        newHex = calcFillColor(paramName, value, /^fha/i.test(sheet.name) ? 'fha' : /^radon/i.test(sheet.name) ? 'radon' : /arsenic.*spec/i.test(sheet.name) ? 'spec' : 'lab');
         if (newHex) sheetPatchReqs.push({ url: wsPath + '/range(address=\'' + colLetter(colResult - 1) + (targetRow + 1) + '\')/format/fill', body: { color: newHex } });
       }
 
