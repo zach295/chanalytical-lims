@@ -7143,9 +7143,21 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!displayVal && displayVal !== 0) return null;
     const s   = String(displayVal).trim();
     if (!s) return null;
-    const n   = parseFloat(s);
-    const num = !isNaN(n);   // true when value is a real number
-    const rl  = s.startsWith('<'); // <RL / below detection
+    const exactLimits = {
+      'Chloride, Total':'2', 'Fluoride, Total':'0.2', 'Nitrite-Nitrogen, Total':'0.2',
+      'Nitrate-Nitrogen, Total':'1', 'Arsenic, Total':'1', 'Lead, Total':'1',
+      'Uranium, Total':'1', 'Copper, Total':'0.001', 'Iron, Total':'0.05',
+      'Manganese, Total':'0.001', 'Antimony, Total':'0.0005',
+      'Cadmium, Total':'0.002', 'Chromium, Total':'0.002',
+      'Sulfate':'40', 'Total Coliform':'1', 'E. Coli':'1',
+      'Radon Water':'100', 'Turbidity':'1', 'Arsenic III':'1', 'Arsenic V':'1',
+      'Arsenic, III':'1', 'Arsenic, V':'1', 'Arsenic, Speciation':'1'
+    };
+    if (s.startsWith('<')) return s === '<' + exactLimits[paramName] ? '#00CC44' : '#FF0000';
+    if (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(s)) return '#FF0000';
+    const n = Number(s);
+    const num = Number.isFinite(n);
+    const rl = false;
   
     switch (paramName) {
       case 'Chloride, Total':
@@ -7258,9 +7270,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return null;
   
       case 'Radon Water':
-        // green: <100 (string) OR <4000;  blue: >4000
-        if (rl || (num && n < 4000))  return '#00CC44';
-        if (num && n > 4000)           return '#0070C0';
+        // green: <100 (string) OR <4000;  blue: >=4000
+        if (rl || (num && n < 4000))   return '#00CC44';
+        if (num && n >= 4000)           return '#0070C0';
         return null;
   
       case 'Turbidity':
@@ -7268,12 +7280,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (rl || (num && n < 1))  return '#00CC44';
         if (num && n >= 1)          return '#0070C0';
         return null;
-  
       default:
         return null;
     }
   }
-
+  
+  
+  
   function getColor(paramName, value) {
     if (!value && value !== 0) return '#e8e8e8';
     // Check manual override first
