@@ -1186,7 +1186,8 @@ app.http('approve-scan', {
               Aliases:          clientInfo.reportEmail || email || '',         // Report Email Address
               Notes:            clientInfo.billingEmail || email || '',        // Billing Email Address
               Active:           clientInfo.phone || phone || '',               // Phone #
-              BillingAddress:   billingAddress || clientInfo.billingAddress || [location, city, state, zip].filter(Boolean).join(', '),
+              BillingAddress:   billingAddress || clientInfo.billingAddress ||
+                (isPublicName ? [location, city, state, zip].filter(Boolean).join(', ') : ''),
               ClientCode:       '',
               Abbrev:           isPublicName ? 'PUBLIC' : getAbbrev(formalClientName),
               BillingFrequency: isPublicName ? 'Pre-Pay' : '',
