@@ -964,7 +964,7 @@ Return ONLY: {"billingAddress":""}`}],
           // A matched non-public client is business even if OCR mislabels formType.
           const matchedBusiness = !!client &&
             String(client.abbrev || '').toUpperCase() !== 'PUBLIC' &&
-            !/^public[-\\s]/i.test(String(client.clientName || ''));
+            !/^public[-\s]/i.test(String(client.clientName || ''));
           const isBusinessCOC = matchedBusiness ||
             String(ocr.formType || '').toLowerCase() === 'business';
           const sampleBillingFallback = [ocr.location, ocr.city, ocr.state, ocr.zip]
