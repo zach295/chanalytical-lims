@@ -7172,13 +7172,15 @@ document.addEventListener('DOMContentLoaded', function() {
       'Radon Water': {lt:4000, blueAbove:4000, text:['<100']}
     };
     let r = rules[key === 'Fluoride' ? 'Fluoride, Total' : key];
-    if (fha) {
-      if (!['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'].includes(key)) return red;
-      r = {...r, text: key === 'Total Coliform' || key === 'E. Coli' ? ['<1','<1.0'] : r.text};
-    } else if (spec) {
-      if (key === 'Arsenic, III' || key === 'Arsenic, V' || key === 'Arsenic III' || key === 'Arsenic V') return red; // Template has only red >=10 rules, no green rule.
-      if (key !== 'Arsenic, Total') return red;
-    } else if (radon && key !== 'Radon Water') return red;
+    const specArsenic = spec && /^(Arsenic,? (?:III|V))$/.test(key);
+    if (specArsenic) {
+      // Speciation template only defines a red threshold at 10.
+      r = {redAt:10};
+    } else if (fha) {
+      if (!['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'].includes(key)) r = null;
+      else r = {...r, text: key === 'Total Coliform' || key === 'E. Coli' ? ['<1','<1.0'] : r.text};
+    } else if (spec && key !== 'Arsenic, Total') r = null;
+    else if (radon && key !== 'Radon Water') r = null;
     // No conditional formatting: always green, including text and malformed values.
     if (!r) return green;
     if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
