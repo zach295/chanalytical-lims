@@ -4851,7 +4851,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Collect checked tests
-    const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox]:checked`);
+    const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox][value]:checked`);
     const tests   = Array.from(testEls).map(el => el.value);
     const hasRadon = tests.includes('Radon Water');
     const wqReject = tests.includes('WQ - Reject');
