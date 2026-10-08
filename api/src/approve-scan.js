@@ -902,7 +902,14 @@ app.http('approve-scan', {
         getClientInfo(token, customer),
       ]);
 
-      // Normalize test names
+      // Normalize test names. HTML checkboxes without an explicit value submit
+      // "on"; this is a boolean metadata flag, never a billable test.
+      // Reject it at the API boundary so other clients cannot generate ON suffixes.
+      if (tests.some(t => String(t).trim().toLowerCase() === 'on')) {
+        return { status: 400, jsonBody: {
+          error: 'Invalid test selection: checkbox metadata was included as a test. Refresh the review card and approve again.'
+        }};
+      }
       const normalizedTests = tests.map(normalizeTest);
       const radonRequested  = hasRadon || normalizedTests.includes('Radon Water') || wqReject || rwReject;
 
