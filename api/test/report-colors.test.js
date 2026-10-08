@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { calcFillColor } = require('../shared/report-colors');
-const green = '#00FF00', red = '#FF0000';
+const green = '#00FF00', red = '#FF0000', grey = '#E8E8E8';
 assert.equal(calcFillColor('Fluoride, Total', '<0.2'), green);
 assert.equal(calcFillColor('Fluoride, Total', '<0.20'), red);
 assert.equal(calcFillColor('Fluoride, Total', '<0.3'), red);
@@ -22,11 +22,13 @@ assert.equal(calcFillColor('Sodium, Total', '19.9'), '#E8E8E8');
 assert.equal(calcFillColor('Sodium, Total', '0'), '#E8E8E8');
 assert.equal(calcFillColor('Sodium, Total', '20'), '#0B5394');
 for (const param of ['Hardness by calculation', 'Calcium, Total', 'Magnesium, Total', 'Alkalinity']) {
-  assert.equal(calcFillColor(param, '1.2'), green, param + ' numeric');
-  assert.equal(calcFillColor(param, 'ND'), green, param + ' text');
-  assert.equal(calcFillColor(param, '0.'), green, param + ' malformed');
+  assert.equal(calcFillColor(param, '1.2'), grey, param + ' numeric');
+  assert.equal(calcFillColor(param, 'ND'), grey, param + ' text');
+  assert.equal(calcFillColor(param, '0.'), grey, param + ' malformed');
 }
 
+assert.equal(calcFillColor('Cobalt', '4.2'), grey);
+assert.equal(calcFillColor('Cobalt', 'ND'), grey);
 assert.equal(calcFillColor('Chloride, Total', '<2'), green);
 assert.equal(calcFillColor('Chloride, Total', '<2.00'), red);
 assert.equal(calcFillColor('Arsenic, Total', '<1'), green);
