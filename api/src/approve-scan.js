@@ -1030,7 +1030,8 @@ app.http('approve-scan', {
       const mitigationField = archivedIntakeListId
         ? await ensureRadonMitigationColumn(archivedIntakeListId, _token)
         : null;
-      const mitigationYes = !!radonMitigation && radonRequested;
+      // Property metadata is independent of the tests ordered (including uranium-only samples).
+      const mitigationYes = radonMitigation === true;
 
       for (const item of labItems) {
         const intakeFields = {
