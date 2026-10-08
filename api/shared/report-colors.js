@@ -44,8 +44,8 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
     else r = {...r, text: key === 'Total Coliform' || key === 'E. Coli' ? ['<1','<1.0'] : r.text};
   } else if (spec && key !== 'Arsenic, Total') r = null;
   else if (radon && key !== 'Radon Water') r = null;
-  // No conditional formatting: always green, including text and malformed values.
-  if (!r) return green;
+  // No conditional formatting: neutral grey, including text and malformed values.
+  if (!r) return grey;
   if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
   // Reject malformed text instead of letting parseFloat accept partial values.
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(value)) return red;
