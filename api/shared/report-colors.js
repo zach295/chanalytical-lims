@@ -10,7 +10,7 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
   const spec = sheet.includes('spec');
   const fha = sheet.includes('fha');
   const radon = sheet.includes('radon');
-  const green = '#00FF00', red = '#FF0000', blue = '#0B5394';
+  const green = '#00FF00', red = '#FF0000', blue = '#0B5394', grey = '#E8E8E8';
   const rules = {
     'Chloride, Total': {lt:250, blueAt:250, text:['<2']},
     'Fluoride, Total': {lt:1.9, blueFrom:1.9, blueTo:3.9, redAt:4, text:['<0.2']},
@@ -42,7 +42,8 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
     if (key === 'Arsenic, III' || key === 'Arsenic, V' || key === 'Arsenic III' || key === 'Arsenic V') return red; // Template has only red >=10 rules, no green rule.
     if (key !== 'Arsenic, Total') return red;
   } else if (radon && key !== 'Radon Water') return red;
-  if (!r) return red;
+  // No conditional formatting: always green, including text and malformed values.
+  if (!r) return green;
   if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
   // Reject malformed text instead of letting parseFloat accept partial values.
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(value)) return red;
@@ -52,6 +53,8 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
   if (r.lt !== undefined && n < r.lt) return green;
   if (r.blueFrom !== undefined && n >= r.blueFrom && n <= r.blueTo) return blue;
   if (r.blueAt !== undefined && n >= r.blueAt) return blue;
+  // Sodium's Excel template has blue >= 20, with a neutral grey below 20.
+  if (key === 'Sodium, Total' && n < 20) return grey;
   if (r.blueAbove !== undefined && n > r.blueAbove) return blue;
   if (r.blueOutside && (n < r.blueOutside[0] || n > r.blueOutside[1])) return blue;
   return red;
