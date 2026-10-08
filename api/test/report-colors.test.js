@@ -18,6 +18,15 @@ assert.equal(calcFillColor('Chromium, Total', '0.05'), red);
 assert.equal(calcFillColor('Total Coliform', '<1.0'), green);
 assert.equal(calcFillColor('Total Coliform', '<1.00'), green);
 assert.equal(calcFillColor('Sodium, Total', '21'), '#0B5394');
+assert.equal(calcFillColor('Sodium, Total', '19.9'), '#E8E8E8');
+assert.equal(calcFillColor('Sodium, Total', '0'), '#E8E8E8');
+assert.equal(calcFillColor('Sodium, Total', '20'), '#0B5394');
+for (const param of ['Hardness by calculation', 'Calcium, Total', 'Magnesium, Total', 'Alkalinity']) {
+  assert.equal(calcFillColor(param, '1.2'), green, param + ' numeric');
+  assert.equal(calcFillColor(param, 'ND'), green, param + ' text');
+  assert.equal(calcFillColor(param, '0.'), green, param + ' malformed');
+}
+
 assert.equal(calcFillColor('Chloride, Total', '<2'), green);
 assert.equal(calcFillColor('Chloride, Total', '<2.00'), red);
 assert.equal(calcFillColor('Arsenic, Total', '<1'), green);
