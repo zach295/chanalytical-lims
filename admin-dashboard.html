@@ -7183,7 +7183,15 @@ document.addEventListener('DOMContentLoaded', function() {
     else if (radon && key !== 'Radon Water') r = null;
     // No conditional formatting: neutral grey, including text and malformed values.
     if (!r) return grey;
-    if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
+    if (value.startsWith('<')) {
+      if (r.text?.includes(value)) return green;
+      // Excel's Total Coliform conditional formatting displays qualified
+      // numeric counts >= 1 (e.g. <200.5) in blue, not red.
+      // Keep this preview-only; do not alter the Excel/PDF generation rules.
+      if (key === 'Total Coliform' && /^<\\d+(?:\\.\\d+)?$/.test(value) &&
+          Number(value.slice(1)) >= 1) return blue;
+      return red;
+    }
     // Reject malformed text instead of letting parseFloat accept partial values.
     if (!/^[+-]?\d+(?:\.\d+)?$/.test(value)) return red;
     const n = Number(value);
