@@ -7188,7 +7188,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Excel's Total Coliform conditional formatting displays qualified
       // numeric counts >= 1 (e.g. <200.5) in blue, not red.
       // Keep this preview-only; do not alter the Excel/PDF generation rules.
-      if (key === 'Total Coliform' && /^<\\d+(?:\\.\\d+)?$/.test(value) &&
+      if (key === 'Total Coliform' && /^<\d+(?:\.\d+)?$/.test(value) &&
           Number(value.slice(1)) >= 1) return blue;
       return red;
     }
