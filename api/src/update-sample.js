@@ -170,10 +170,19 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
   const filePath    = `${radonFolder}/${fileName}`.split('/').map(encodeURIComponent).join('/');
   const authHdr     = { Authorization: `Bearer ${token}` };
 
+  // Include the exact workbook and operation in diagnostics without exposing credentials.
+  const rcsLocation = `${monthName} Radon ${year}/${fileName}`;
+  const graphError = async response => {
+    const raw = await response.text().catch(() => '');
+    try {
+      const parsed = JSON.parse(raw);
+      return String(parsed.error?.code || parsed.error?.message || raw || 'No response details').slice(0, 240);
+    } catch (_) { return String(raw || 'No response details').slice(0, 240); }
+  };
   const fileRes = await fetch(`${GRAPH}/sites/${siteId}/drive/root:/${filePath}`, { headers: authHdr });
   if (!fileRes.ok) {
-    if (context) context.log(`[radonSheet] File not found: ${fileName} in ${monthName} Radon ${year}`);
-    return { updated: false, reason: 'Radon sheet not found' };
+    const detail = await graphError(fileRes);
+    return { updated: false, reason: `RCS workbook lookup failed for ${baseId}: ${rcsLocation} (HTTP ${fileRes.status}; ${detail}). Check the monthly radon folder and filename.` };
   }
   const { id: fileId } = await fileRes.json();
 
@@ -183,27 +192,31 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
     { method: 'POST', headers: { ...authHdr, 'Content-Type': 'application/json' },
       body: JSON.stringify({ persistChanges: true }) }
   );
+  if (!sesRes.ok) throw new Error(`RCS session could not open for ${baseId} in ${rcsLocation} (HTTP ${sesRes.status}; ${await graphError(sesRes)})`);
   const { id: sid } = await sesRes.json();
+  if (!sid) throw new Error(`RCS session returned no session ID for ${baseId} in ${rcsLocation}`);
   const wbHdr  = { ...authHdr, 'workbook-session-id': sid, 'Content-Type': 'application/json' };
   const wbBase = `${GRAPH}/sites/${siteId}/drive/items/${fileId}/workbook`;
 
   try {
     const sheetsRes = await fetch(`${wbBase}/worksheets`, { headers: wbHdr });
+    if (!sheetsRes.ok) throw new Error(`RCS worksheet listing failed for ${baseId} in ${rcsLocation} (HTTP ${sheetsRes.status}; ${await graphError(sheetsRes)})`);
     const wsId      = ((await sheetsRes.json()).value || [])[0]?.id;
-    if (!wsId) throw new Error('No worksheets in radon sheet');
+    if (!wsId) throw new Error(`RCS workbook has no worksheets: ${rcsLocation}`);
     const rangeRes  = await fetch(`${wbBase}/worksheets/${wsId}/usedRange?$select=values`, { headers: wbHdr });
+    if (!rangeRes.ok) throw new Error(`RCS sample lookup could not read column A for ${baseId} in ${rcsLocation} (HTTP ${rangeRes.status}; ${await graphError(rangeRes)})`);
     const rows      = (await rangeRes.json()).values || [];
     let   targetRow = -1;
     for (let i = 0; i < rows.length; i++) {
       const cell = String(rows[i][0] || '').trim();
       if (cell.split(' ')[0] === baseId || cell === baseId) { targetRow = i + 1; break; }
     }
-    if (targetRow < 0) return { updated: false, reason: `${baseId} not found in radon sheet` };
+    if (targetRow < 0) return { updated: false, reason: `RCS sample row not found: ${baseId} was not found in column A of ${rcsLocation} (checked ${rows.length} used-range rows).` };
     const idRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='A${targetRow}')`,
       { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[newLabId]] }) });
     if (!idRes.ok) {
       const idErr = await idRes.text().catch(() => '');
-      throw new Error(`Radon Lab ID update failed (${idRes.status}): ${idErr.slice(0,180)}`);
+      throw new Error(`RCS Lab ID write failed for ${baseId} in ${rcsLocation}, cell A${targetRow} (HTTP ${idRes.status}): ${idErr.slice(0,180)}`);
     }
     if (context) context.log(`[radonSheet] Updated A${targetRow}: ${newLabId}`);
 
@@ -220,7 +233,7 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
       }
       const dRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='E${targetRow}')`,
         { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawDate]] }) });
-      if (!dRes.ok) throw new Error(`Radon draw-date update failed (${dRes.status})`);
+      if (!dRes.ok) throw new Error(`RCS Date Drawn write failed for ${baseId} in ${rcsLocation}, cell E${targetRow}, attempted value "${drawDate}" (HTTP ${dRes.status}; ${await graphError(dRes)})`);
       if (context) context.log(`[radonSheet] Updated E${targetRow} draw date: ${drawDate}`);
     }
 
@@ -228,7 +241,7 @@ async function updateRadonSheet(siteIdArg, datePrefix, baseId, newLabId, tokenAr
       const drawTime = to24h(updates.timeDrawn);
       const tRes = await fetch(`${wbBase}/worksheets/${wsId}/range(address='F${targetRow}')`,
         { method: 'PATCH', headers: wbHdr, body: JSON.stringify({ values: [[drawTime]] }) });
-      if (!tRes.ok) throw new Error(`Radon draw-time update failed (${tRes.status})`);
+      if (!tRes.ok) throw new Error(`RCS Time Drawn write failed for ${baseId} in ${rcsLocation}, cell F${targetRow}, attempted value "${drawTime}" (HTTP ${tRes.status}; ${await graphError(tRes)})`);
       if (context) context.log(`[radonSheet] Updated F${targetRow} draw time: ${drawTime}`);
     }
 
@@ -630,8 +643,10 @@ app.http('update-sample', {
         if (isRadon) {
           try {
             const rwResult = await updateRadonSheet(siteId, datePrefix, baseId, finalLabId, token, context, updates);
-            log.push(rwResult.updated ? `✅ Radon sheet updated` : `ℹ️ Radon: ${rwResult.reason}`);
-          } catch(e) { log.push(`⚠️ Radon sheet: ${e.message}`); }
+            log.push(rwResult.updated ? `✅ RCS updated: ${baseId}, row ${rwResult.row}${updates.timeDrawn !== undefined ? `, Time Drawn ${to24h(updates.timeDrawn)} → column F` : ''}` : `⚠️ RCS NOT updated: ${rwResult.reason}`);
+          } catch(e) { context.log(`[update-sample] RCS correction failed for ${baseId}: ${e.message}`); log.push(`⚠️ RCS NOT updated for ${baseId}: ${e.message}. Other sample corrections may have saved; check the RCS before relying on the corrected time.`); }
+        } else if (updates.timeDrawn !== undefined || updates.dateDrawn !== undefined) {
+          log.push(`⚠️ RCS NOT checked for ${baseId}: the selected test type was not recognized as Radon Water. Archived Intake may have updated, but RCS date/time was not synchronized.`);
         }
       }
 
