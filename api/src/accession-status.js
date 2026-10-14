@@ -152,10 +152,33 @@ app.http('accession-status', {
             .slice(0, 4)
             .map(([name, count]) => ({ name, count }));
 
+          // Dysart's Run: use the exact same full-day Archived Intake dataset
+          // and sample-row counting method as Approved Today, restricted to
+          // the predetermined northern-client group. Pending queue is excluded.
+          const northernClients = [
+            'madden home inspections', 'yankee home inspections',
+            'defender home inspections', "elliott's information service",
+            'summit to shore property inspections'
+          ];
+          const northernCounts = {};
+          for (const item of allToday) {
+            const customer = String(item.customer || '').toLowerCase().trim();
+            const match = northernClients.find(name => customer.includes(name.split(' ')[0]));
+            if (!match) continue;
+            const display = item.customer || 'Unknown';
+            northernCounts[display] = (northernCounts[display] || 0) + 1;
+          }
+          const dysartsBreakdown = Object.entries(northernCounts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count }));
+          const dysartsTotal = dysartsBreakdown.reduce((sum, row) => sum + row.count, 0);
+
           return { status: 200, jsonBody: {
             approved:         allToday.slice(0, 5), // top 5 for the table
             total:            allToday.length,
             clientBreakdown,                         // full breakdown for counter
+            dysartsTotal,
+            dysartsBreakdown,
           }};
         }
 
