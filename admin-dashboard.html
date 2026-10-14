@@ -2918,9 +2918,6 @@ document.addEventListener('DOMContentLoaded', function() {
       const northernBreakEl = document.getElementById('rq-northern-breakdown');
       const todayBreakEl = document.getElementById('rq-today-breakdown');
 
-      const NORTHERN_CLIENTS = ['madden home inspections','yankee home inspections',
-        'defender home inspections',"elliott's information service",'summit to shore property inspections'];
-
       try {
         const todayRes  = await fetch('/api/accession-status', {
           method: 'POST',
@@ -2953,25 +2950,22 @@ document.addEventListener('DOMContentLoaded', function() {
           todayBreakEl.style.display = 'block';
         }
 
-        // Dysart's Run counter — approved today + pending in queue
-        const northernApproved = allApproved.filter(a =>
-          NORTHERN_CLIENTS.some(nc => (a.customer||'').toLowerCase().includes(nc))
-        );
-        const northernPending  = (data.pending || []).filter(s =>
-          NORTHERN_CLIENTS.some(nc => (s.customer||'').toLowerCase().includes(nc))
-        );
-        const northernTotal = northernApproved.length + northernPending.length;
+        // Dysart's Run counter — same Archived Intake "approved today"
+        // dataset and per-sample counting as Approved Today, northern clients only.
+        // Pending Review Queue items do not count.
+        const northernTotal = Number(todayData.dysartsTotal || 0);
         if (northernEl) northernEl.textContent = northernTotal;
 
-        // Dysart's Run breakdown — list each company
-        if (northernBreakEl && northernTotal > 0) {
-          const lines = [];
-          northernApproved.forEach(a => lines.push(`✅ ${a.customer||a.fullId||'—'}`));
-          northernPending.forEach(s  => lines.push(`⏳ ${s.customer||s.ClientName||'—'}`));
-          northernBreakEl.innerHTML = lines.join('<br>');
+        // Show sample counts per client, like Approved Today's breakdown.
+        const northernBreakdown = todayData.dysartsBreakdown || [];
+        if (northernBreakEl) {
+          if (northernBreakdown.length) {
+            northernBreakEl.innerHTML = northernBreakdown
+              .map(({name,count}) => `<div>${adminEsc(name)}: <strong>${count}</strong></div>`).join('');
+          } else {
+            northernBreakEl.textContent = 'No Dysart\'s Run samples approved today';
+          }
           northernBreakEl.style.display = 'block';
-        } else if (northernBreakEl) {
-          northernBreakEl.style.display = 'none';
         }
 
         // Recently Approved table — last 5
