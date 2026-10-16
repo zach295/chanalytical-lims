@@ -3,6 +3,7 @@
  * Pulls ALL data from SharePoint Lists (Archived Intake + Results Cache)
  * instead of re-reading Excel files.
  */
+const { calculateArsenicV } = require('../shared/arsenic-speciation');
 const { app }      = require('@azure/functions');
 const { getToken, listItems, LISTS } = require('../shared/graph');
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -825,14 +826,14 @@ app.http('generate-report', {
             prepDT = acidPrepDT;
             break;
           case 'spec_v': {
-            // Arsenic V = rounded(Arsenic Total) minus rounded(Arsenic III) — matches display values
-            const asTotal = parseFloat(c['Arsenic_x0028_As75_x0029_'] || '');
-            const asIII   = parseFloat(c.Arsenic3 || c.ArsenicIII || '');
-            if (!isNaN(asTotal) && !isNaN(asIII)) {
-              const asTotalRounded = Math.round(asTotal);
-              const asIIIRounded   = Math.round(asIII);
-              rawVal = String(Math.max(0, asTotalRounded - asIIIRounded));
-            }
+            // Arsenic III below its 1 ug/L reporting limit contributes zero
+            // to As(V); the original As(III) measurement remains in Results Cache.
+            const asV = calculateArsenicV(
+              c['Arsenic_x0028_As75_x0029_'],
+              c.Arsenic3 ?? c.ArsenicIII,
+              1
+            );
+            if (asV !== null) rawVal = String(asV);
             analDT = ''; // calculated — no instrument date
             prepDT = ''; // calculated — no prep date
             break;
