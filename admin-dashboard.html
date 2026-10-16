@@ -4966,6 +4966,20 @@ document.addEventListener('DOMContentLoaded', function() {
           statusEl.style.color = 'var(--warning)';
           statusEl.textContent += ` ⚠️ ${data.warning}`;
         }
+        // Approval and COA synchronization are separate outcomes. Do not
+        // claim the Google COA sheet was written when the backend reports failure.
+        if (data.coaSheetStatus === 'failed' || data.coaSheetWarning) {
+          const detail = data.coaSheetWarning || 'Unknown Google Sheets write failure';
+          statusEl.style.color = 'var(--error)';
+          statusEl.textContent += ` ⚠️ COA NOT WRITTEN: ${detail}. Lab ID was approved; check the Activity Log and repair the COA entry before reporting.`;
+          showToast(`⚠️ COA write FAILED for ${labIdStr}: ${detail}`, 15000);
+        } else if (String(data.coaSheetStatus || '').startsWith('written:')) {
+          statusEl.textContent += ' · COA verified';
+        } else {
+          statusEl.style.color = 'var(--warning)';
+          statusEl.textContent += ` ⚠️ COA write not verified (status: ${data.coaSheetStatus || 'missing'}).`;
+          showToast(`⚠️ COA not verified for ${labIdStr}`, 12000);
+        }
       }
 
       // WQ writing remains entirely inside /api/approve-scan.
@@ -4985,7 +4999,9 @@ document.addEventListener('DOMContentLoaded', function() {
           })
           .catch(e => console.warn('[control-sheet] background RCS create failed:', e.message));
       }
-      showToast(`✅ ${labIdStr} written to sheets`);
+      if (String(data.coaSheetStatus || '').startsWith('written:') && !data.coaSheetWarning) {
+        showToast(`✅ ${labIdStr} approved; COA verified`);
+      }
 
       // Add to in-memory recently approved cache so it shows in Recently Approved table
       // Add ALL approved lab IDs (one per test when multiple selected)
