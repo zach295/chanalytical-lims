@@ -33,6 +33,15 @@ assert.equal(calcFillColor('Chloride, Total', '<2'), green);
 assert.equal(calcFillColor('Chloride, Total', '<2.00'), red);
 assert.equal(calcFillColor('Arsenic, Total', '<1'), green);
 assert.equal(calcFillColor('Arsenic, Total', '<1.0'), red);
+for (const element of ['Arsenic, III', 'Arsenic, V']) {
+  assert.equal(calcFillColor(element, '<1', 'spec'), grey, element + ' below RL');
+  assert.equal(calcFillColor(element, '2', 'spec'), grey, element + ' below red threshold');
+  assert.equal(calcFillColor(element, '9.9', 'spec'), grey, element + ' just below threshold');
+  assert.equal(calcFillColor(element, '10', 'spec'), red, element + ' at threshold');
+  assert.equal(calcFillColor(element, '12', 'spec'), red, element + ' above threshold');
+}
+assert.equal(calcFillColor('Arsenic, Total', '2', 'spec'), green);
+
 assert.equal(calcFillColor('E. Coli', '<1'), green);
 assert.equal(calcFillColor('E. Coli', '<2'), red);
 assert.equal(calcFillColor('pH Electrometric', 'ND'), red);
