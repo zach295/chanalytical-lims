@@ -7168,8 +7168,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let r = rules[key === 'Fluoride' ? 'Fluoride, Total' : key];
     const specArsenic = spec && /^(Arsenic,? (?:III|V))$/.test(key);
     if (specArsenic) {
-      // Speciation template only defines a red threshold at 10.
-      r = {redAt:10};
+      // The speciation template has only a red >=10 ug/L rule for As(III)/As(V).
+      // Otherwise there is no conditional fill: show the neutral grey default.
+      // "<1" is a reporting-limit value, not a concentration above 10.
+      const numeric = /^[+-]?\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN;
+      return Number.isFinite(numeric) && numeric >= 10 ? red : grey;
     } else if (fha) {
       if (!['Nitrite-Nitrogen, Total','Nitrate-Nitrogen, Total','Lead, Total','Total Coliform','E. Coli'].includes(key)) r = null;
       else r = {...r, text: key === 'Total Coliform' || key === 'E. Coli' ? ['<1','<1.0'] : r.text};
