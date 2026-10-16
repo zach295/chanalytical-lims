@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'api/src/generate-report.js'
+      - 'api/shared/arsenic-speciation.js'
+      - 'api/test/arsenic-speciation.test.js'
       - 'api/src/render-report-pdf.js'
       - 'api/src/send-report.js'
       - 'api/shared/report-colors.js'
@@ -18,13 +21,17 @@ jobs:
           node-version: '22'
       - name: Check JavaScript syntax
         run: |
+          node --check api/src/generate-report.js
+          node --check api/shared/arsenic-speciation.js
           node --check api/src/render-report-pdf.js
           node --check api/src/send-report.js
           node --check api/src/prepare-report.js
           node --check api/src/patch-report-cell.js
           node --check api/shared/report-colors.js
       - name: Run reporting-limit regression tests
-        run: node api/test/report-colors.test.js
+        run: |
+          node api/test/report-colors.test.js
+          node api/test/arsenic-speciation.test.js
       - name: Verify route registration
         working-directory: api
         run: |
