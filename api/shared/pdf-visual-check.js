@@ -71,7 +71,7 @@ async function verifyVisibleReportPdf(pdfBuffer, params, options={}) {
       const rows=[];
       for(const item of tc.items){
         if(!item.str || !item.transform)continue;
-        const pos=pdfjs.Util.applyTransform(viewport.transform,item.transform);
+        const pos=pdfjs.Util.transform(viewport.transform,item.transform);
         const x=pos[4],y=pos[5];
         let row=rows.find(r=>Math.abs(r.y-y)<4);
         if(!row){row={y,items:[]};rows.push(row);}
