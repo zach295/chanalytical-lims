@@ -146,7 +146,29 @@ async function writeToGoogleSheet(rows, context) {
         .map(([key, count]) => `${key} (${verifyCounts.get(key) || 0}/${count})`);
       if (missingKeys.length) throw new Error(`Google Sheets verification missing COA row(s): ${missingKeys.join(', ')}`);
 
-      context.log(`[Sheets] Wrote/verified ${rows.length} COA row(s) using existing empty rows in ${Date.now()-attemptStart}ms`);
+      // Validate every A:N value, not merely the Lab ID and test name.
+      // Match each expected row to a distinct actual row with the same key.
+      const consumed = new Set();
+      for (const expected of rows) {
+        const key = rowKey(expected);
+        const candidates = [];
+        for (let i = 1; i < verifyVals.length; i++) {
+          if (!consumed.has(i) && rowKey(verifyVals[i]) === key) candidates.push(i);
+        }
+        if (!candidates.length) throw new Error(`COA verification missing row ${key}`);
+        const matching = candidates.find(i =>
+          Array.from({length:14}, (_,c) => String(verifyVals[i]?.[c] ?? '') === String(expected[c] ?? '')).every(Boolean)
+        );
+        if (matching === undefined) {
+          const labels = ['Date Received','Time Received','Date Drawn','Time Drawn','Customer','Client Code','Report Date','Lab ID','Address','Town','State','ZIP','Test','Quantity'];
+          const candidate = verifyVals[candidates[0]] || [];
+          const mismatches = labels.filter((label,c) => String(candidate[c] ?? '') !== String(expected[c] ?? ''));
+          throw new Error(`COA verification mismatch for ${key}: fields ${mismatches.join(', ')} differ from approved values. Existing row was not overwritten.`);
+        }
+        consumed.add(matching);
+      }
+
+      context.log(`[Sheets] Wrote/verified ${rows.length} COA row(s), all 14 fields checked, in ${Date.now()-attemptStart}ms`);
       return { success:true, rows:rows.length, attempt };
     } catch (e) {
       lastError = e;
