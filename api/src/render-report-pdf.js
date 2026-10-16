@@ -652,11 +652,19 @@ app.http('render-report-pdf', {
           throw new Error('report contains no verified sample data beyond the Lab ID');
         }
 
-        // Compare every preview result with the final workbook's value and indicator fill.
-        // Fail closed if a parameter is missing, changed, or has a mismatched color.
-        for (const sheet of verifySheets) {
-          const sheetParams = /^fha/i.test(sheet.name) ? fhaParams :
-            (/^(lab report|radon|arsenic.*spec)/i.test(sheet.name) ? params : []);
+        // Validate ONLY worksheets populated for this report. The workbook
+        // retains hidden template tabs (e.g. Lab Report on arsenic speciation);
+        // requiring speciation results in those unused tabs falsely rejects PDF
+        // generation even though the active arsenic worksheet is correct.
+        // The active report and any separately populated FHA report must still
+        // pass value and indicator-color checks before PDF export or sending.
+        const sheetsToVerify = [{ sheet: expectedSheet, sheetParams: params }];
+        if (!isRadon && !isArsenicSpec && needsFHA && fhaParams.length) {
+          const fhaVerificationSheet = verifySheets.find(sh => /^fha/i.test(sh.name));
+          if (!fhaVerificationSheet) throw new Error('FHA worksheet missing for report validation');
+          sheetsToVerify.push({ sheet: fhaVerificationSheet, sheetParams: fhaParams });
+        }
+        for (const { sheet, sheetParams } of sheetsToVerify) {
           if (!sheetParams.length) continue;
           const sr = await gReq('GET',
             `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/usedRange?$select=values,address`,
