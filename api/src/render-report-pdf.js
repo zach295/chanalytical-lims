@@ -11,6 +11,7 @@
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const { calcFillColor } = require('../shared/report-colors');
+const { verifyVisibleReportPdf } = require('../shared/pdf-visual-check');
 const crypto = require('crypto');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
@@ -744,6 +745,27 @@ app.http('render-report-pdf', {
     } catch(e) {
       await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
       return { status: 500, jsonBody: { error: e.message } };
+    }
+
+    // ── Step 9b: Verify the rendered PDF, not just the workbook's direct fills ──
+    // Excel conditional formatting can override Graph /format/fill. Render the
+    // exported PDF and compare visible indicator pixels to the preview rules.
+    // Never sign or release a PDF whose visible colors cannot be verified.
+    try {
+      const sheetType = isArsenicSpec ? 'spec' : isRadon ? 'radon' : 'lab';
+      const visualParams = [
+        ...params.map(p => ({ ...p, sheetType })),
+        ...(!isArsenicSpec && !isRadon && needsFHA ? fhaParams.map(p => ({ ...p, sheetType: 'fha' })) : []),
+      ];
+      const visible = await verifyVisibleReportPdf(Buffer.from(pdfBase64, 'base64'), visualParams);
+      context.log(`[pdf] Visible PDF verified for ${labId}: ${visible.verified} indicators on ${visible.pages} pages`);
+    } catch (visualError) {
+      context.log(`[pdf] VISIBLE VALIDATION FAILED for ${labId}: ${visualError.message}`);
+      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      return { status: 409, jsonBody: {
+        error: `Report validation failed: ${visualError.message}. PDF was not released or sent.`,
+        code: 'PDF_VISIBLE_COLOR_MISMATCH', retry: false,
+      }};
     }
 
     // ── Step 10: Close session then delete temp file ───────────────────────
