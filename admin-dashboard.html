@@ -7483,7 +7483,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .filter(d => d.dataset.param === p.name && d.dataset.sheet === sheetType);
       if (dots.length !== 1) throw new Error(`Preview indicator for ${p.name} is ${dots.length ? 'ambiguous' : 'missing'}.`);
       const css = getComputedStyle(dots[0]).backgroundColor;
-      const m = css.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
+      const m = css.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
       if (!m) throw new Error(`Cannot read preview color for ${p.name}: ${css}`);
       const color = '#' + [m[1],m[2],m[3]].map(n => Number(n).toString(16).padStart(2,'0')).join('').toUpperCase();
       snapshot.push({ name:p.name, sheetType, value, color });
