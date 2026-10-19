@@ -13,8 +13,9 @@ function rgbClass(r,g,b) {
   return null;
 }
 function expectedClass(hex) {
-  const value=String(hex||'').toUpperCase();
-  return ({'#FF0000':'red','#00FF00':'green','#0B5394':'blue','#E8E8E8':'grey'})[value]||null;
+  const value=String(hex||'').trim();
+  if (!/^#[0-9a-f]{6}$/i.test(value)) return null;
+  return rgbClass(parseInt(value.slice(1,3),16),parseInt(value.slice(3,5),16),parseInt(value.slice(5,7),16));
 }
 function normalize(s) {
   return String(s??'').toLowerCase().replace(/[^a-z0-9]/g,'');
