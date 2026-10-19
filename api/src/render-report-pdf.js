@@ -348,32 +348,35 @@ app.http('render-report-pdf', {
     const needsFHA  = reportData.needsFHA;
     const isRadon       = reportData.isRadon;
     const isArsenicSpec = reportData.isArsenicSpec;
-    // Require an exact, current preview snapshot for the specific results.
-    // Never silently fall back to an independent backend color calculation.
+    // Snapshot keys include sheet type: FHA and standard reports can contain
+    // the same parameter with different indicator colors.
+    const mainType = isArsenicSpec ? 'spec' : isRadon ? 'radon' : 'lab';
     const snapshotParams = [
-      ...params,
-      ...(!isRadon && !isArsenicSpec && needsFHA ? fhaParams : []),
-    ].filter(p => String(p?.value ?? '').trim());
+      ...params.map(p => ({ p, sheetType: mainType })),
+      ...(!isRadon && !isArsenicSpec && needsFHA ? fhaParams.map(p => ({ p, sheetType: 'fha' })) : []),
+    ].filter(({p}) => String(p?.value ?? '').trim());
     if (!Array.isArray(previewColors) || previewColors.length !== snapshotParams.length) {
-      return { status: 409, jsonBody: { error: 'Report preview colors missing or incomplete. Regenerate the preview and try again.' } };
+      return { status: 409, jsonBody: { error: 'Preview indicator snapshot missing or incomplete. Regenerate preview before saving.' } };
     }
-    const previewByName = new Map();
+    const snapshotKey = (name, sheetType) => `${sheetType}:${name}`;
+    const previewByKey = new Map();
     for (const item of previewColors) {
-      if (!item || typeof item.name !== 'string' || previewByName.has(item.name) ||
+      const key = snapshotKey(item?.name, item?.sheetType);
+      if (!item || typeof item.name !== 'string' ||
+          !['lab','fha','radon','spec'].includes(item.sheetType) ||
+          previewByKey.has(key) ||
           !/^#(?:FF0000|00FF00|0B5394|E8E8E8)$/i.test(String(item.color || ''))) {
-        return { status: 409, jsonBody: { error: 'Invalid or duplicate preview indicator color. Regenerate the preview.' } };
+        return { status: 409, jsonBody: { error: 'Invalid or duplicate preview indicator snapshot.' } };
       }
-      previewByName.set(item.name, item);
+      previewByKey.set(key, item);
     }
-    for (const p of snapshotParams) {
-      const snapshot = previewByName.get(p.name);
-      if (!snapshot || String(snapshot.value).trim() !== String(p.value).trim()) {
-        return { status: 409, jsonBody: { error: `Preview result changed for ${p.name}. Regenerate the preview before saving.` } };
+    for (const {p,sheetType} of snapshotParams) {
+      const item = previewByKey.get(snapshotKey(p.name,sheetType));
+      if (!item || String(item.value).trim() !== String(p.value).trim()) {
+        return { status: 409, jsonBody: { error: `Preview result mismatch for ${p.name} (${sheetType}). Regenerate preview.` } };
       }
+      p.previewColor = item.color.toUpperCase();
     }
-    // Associate the exact captured preview color with each report parameter.
-    // These are validated against the rendered PDF, never re-derived from CF.
-    for (const p of snapshotParams) p.previewColor = previewByName.get(p.name).color.toUpperCase();
 
     const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
