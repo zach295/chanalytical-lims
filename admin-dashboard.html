@@ -7467,6 +7467,28 @@ document.addEventListener('DOMContentLoaded', function() {
     container.innerHTML = bodyHtml;
   }
 
+  // Snapshot actual on-screen indicator colors, not separately calculated rules.
+  function captureReportPreviewColors(reportData) {
+    const preview = document.getElementById('rpt-live-preview');
+    if (!preview) throw new Error('Report preview unavailable; regenerate the preview.');
+    const params = [...(reportData.activeParams || reportData.paramRows || []),
+      ...(reportData.needsFHA ? (reportData.fhaParams || reportData.fhaRows || []) : [])];
+    const snapshot = [];
+    for (const p of params) {
+      const value = String(reportData.resultsMap?.[p.name]?.value ?? p.value ?? '').trim();
+      if (!value) continue;
+      const dots = [...preview.querySelectorAll('.color-dot[data-param]')].filter(d => d.dataset.param === p.name);
+      if (dots.length !== 1) throw new Error(`Preview indicator for ${p.name} is ${dots.length ? 'ambiguous' : 'missing'}.`);
+      const css = getComputedStyle(dots[0]).backgroundColor;
+      const m = css.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
+      if (!m) throw new Error(`Cannot read preview color for ${p.name}: ${css}`);
+      const color = '#' + [m[1],m[2],m[3]].map(n => Number(n).toString(16).padStart(2,'0')).join('').toUpperCase();
+      snapshot.push({ name:p.name, value, color });
+    }
+    if (!snapshot.length) throw new Error('No visible report indicators were captured.');
+    return snapshot;
+  }
+
   async function saveAndSendReport(sendEmail) {
     if (!currentReportData) { showToast('Generate a report first.'); return; }
 
@@ -7526,6 +7548,10 @@ document.addEventListener('DOMContentLoaded', function() {
       if (emailInput?.style) emailInput.style.borderColor = '';
     }
 
+    let previewColors;
+    try { previewColors = captureReportPreviewColors(currentReportData); }
+    catch (e) { showToast('⚠️ ' + e.message); return; }
+
     statusEl.textContent = '⏳ Preparing report...';
     statusEl.style.color = 'var(--slate)';
 
@@ -7533,24 +7559,13 @@ document.addEventListener('DOMContentLoaded', function() {
       const labId = currentReportData.labId || currentReportData.meta?.labId || 'report';
 
       if (sendEmail) {
-        // Block sending when a manually overridden preview color disagrees with
-        // the validated parameter rule. The server separately checks Excel fills.
-        const colorMismatches = [...(currentReportData.activeParams || []), ...(currentReportData.fhaParams || [])]
-          .filter(p => String(currentReportData.resultsMap?.[p.name]?.value ?? p.value ?? '').trim())
-          .filter(p => {
-            const value = currentReportData.resultsMap?.[p.name]?.value ?? p.value;
-            const expected = _calcColor(p.name, value);
-            return expected && getColor(p.name, value).toUpperCase() !== expected.toUpperCase();
-          }).map(p => p.name);
-        if (colorMismatches.length) throw new Error('Report color mismatch: ' + colorMismatches.join(', ') +
-          '. Sending cancelled. Reset the color overrides and regenerate the report.');
         // ── Step 1: Use cached PDF or generate now ──────────────────────────
         statusEl.textContent = '⏳ Preparing PDF...';
         // Generate PDF from currentReportData — always has all edits in memory
         statusEl.textContent = '⏳ Generating PDF...';
         const pdfRes = await fetch('/api/render-report-pdf', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate, previewColors }),
         });
         const pdfData = await pdfRes.json().catch(() => ({}));
         if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
@@ -7595,7 +7610,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = '⏳ Generating PDF...';
         const pdfRes2 = await fetch('/api/render-report-pdf', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate }),
+          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate, previewColors }),
         });
         const pdfData2 = await pdfRes2.json().catch(() => ({}));
         if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
