@@ -6148,7 +6148,8 @@ document.addEventListener('DOMContentLoaded', function() {
       const pdfRes = await fetch('/api/render-report-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportData, authorizedBy, reviewDate }),
+        body: JSON.stringify({ reportData, authorizedBy, reviewDate,
+          previewColors: captureReportPreviewColors(reportData) }),
       });
       const pdfData = await pdfRes.json().catch(() => ({}));
       if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
