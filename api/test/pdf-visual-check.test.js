@@ -1,11 +1,14 @@
 const assert=require('node:assert/strict');
 const { PDFDocument,StandardFonts,rgb }=require('pdf-lib');
-const { verifyVisibleReportPdf, rgbClass }=require('../shared/pdf-visual-check');
+const { verifyVisibleReportPdf, expectedClass, rgbClass }=require('../shared/pdf-visual-check');
 
 assert.equal(rgbClass(255,0,0),'red');
 assert.equal(rgbClass(0,255,0),'green');
 assert.equal(rgbClass(11,83,148),'blue');
 assert.equal(rgbClass(232,232,232),'grey');
+assert.equal(expectedClass('#00CC44'),'green');
+assert.equal(expectedClass('#0070C0'),'blue');
+assert.equal(expectedClass('#E8E8E8'),'grey');
 
 async function fixture(indicatorColor) {
   const doc=await PDFDocument.create();
