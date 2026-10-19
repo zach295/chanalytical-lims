@@ -218,7 +218,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
       // Write the same explicit indicator color as the report preview.
       if (colResult > 0 && String(p.value ?? '').trim()) {
-        const hex = calcFillColor(p.name, p.value, sheetType);
+        const hex = p.previewColor || calcFillColor(p.name, p.value, sheetType);
         if (hex) colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
       }
     }
@@ -340,6 +340,7 @@ app.http('render-report-pdf', {
     if (!body?.reportData) return { status: 400, jsonBody: { error: 'reportData required' } };
 
     const { reportData, authorizedBy = '', reviewDate = '' } = body;
+    const previewColors = body.previewColors;
     const meta      = reportData.meta || {};
     const labId     = reportData.labId || '';
     const params    = reportData.activeParams || reportData.paramRows || [];
@@ -347,6 +348,33 @@ app.http('render-report-pdf', {
     const needsFHA  = reportData.needsFHA;
     const isRadon       = reportData.isRadon;
     const isArsenicSpec = reportData.isArsenicSpec;
+    // Require an exact, current preview snapshot for the specific results.
+    // Never silently fall back to an independent backend color calculation.
+    const snapshotParams = [
+      ...params,
+      ...(!isRadon && !isArsenicSpec && needsFHA ? fhaParams : []),
+    ].filter(p => String(p?.value ?? '').trim());
+    if (!Array.isArray(previewColors) || previewColors.length !== snapshotParams.length) {
+      return { status: 409, jsonBody: { error: 'Report preview colors missing or incomplete. Regenerate the preview and try again.' } };
+    }
+    const previewByName = new Map();
+    for (const item of previewColors) {
+      if (!item || typeof item.name !== 'string' || previewByName.has(item.name) ||
+          !/^#(?:FF0000|00FF00|0B5394|E8E8E8)$/i.test(String(item.color || ''))) {
+        return { status: 409, jsonBody: { error: 'Invalid or duplicate preview indicator color. Regenerate the preview.' } };
+      }
+      previewByName.set(item.name, item);
+    }
+    for (const p of snapshotParams) {
+      const snapshot = previewByName.get(p.name);
+      if (!snapshot || String(snapshot.value).trim() !== String(p.value).trim()) {
+        return { status: 409, jsonBody: { error: `Preview result changed for ${p.name}. Regenerate the preview before saving.` } };
+      }
+    }
+    // Associate the exact captured preview color with each report parameter.
+    // These are validated against the rendered PDF, never re-derived from CF.
+    for (const p of snapshotParams) p.previewColor = previewByName.get(p.name).color.toUpperCase();
+
     const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
     let token;
@@ -698,7 +726,7 @@ app.http('render-report-pdf', {
             if (idx < 0) throw new Error(`${sheet.name}: missing result row for ${p.name}`);
             const actualValue = String(sheetRows[idx][resultCol] ?? '').trim();
             if (actualValue !== expectedValue) throw new Error(`${p.name}: preview value "${expectedValue}" differs from Excel "${actualValue}"`);
-            const expectedColor = calcFillColor(p.name, expectedValue, /^fha/i.test(sheet.name) ? 'fha' : /^radon/i.test(sheet.name) ? 'radon' : /arsenic.*spec/i.test(sheet.name) ? 'spec' : 'lab');
+            const expectedColor = p.previewColor;
             if (!expectedColor) continue; // No configured threshold: neutral template formatting.
             const cell = `${colLetter(startCol + resultCol - 1)}${startRow + idx}`;
             const fill = await gReq('GET',
