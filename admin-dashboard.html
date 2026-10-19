@@ -7265,7 +7265,7 @@ document.addEventListener('DOMContentLoaded', function() {
       rows += `<tr>
         <td style="${cStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</td>
         <td style="${cStyle};padding:2px;text-align:center;">
-          <div class="color-dot" data-param="${p.name}"
+          <div class="color-dot" data-param="${p.name}" data-sheet="${params === reportData.fhaParams ? 'fha' : reportData.isRadon ? 'radon' : reportData.isArsenicSpec ? 'spec' : 'lab'}"
             style="width:18px;height:18px;background:${boxBg};margin:auto;border-radius:2px;cursor:pointer;title:'Click to override color'"
             onclick="openColorOverride(this, '${p.name}')"></div>
         </td>
@@ -7407,7 +7407,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <tr>
             <td style="${S.cell};">Radon Water</td>
             <td style="${S.cell};padding:2px;text-align:center;">
-              <div style="width:18px;height:18px;background:${bg};margin:auto;border-radius:2px;"></div>
+              <div class="color-dot" data-param="Radon Water" data-sheet="radon" style="width:18px;height:18px;background:${bg};margin:auto;border-radius:2px;"></div>
             </td>
             <td style="${S.cell};text-align:center;">${editable(dispVal,'result:Radon Water','text-align:center;width:100%;')}</td>
             <td style="${S.cell};text-align:center;">4,000</td>
@@ -7477,13 +7477,16 @@ document.addEventListener('DOMContentLoaded', function() {
     for (const p of params) {
       const value = String(reportData.resultsMap?.[p.name]?.value ?? p.value ?? '').trim();
       if (!value) continue;
-      const dots = [...preview.querySelectorAll('.color-dot[data-param]')].filter(d => d.dataset.param === p.name);
+      const sheetType = reportData.isRadon ? 'radon' : reportData.isArsenicSpec ? 'spec'
+        : (reportData.needsFHA && (reportData.fhaParams || reportData.fhaRows || []).includes(p)) ? 'fha' : 'lab';
+      const dots = [...preview.querySelectorAll('.color-dot[data-param]')]
+        .filter(d => d.dataset.param === p.name && d.dataset.sheet === sheetType);
       if (dots.length !== 1) throw new Error(`Preview indicator for ${p.name} is ${dots.length ? 'ambiguous' : 'missing'}.`);
       const css = getComputedStyle(dots[0]).backgroundColor;
       const m = css.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
       if (!m) throw new Error(`Cannot read preview color for ${p.name}: ${css}`);
       const color = '#' + [m[1],m[2],m[3]].map(n => Number(n).toString(16).padStart(2,'0')).join('').toUpperCase();
-      snapshot.push({ name:p.name, value, color });
+      snapshot.push({ name:p.name, sheetType, value, color });
     }
     if (!snapshot.length) throw new Error('No visible report indicators were captured.');
     return snapshot;
