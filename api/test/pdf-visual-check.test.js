@@ -19,7 +19,7 @@ async function fixture(indicatorColor) {
   return Buffer.from(await doc.save());
 }
 (async()=>{
-  const param=[{name:'Arsenic, III',value:'<1',sheetType:'spec'}];
+  const param=[{name:'Arsenic, III',value:'<1',sheetType:'spec',previewColor:'#E8E8E8'}];
   const good=await fixture(rgb(232/255,232/255,232/255));
   const verified=await verifyVisibleReportPdf(good,param);
   assert.equal(verified.verified,1);
