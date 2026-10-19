@@ -15,13 +15,13 @@ async function fixture(label, value, color) {
 (async () => {
   for (const [value, color] of [['<0.2', rgb(0,1,0)], ['0.5', rgb(0,1,0)],
     ['2', rgb(11/255,83/255,148/255)], ['4', rgb(1,0,0)]]) {
-    const params = [{ name: 'Fluoride, Total', value }];
+    const params = [{ name: 'Fluoride, Total', value, previewColor: value === '2' ? '#0B5394' : value === '4' ? '#FF0000' : '#00FF00' }];
     for (const label of ['Fluoride', 'Fluoride, Total']) {
       const result = await verifyVisibleReportPdf(await fixture(label, value, color), params);
       assert.equal(result.verified, 1);
     }
   }
-  const params = [{ name: 'Fluoride, Total', value: '<0.2' }];
+  const params = [{ name: 'Fluoride, Total', value: '<0.2', previewColor: '#00FF00' }];
   const wrongColor = await fixture('Fluoride', '<0.2', rgb(1,0,0));
   await assert.rejects(() => verifyVisibleReportPdf(wrongColor, params), /color mismatch/);
   const wrongValue = await fixture('Fluoride', '<0.3', rgb(0,1,0));
