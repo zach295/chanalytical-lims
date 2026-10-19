@@ -218,7 +218,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       if (p.qualifier)                             addCell(ri, colQualifier, p.qualifier);
       // Write the same explicit indicator color as the report preview.
       if (colResult > 0 && String(p.value ?? '').trim()) {
-        const hex = p.previewColor || calcFillColor(p.name, p.value, sheetType);
+        const hex = p.previewColor;
         if (hex) colorUpdates.push({ url: `${base}/range(address='${colLetter(colResult - 1)}${ri + 1}')/format/fill`, body: { color: hex } });
       }
     }
