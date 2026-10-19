@@ -58,7 +58,10 @@ async function verifyVisibleReportPdf(pdfBuffer, params, options={}) {
   });
   const doc=await loading.promise;
   try {
-    const expected=(params||[]).filter(p=>String(p?.value??'').trim() && calcFillColor(p.name,p.value,p.sheetType||'lab'));
+    const expected=(params||[]).filter(p=>String(p?.value??'').trim());
+    for (const p of expected) {
+      if (!expectedClass(p.previewColor)) throw new Error(`Invalid captured preview color for ${p.name}`);
+    }
     const seen=new Map();
     for(let pageNumber=1;pageNumber<=doc.numPages;pageNumber++){
       const page=await doc.getPage(pageNumber);
@@ -94,7 +97,7 @@ async function verifyVisibleReportPdf(pdfBuffer, params, options={}) {
           if(!matches.length)throw new Error(`Visible PDF result missing for ${p.name} (page ${pageNumber})`);
           const result=matches[0];
           const actual=classifyIndicator(image,result.x,row.y);
-          const expectedColor=expectedClass(calcFillColor(p.name,p.value,p.sheetType||'lab'));
+          const expectedColor=expectedClass(p.previewColor);
           if(!actual.color)throw new Error(`Visible PDF indicator cannot be verified for ${p.name} (page ${pageNumber}, pixel counts ${JSON.stringify(actual.counts)})`);
           if(actual.color!==expectedColor)throw new Error(`Visible PDF color mismatch for ${p.name}: preview ${expectedColor}, rendered PDF ${actual.color} (page ${pageNumber})`);
           seen.set(p.name,true);
