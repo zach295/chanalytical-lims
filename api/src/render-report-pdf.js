@@ -11,7 +11,7 @@
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const { calcFillColor } = require('../shared/report-colors');
-const { verifyVisibleReportPdf } = require('../shared/pdf-visual-check');
+const { verifyVisibleReportPdf, expectedClass } = require('../shared/pdf-visual-check');
 const crypto = require('crypto');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
@@ -365,7 +365,7 @@ app.http('render-report-pdf', {
       if (!item || typeof item.name !== 'string' ||
           !['lab','fha','radon','spec'].includes(item.sheetType) ||
           previewByKey.has(key) ||
-          !/^#(?:FF0000|00FF00|0B5394|E8E8E8)$/i.test(String(item.color || ''))) {
+          !expectedClass(item.color)) {
         return { status: 409, jsonBody: { error: 'Invalid or duplicate preview indicator snapshot.' } };
       }
       previewByKey.set(key, item);
