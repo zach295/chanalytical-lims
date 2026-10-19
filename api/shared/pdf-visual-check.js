@@ -82,7 +82,11 @@ async function verifyVisibleReportPdf(pdfBuffer, params, options={}) {
         const line=normalize(row.items.map(t=>t.str).join(' '));
         for(const p of expected){
           const name=normalize(p.name);
-          if(!line.startsWith(name))continue;
+          // The workbook writer and color rules already accept the template's
+          // short "Fluoride" label for the canonical "Fluoride, Total".
+          // Keep this alias exact: never accept other fluoride species.
+          const shortFluoride=name==='fluoridetotal' && normalize(row.items[0]?.str)==='fluoride';
+          if(!line.startsWith(name) && !shortFluoride)continue;
           const value=String(p.value).trim();
           // Find the result itself, not the EPA limit or method field.
           const nameEnd=row.items.find(t=>normalize(t.str).includes(name))?.x || row.items[0].x;

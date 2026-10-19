@@ -9,6 +9,7 @@ on:
       - 'api/src/render-report-pdf.js'
       - 'api/shared/pdf-visual-check.js'
       - 'api/test/pdf-visual-check.test.js'
+      - 'api/test/fluoride-pdf.test.js'
       - 'api/package.json'
       - 'api/src/send-report.js'
       - 'api/shared/report-colors.js'
@@ -40,6 +41,7 @@ jobs:
           node api/test/report-colors.test.js
           node api/test/arsenic-speciation.test.js
           node api/test/pdf-visual-check.test.js
+          node api/test/fluoride-pdf.test.js
       - name: Verify route registration
         working-directory: api
         run: |
