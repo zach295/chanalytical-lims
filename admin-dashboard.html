@@ -7207,6 +7207,11 @@ document.addEventListener('DOMContentLoaded', function() {
       if (/^[+-]?\d+(?:\.\d+)?$/.test(value)) return Number(value) < 1 ? green : blue;
       return blue;
     }
+    // Sodium is blue only for numeric results >= 20; all other results are neutral grey.
+    if (key === 'Sodium, Total') {
+      const numeric = /^[+-]?\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN;
+      return Number.isFinite(numeric) && numeric >= 20 ? blue : grey;
+    }
     if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
     // Reject malformed text instead of letting parseFloat accept partial values.
     if (!/^[+-]?\d+(?:\.\d+)?$/.test(value)) return red;
