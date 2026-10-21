@@ -49,6 +49,11 @@ function calcFillColor(paramName, displayVal, sheetType = 'lab') {
   else if (radon && key !== 'Radon Water') r = null;
   // No conditional formatting: neutral grey, including text and malformed values.
   if (!r) return grey;
+  // Sodium: the template only colors numeric values >= 20 blue; all other values are neutral grey.
+  if (key === 'Sodium, Total') {
+    const numeric = /^[+-]?\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN;
+    return Number.isFinite(numeric) && numeric >= 20 ? blue : grey;
+  }
   if (value.startsWith('<')) return r.text?.includes(value) ? green : red;
   // Reject malformed text instead of letting parseFloat accept partial values.
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(value)) return red;
