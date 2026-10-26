@@ -706,6 +706,20 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 
     <div class="card" style="margin-bottom:18px;">
+      <div class="card-header"><div class="card-title">✏️ Global Client Name Correction</div></div>
+      <div style="padding:20px;">
+        <p style="font-size:13px;color:var(--slate);margin-bottom:12px;">Exact-name replacement in Archived Intake, Clients and Reports to be Billed. Hard-coded client rules and issued PDFs are not modified.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+          <label style="flex:1;min-width:220px;font-size:12px;">Existing client name<input id="rename-old" type="text" style="display:block;width:100%;padding:9px;margin-top:5px;"></label>
+          <label style="flex:1;min-width:220px;font-size:12px;">Replacement client name<input id="rename-new" type="text" style="display:block;width:100%;padding:9px;margin-top:5px;"></label>
+        </div>
+        <button class="action-btn" onclick="adminPreviewClientRename()">Preview Matching Records</button>
+        <div id="rename-status" style="font-size:13px;margin-top:12px;white-space:pre-wrap;"></div>
+        <button id="rename-apply" class="btn-ok" style="display:none;margin-top:12px;" onclick="adminApplyClientRename()">Confirm and Apply Correction</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
       <div class="card-header"><div class="card-title">🗑️ Sample Cleanup</div></div>
       <div style="padding:20px;">
         <div style="font-size:13px;color:var(--slate);margin-bottom:14px;line-height:1.5;">
@@ -2538,6 +2552,40 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   window.submitAdminVerification = submitAdminVerification;
 
+
+  let _clientRenamePreview = null;
+  async function adminPreviewClientRename() {
+    const oldName = document.getElementById('rename-old').value.trim();
+    const newName = document.getElementById('rename-new').value.trim();
+    const status = document.getElementById('rename-status');
+    document.getElementById('rename-apply').style.display = 'none';
+    _clientRenamePreview = null;
+    if (!oldName || !newName || oldName === newName) { status.textContent='Enter two different client names.'; return; }
+    status.textContent='Checking SharePoint records…';
+    try {
+      const d = await adminApi('client-name-preview',{oldName,newName});
+      _clientRenamePreview = {oldName,newName};
+      status.textContent = 'Exact matches: ' + Object.entries(d.counts).map(([k,v])=>k+': '+v).join(' | ') + '. Total: '+d.total+'.';
+      if (d.counts.Clients === 1 && d.total > 0) document.getElementById('rename-apply').style.display = '';
+      else status.textContent += ' Expected exactly one master client; cannot apply.';
+    } catch(e) { status.textContent='⚠️ '+e.message; }
+  }
+  async function adminApplyClientRename() {
+    const p = _clientRenamePreview;
+    if (!p || document.getElementById('rename-old').value.trim() !== p.oldName || document.getElementById('rename-new').value.trim() !== p.newName) {
+      document.getElementById('rename-status').textContent='Names changed. Preview again.'; return;
+    }
+    if (!confirm('Replace exact client name "'+p.oldName+'" with "'+p.newName+'" in three SharePoint lists?')) return;
+    const btn = document.getElementById('rename-apply'), status = document.getElementById('rename-status');
+    btn.disabled = true; status.textContent='Applying correction and verifying records…';
+    try {
+      const d = await adminApi('client-name-apply',{...p,confirm:p.oldName});
+      status.textContent=(d.success?'✅ Completed. ':'⚠️ Incomplete. ')+'Updated: '+JSON.stringify(d.updated)+'; remaining old-name matches: '+JSON.stringify(d.remaining)+(d.auditWarning?'; Activity Log: '+d.auditWarning:'')+(d.failures?.length?'; failures: '+JSON.stringify(d.failures):'');
+      _clientRenamePreview=null; btn.style.display='none';
+      await refreshClientList(); await loadClients();
+    } catch(e) { status.textContent='⚠️ '+e.message; }
+    finally { btn.disabled=false; }
+  }
   async function adminApi(action, extra={}) {
     const token = adminToken();
     if (!token) {
