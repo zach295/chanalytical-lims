@@ -437,6 +437,57 @@ app.http('sample-admin', {
       const token = await getToken();
       await purgeExpired(token).catch(e => context.log('[sample-admin] purge warning:', e.message));
 
+      // Global client-name correction: exact values only; never modifies hard-coded rules.
+      if (action === 'client-name-preview' || action === 'client-name-apply') {
+        const oldName = String(body.oldName || '').trim();
+        const newName = String(body.newName || '').trim();
+        if (!oldName || !newName || oldName === newName || oldName.length > 255 || newName.length > 255)
+          return { status:400, jsonBody:{ error:'Enter two different, nonempty client names (maximum 255 characters).' } };
+        const targets = [
+          { list:'Archived Intake', field:'field_3' },
+          { list:'Clients', field:'ClientName' },
+          { list:'Reports to be Billed', field:'Customer' },
+        ];
+        const scans = await Promise.all(targets.map(async t => {
+          const items = await readListRaw(t.list, token);
+          return { ...t, items:items.filter(r => String(r[t.field] ?? '') === oldName) };
+        }));
+        const counts = Object.fromEntries(scans.map(s => [s.list, s.items.length]));
+        const total = Object.values(counts).reduce((n,v)=>n+v,0);
+        if (action === 'client-name-preview')
+          return { status:200, jsonBody:{ success:true, oldName, newName, counts, total } };
+        if (!body.confirm || body.confirm !== oldName)
+          return { status:400, jsonBody:{ error:'Confirmation must match the existing client name exactly.' } };
+        if (scans.find(s=>s.list==='Clients').items.length !== 1)
+          return { status:409, jsonBody:{ error:'Expected exactly one matching master Client record. No changes made.', counts } };
+        const collision = (await readListRaw('Clients', token)).some(r => String(r.ClientName ?? '') === newName);
+        if (collision) return { status:409, jsonBody:{ error:'Replacement name already exists in Clients. No changes made.' } };
+        const updated = {}, failures = [];
+        for (const scan of scans) {
+          updated[scan.list] = 0;
+          for (const item of scan.items) {
+            try {
+              await require('../shared/graph').updateItem(scan.list, item._id, { [scan.field]:newName });
+              updated[scan.list]++;
+            } catch(e) {
+              failures.push({ list:scan.list, id:item._id, error:e.message });
+            }
+          }
+        }
+        const remaining = {};
+        for (const t of targets) {
+          const rows = await readListRaw(t.list, token);
+          remaining[t.list] = rows.filter(r => String(r[t.field] ?? '') === oldName).length;
+        }
+        const audit = await writeActivityLog({
+          labId:newName, type:'Global Client Name Correction',
+          notes:`Exact client rename: "${oldName}" → "${newName}". Updated: ${JSON.stringify(updated)}. Remaining: ${JSON.stringify(remaining)}. Failures: ${JSON.stringify(failures).slice(0,900)}`,
+          by:admin.name || admin.email || 'Admin', context, preserveType:true,
+        });
+        const complete = failures.length === 0 && Object.values(remaining).every(n=>n===0) && audit.success;
+        return { status:complete?200:207, jsonBody:{ success:complete, partial:!complete, updated, remaining, failures, auditWarning:audit.success?null:audit.error } };
+      }
+
       if (action === 'preview') {
         const baseId = baseOf(body.baseId);
         if (!/^\d{6}-\d{3}$/.test(baseId)) return { status:400, jsonBody:{ error:'Enter a Lab ID like MMDDYY-###.' } };
