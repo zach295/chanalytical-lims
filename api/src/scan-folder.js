@@ -360,9 +360,12 @@ app.http('scan-folder', {
         loadClients(token),
         getQueuedFileIds(token),
       ]);
+      const recognizedAliasContext = Object.entries(SCAN_HARD_ALIASES)
+        .map(([alias, formal]) => `- "${alias}" means "${formal}"`).join('\n');
       const aliasCtx = clients.map(c =>
         `- "${c.clientName}"${c.aliases ? ` (aliases: ${c.aliases})` : ''}${c.billingAddress ? ` [billing: ${c.billingAddress}]` : ''}`
       ).join('\n') +
+      '\nKnown handwritten/alternate names (extract the literal text, do not invent a match):\n' + recognizedAliasContext +
       '\n⚠️ Use ALL available evidence to identify the customer: the checked/marked name in the Report To section, OR match the billing address on the form against the [billing:] addresses above, OR the phone number. Return "" only if there is truly NO identifying information anywhere on the form.';
 
       // List files in INCOMING folder (PDF and image files only)
@@ -620,6 +623,7 @@ ${azureText}
 
 RULES:
 - Extract only what is present in the OCR text. Do not infer or guess a known client identity; local matching happens after extraction.
+- A short handwritten company abbreviation in Report To (for example FPI) is a valid customer value. Copy the abbreviation exactly when it appears there; do not expand it into a company name. Do not use abbreviations appearing elsewhere on the form.
 - formType: "business" if Report To section has a company/person name other than Chanalytical. "public" if Report To is blank or shows Chanalytical.
 - customer: BUSINESS — find the company name next to [CHECKED] in Report To section. If fill-in line, copy what's written. "" if blank/nothing marked. PUBLIC — person's name from Customer & Property Information "Name:" field. "" if blank.
 - location: BUSINESS=well owner street address (MIDDLE section). PUBLIC=sample/property/well owner street address from the MIDDLE (Well Owner) section. Never use Report To address as location.
@@ -671,6 +675,7 @@ Return ONLY: {"barcodeId":"","formType":"public","customer":"","email":"","phone
                           messages: [{ role: 'user', content:
 `This is a water testing Chain of Custody form. Extract ONLY these fields:
 - customer: the company or person name that is CHECKED or written in the "Report To" section. If individual, their name from the Customer section.
+- A neatly handwritten abbreviation such as FPI in Report To is a company name. Return the literal abbreviation, not an inferred expansion.
 - tests: list of test packages with [CHECKED] next to them.
 - hasRadon: true if Radon Water is [CHECKED].
 - dateDrawn: date sampled as YYYY-MM-DD.
@@ -880,7 +885,11 @@ Return ONLY: {"billingAddress":""}`}],
               .replace(/[^a-z0-9\s]/g, '').split(/\s+/)
               .filter(w => w.length >= 4);
             const azureLower  = azureText.toLowerCase();
-            const foundInText = customerWords.length === 0 || customerWords.some(w => azureLower.includes(w));
+            const shortAlias = validatedCustomer.trim().toLowerCase();
+            const knownShortAlias = shortAlias.length >= 2 && shortAlias.length <= 5 &&
+              Object.prototype.hasOwnProperty.call(SCAN_HARD_ALIASES, shortAlias);
+            const foundInText = (knownShortAlias && new RegExp(`\\b${shortAlias.replace(/[.*+?^${}()|[\\]\\]/g, '\\const foundInText = customerWords.length === 0 || customerWords.some(w => azureLower.includes(w));')}\\b`, 'i').test(azureText)) ||
+              customerWords.length === 0 || customerWords.some(w => azureLower.includes(w));
             if (!foundInText) {
               context.log(`[scan] Customer hallucination detected: "${validatedCustomer}" not in Azure text — clearing`);
               validatedCustomer = '';
