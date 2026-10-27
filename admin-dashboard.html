@@ -4892,6 +4892,12 @@ document.addEventListener('DOMContentLoaded', function() {
       return el ? el.value.trim() : '';
     };
 
+    const selectedBusiness = document.getElementById(`sc-${fileId}-customer-select`)?.value?.trim() || '';
+    const approvedCustomer = selectedBusiness || g('customer');
+    if (selectedBusiness) {
+      const input = document.getElementById(`sc-${fileId}-customer`);
+      if (input) input.value = selectedBusiness;
+    }
     // Collect checked tests
     const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox][value]:checked`);
     const tests   = Array.from(testEls).map(el => el.value);
@@ -4907,7 +4913,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (!isMissingInfo) {
       // Full validation — skip for Missing Information rejections
-      if (!g('customer'))      missing.push('Customer / Company');
+      if (!approvedCustomer)      missing.push('Customer / Company');
       if (!g('dateDrawn'))     missing.push('Date Sampled');
       if (!g('timeDrawn'))     missing.push('Time Sampled (HH:MM)');
       if (!g('receivedDate'))  missing.push('Date Received');
@@ -4919,7 +4925,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!zipVal)                          missing.push('Zip Code');
       else if (!/^\d{5}$/.test(zipVal))     missing.push('Zip Code must be 5 digits');
       // Require email for public/unmatched clients
-      const customerVal = g('customer').toLowerCase().trim();
+      const customerVal = approvedCustomer.toLowerCase().trim();
       // Check if customer matches any known client (fuzzy — contains or is contained)
       const isKnownClient = _ALL_CLIENTS.some(c => {
         const cl = c.toLowerCase().trim();
@@ -4927,7 +4933,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       // Check if customer looks like a business (never treat businesses as public)
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|home|real estate)\b/i;
-      const looksLikeBusiness = BWORDS.test(g('customer')) || g('customer').includes('/') || g('customer').includes('&');
+      const looksLikeBusiness = BWORDS.test(approvedCustomer) || approvedCustomer.includes('/') || approvedCustomer.includes('&');
       const isPublicApprove = !isKnownClient && !looksLikeBusiness;
       if (isPublicApprove && !g('email')) missing.push('Email Address (required for clients not on the client list)');
       // Validate time format HH:MM
@@ -4966,7 +4972,8 @@ document.addEventListener('DOMContentLoaded', function() {
           fileId,
           reviewQueueRow: rowIndex,
           reviewedBy:   getAdminName(),
-          customer:     g('customer'),
+          customer:     approvedCustomer,
+          selectedBusiness,
           // If nothing was selected from the dropdown, the client was typed manually → treat as public
           isPublicOverride: !document.getElementById(`sc-${fileId}-customer-select`)?.value,
           dateDrawn:    g('dateDrawn'),
@@ -5087,7 +5094,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const etDate = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
       await logActivity({
         date:   etDate,
-        client: g('customer') || 'Unknown',
+        client: approvedCustomer || 'Unknown',
         type:   'check_in',
         qty:    (data.labIds||[]).length || 1,
         notes:  `COC checked in — Lab ID(s): ${(data.labIds||[]).join(', ')}`,
@@ -5096,7 +5103,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // ── INVENTORY: subtract one kit on approval (only for known clients) ──
       const approvedClient = CLIENTS.find(c =>
-        c.name.toLowerCase() === (g('customer')||'').toLowerCase()
+        c.name.toLowerCase() === approvedCustomer.toLowerCase()
       );
       if (approvedClient) {
         const key = approvedClient.key;
