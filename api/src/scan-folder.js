@@ -237,6 +237,7 @@ async function writeToReviewQueue(fields, token) {
 
 // ── Hard-coded alias fallbacks (v352) ────────────────────────────────────────
 const SCAN_HARD_ALIASES = {
+  'fpi': 'FPI / ChanCorp, Inc.',
   'maine radon water treatment':             'Maine Radon & Environmental, LLC',
   'ward water':                              'Critical Plumbing Inc. a/k/a Ward Water',
   'critical plumbing':                       'Critical Plumbing Inc. a/k/a Ward Water',
