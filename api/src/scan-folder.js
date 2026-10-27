@@ -888,7 +888,8 @@ Return ONLY: {"billingAddress":""}`}],
             const shortAlias = validatedCustomer.trim().toLowerCase();
             const knownShortAlias = shortAlias.length >= 2 && shortAlias.length <= 5 &&
               Object.prototype.hasOwnProperty.call(SCAN_HARD_ALIASES, shortAlias);
-            const foundInText = (knownShortAlias && new RegExp(`\\b${shortAlias.replace(/[.*+?^${}()|[\\]\\]/g, '\\const foundInText = customerWords.length === 0 || customerWords.some(w => azureLower.includes(w));')}\\b`, 'i').test(azureText)) ||
+            const aliasAppearsInText = knownShortAlias && azureLower.split(/[^a-z0-9]+/).includes(shortAlias);
+            const foundInText = aliasAppearsInText ||
               customerWords.length === 0 || customerWords.some(w => azureLower.includes(w));
             if (!foundInText) {
               context.log(`[scan] Customer hallucination detected: "${validatedCustomer}" not in Azure text — clearing`);
