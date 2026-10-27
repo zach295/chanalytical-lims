@@ -908,7 +908,7 @@ app.http('approve-scan', {
     try {
       const {
         fileId, reviewQueueRow, reviewedBy,
-        customer, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
+        customer: submittedCustomer, selectedBusiness, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
         location, city, state, zip, tests, hasRadon, radonMitigation, wqReject, rwReject, notes, email,
         phone, billingAddress,
       } = await request.json();
@@ -917,6 +917,16 @@ app.http('approve-scan', {
         return { status:400, jsonBody:{ error:'fileId and tests required' } };
 
       const token = await getToken();
+      let customer = String(submittedCustomer || '').trim();
+      if (selectedBusiness) {
+        const selected = String(selectedBusiness).trim();
+        const clients = await listItems(LISTS.CLIENTS);
+        const exact = clients.find(c => String(c.ClientName || c.Title || '').trim() === selected);
+        if (!exact || selected.startsWith('Public-')) {
+          return { status:400, jsonBody:{ error:'Selected business does not match a master client. Refresh the Review Queue and select again.' } };
+        }
+        customer = selected;
+      }
 
       // Parallelize independent startup reads
       const [{ dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing }, clientInfo] = await Promise.all([
@@ -1020,7 +1030,7 @@ app.http('approve-scan', {
       // Business clients (with LLC, Inc, Inspections etc.) should never get PUBLIC
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|real estate)\b/i;
       const nameIsBusinessLike = BWORDS.test(formalName) || formalName.includes('/') || formalName.includes('&');
-      const usePublic = (isPublicOverride || isPublicClient) && !nameIsBusinessLike;
+      const usePublic = !selectedBusiness && (isPublicOverride || isPublicClient) && !nameIsBusinessLike;
       // If the client was found in the Clients list and has an abbreviation, always use it
       // (overrides PUBLIC — a listed client is a known business, not a residential public)
       const abbrev    = clientInfo.abbrev || (usePublic ? 'PUBLIC' : getAbbrev(formalName));
@@ -1197,7 +1207,7 @@ app.http('approve-scan', {
         try {
           const BUSINESS_WORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|real estate|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|analytic|analytics|engineering|consultants|consulting|solutions|management|partners|professionals|experts|company|businesses|industries|contractors|construction|renovations|hvac|electric|electrical|mechanical|roofing|flooring|painting|appliance|home|remodeling|restoration|development)\b/i;
           const looksLikeBusiness = customer.includes('/')||customer.includes('&')||BUSINESS_WORDS.test(customer);
-          const isPublicName = !!isPublicOverride || (!looksLikeBusiness && !!customer.trim());
+          const isPublicName = !selectedBusiness && (!!isPublicOverride || (!looksLikeBusiness && !!customer.trim()));
           let formalClientName = customer;
           if (isPublicName) {
             const parts = customer.trim().split(/\s+/);
