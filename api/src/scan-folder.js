@@ -967,6 +967,27 @@ Return ONLY: {"billingAddress":""}`}],
             }
           }
 
+          // Nova's branded COC identifies the end customer in Client Information.
+          // Route the submitting account to Nova only when its specific template
+          // is recognized; otherwise preserve the existing matching workflow.
+          const novaTemplate = /nova\\s+enviro\\s*labs/i.test(azureText || '') &&
+            /client\\s+information\\s+for\\s+reporting\\s+of\\s+results/i.test(azureText || '') &&
+            /distributor\\s+source/i.test(azureText || '');
+          if (novaTemplate) {
+            const nova = clients.find(c =>
+              String(c.clientName || '').trim().toLowerCase() ===
+              'nova analytic labs (nova envirolabs)');
+            if (nova) {
+              client = nova;
+              context.log('[scan] Nova COC: matched submitting account; end-customer OCR name retained separately');
+            } else {
+              // Do not misassign the end customer to another business.
+              client = null;
+              ocr.formType = 'public';
+              context.log('[scan] Nova COC: master account not found; manual public review fallback');
+            }
+          }
+
           const clientName = client?.clientName || validatedCustomer || '';
 
           // Billing-address policy:
