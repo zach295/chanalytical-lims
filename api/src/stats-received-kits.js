@@ -3,7 +3,7 @@ const { listItems, LISTS } = require('../shared/graph');
 
 // Accession base IDs encode their receipt date as MMDDYY-###.
 function accessionDate(baseId) {
-  const m = String(baseId || '').trim().match(/^(\\d{2})(\\d{2})(\\d{2})-\\d{3}(?:\\s|$)/);
+  const m = String(baseId || '').trim().match(/^(\d{2})(\d{2})(\d{2})-\d{3}(?:\s|$)/);
   if (!m) return '';
   const year = 2000 + Number(m[3]), month = Number(m[1]), day = Number(m[2]);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -31,7 +31,7 @@ app.http('stats-received-kits', {
       for (const row of items) {
         // field_1 stores the base accession ID; field_2 can include a test suffix.
         const rawId = String(row.field_1 || row.field_2 || '').trim();
-        const match = rawId.match(/^(\\d{6}-\\d{3})(?:\\s|$)/);
+        const match = rawId.match(/^(\d{6}-\d{3})(?:\s|$)/);
         if (!match) continue;
         const baseId = match[1];
         const received = accessionDate(baseId);
