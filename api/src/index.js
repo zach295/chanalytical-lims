@@ -42,6 +42,7 @@ const modules = [
   './import-ph',
   './sync-results-cache',
   './billing-read',
+  './stats-received-kits',
   './billing-update',
 ];
 
