@@ -1089,6 +1089,12 @@ document.addEventListener('DOMContentLoaded', function() {
       <div style="padding:20px 16px;border-left:1px solid var(--border);"><span id="stat-year-kits" style="font-size:22px;font-weight:700;color:var(--navy);">—</span></div>
       <div style="padding:20px 16px;border-left:1px solid var(--border);"><span id="stat-year-avg" style="font-size:22px;font-weight:700;color:var(--teal);">—</span></div>
     </div>
+    <div class="card" style="padding:18px 20px;margin-bottom:18px;">
+      <div style="font-size:12px;font-weight:700;color:var(--slate);text-transform:uppercase;">Kits Received This Week</div>
+      <div id="stat-week-received" style="font-size:30px;font-weight:700;color:var(--navy);margin-top:6px;">—</div>
+      <div style="font-size:12px;color:var(--slate);margin-top:4px;">Monday through today · Date Received · unique base Lab IDs · includes rejected samples</div>
+      <div id="stat-week-received-error" style="font-size:12px;color:var(--error);margin-top:5px;"></div>
+    </div>
     <div id="stats-error" style="color:var(--error);font-size:13px;text-align:center;padding:20px;display:none;"></div>
   </div>
 </div>
@@ -2782,7 +2788,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.adminRestoreSample = adminRestoreSample;
 
   function showSection(id,btn) {
-    if (id === 'statistics') loadStatistics();
+    if (id === 'statistics') { loadStatistics(); loadWeeklyReceivedKits(); }
     if (id === 'intake') { initMonthPicker(); loadIntake(); }
     if (id === 'log') loadActivityLog();
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
@@ -6403,6 +6409,22 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // ── Statistics Tab ────────────────────────────────────────────────────────
+  async function loadWeeklyReceivedKits() {
+    const el = document.getElementById('stat-week-received');
+    const err = document.getElementById('stat-week-received-error');
+    if (el) el.textContent = '…';
+    if (err) err.textContent = '';
+    try {
+      const res = await fetch('/api/stats-received-kits', { cache:'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to read received kits');
+      if (el) el.textContent = Number(data.count).toLocaleString('en-US');
+    } catch(e) {
+      if (el) el.textContent = '—';
+      if (err) err.textContent = '⚠️ ' + e.message;
+    }
+  }
+
   async function loadStatistics() {
     const errEl = document.getElementById('stats-error');
     if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
