@@ -29,8 +29,9 @@ app.http('stats-received-kits', {
       const items = await listItems(LISTS.ACCESSION_LOG);
       const ids = new Set();
       for (const row of items) {
-        // field_1 stores the base accession ID; field_2 can include a test suffix.
-        const rawId = String(row.field_1 || row.field_2 || '').trim();
+        // Count only the Accession Log "Lab ID" column (field_1).
+        // Never fall back to FullSampleID (field_2).
+        const rawId = String(row.field_1 || '').trim();
         const match = rawId.match(/^(\d{6}-\d{3})(?:\s|$)/);
         if (!match) continue;
         const baseId = match[1];
