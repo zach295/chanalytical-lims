@@ -970,10 +970,10 @@ Return ONLY: {"billingAddress":""}`}],
           // Nova's branded COC identifies the end customer in Client Information.
           // Route the submitting account to Nova only when its specific template
           // is recognized; otherwise preserve the existing matching workflow.
-          const novaTemplate = /nova\\s+enviro\\s*labs/i.test(azureText || '') &&
-            /client\\s+information\\s+for\\s+reporting\\s+of\\s+results/i.test(azureText || '') &&
-            /distributor\\s+source/i.test(azureText || '');
-          if (novaTemplate) {
+          const novaTemplate = /nova\s+enviro\s*labs/i.test(azureText || '') &&
+            /client\s+information\s+for\s+reporting\s+of\s+results/i.test(azureText || '') &&
+            /distributor\s+source/i.test(azureText || '');
+                    if (novaTemplate) {
             const nova = clients.find(c =>
               String(c.clientName || '').trim().toLowerCase() ===
               'nova analytic labs (nova envirolabs)');
