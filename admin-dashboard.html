@@ -8006,7 +8006,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const res  = await fetch('/api/import-radon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dateFilter }),
+        body: JSON.stringify({ dateFilter, importedBy: getAdminName() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import failed');
