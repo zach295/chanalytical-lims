@@ -293,7 +293,7 @@ app.http('import-radon', {
         }
       }
 
-      const actor = body.importedBy || body.updatedBy || 'Lab Staff';
+      const actor = reqBody.importedBy || reqBody.updatedBy || 'Lab Staff';
       const auditWarnings = [];
       for (const sample of importedSamples) {
         const audit = await writeActivityLog({ labId: sample.labId, type: 'Results Imported - Radon', notes: sample.notes, by: actor, context });
