@@ -7545,6 +7545,11 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   async function saveAndSendReport(sendEmail) {
+    // Prevent multiple overlapping PDF renders and email requests.
+    if (window._reportSendBusy) {
+      showToast('⏳ Report processing is already in progress. Please wait.');
+      return;
+    }
     if (!currentReportData) { showToast('Generate a report first.'); return; }
 
     const authorizedBy = document.getElementById('rpt-authorized-by').value.trim();
@@ -7603,10 +7608,18 @@ document.addEventListener('DOMContentLoaded', function() {
       if (emailInput?.style) emailInput.style.borderColor = '';
     }
 
+    const sendKey = String(currentReportData.labId || currentReportData.meta?.labId || '') + '|' + overrideEmail.toLowerCase();
+    if (sendEmail && window._reportLastSentKey === sendKey) {
+      showToast('⚠️ This report was already emailed to this address in this session.');
+      return;
+    }
     let previewColors;
     try { previewColors = captureReportPreviewColors(currentReportData); }
     catch (e) { showToast('⚠️ ' + e.message); return; }
 
+    window._reportSendBusy = true;
+    const reportActionButtons = document.querySelectorAll('button[onclick="saveAndSendReport(true)"],button[onclick="saveAndSendReport(false)"]');
+    reportActionButtons.forEach(button => { button.disabled = true; });
     statusEl.textContent = '⏳ Preparing report...';
     statusEl.style.color = 'var(--slate)';
 
@@ -7652,6 +7665,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
         showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
+        window._reportLastSentKey = sendKey;
         // Clean up the temp Excel file now that report is sent
         if (currentReportData._tempId) {
           cleanupTempFile(currentReportData._tempId);
@@ -7894,6 +7908,9 @@ document.addEventListener('DOMContentLoaded', function() {
       statusEl.style.color = 'var(--error)';
       statusEl.textContent = '⚠️ ' + err.message;
       console.error('Send report failed:', err);
+    } finally {
+      window._reportSendBusy = false;
+      reportActionButtons.forEach(button => { button.disabled = false; });
     }
   }
 
