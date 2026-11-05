@@ -2,12 +2,8 @@
  * import-bacteria.js
  * POST /api/import-bacteria
  * Reads bac_MMDDYY.xlsm files from Control Sheets month folders.
- * Headers at row 5. Columns used:
- *   Col A (0): Sample ID  → match to Results Cache LabID
- *   Col E (4): Time In    → field_4 (Start Date/Time)
- *   Col G (6): Time Out   → field_5 (End Date/Time)
- *   Col K (10): Coliform MPN → field_2
- *   Col L (11): E. Coli MPN  → field_3
+ * Identifies Sample ID, Time In, Time Out, Coliform MPN, and E. coli MPN
+ * by worksheet headers so inserted columns cannot silently shift results.
  */
 const { app }     = require('@azure/functions');
 const { getToken } = require('../shared/graph');
@@ -131,14 +127,31 @@ app.http('import-bacteria', {
         const { id: fileId } = await fileRes.json();
         const rows = await readSheetValues(siteId, fileId, token, context);
 
-        // Headers are at row 5 (index 4) — data starts at row 6 (index 5)
-        const HEADER_ROW  = 4;
-        const DATA_START  = 5;
-        const COL_SAMPLEID   = 0;
-        const COL_TIME_IN    = 4;
-        const COL_TIME_OUT   = 6;
-        const COL_COLIFORM   = 10;
-        const COL_ECOLI      = 11;
+        // Locate the header row and map columns by their labels rather than
+        // fixed positions. The updated sheet adds analyst and incubation fields.
+        const normalizeHeader = value => String(value ?? '').toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ').trim();
+        const headers = rows.slice(0, 15).map((row, index) => ({
+          index, cells: (row || []).map(normalizeHeader),
+        }));
+        const header = headers.find(h =>
+          h.cells.some(c => c === 'sample id') &&
+          h.cells.some(c => c === 'time in') &&
+          h.cells.some(c => c === 'time out') &&
+          h.cells.some(c => c.includes('coliform') && c.includes('mpn')) &&
+          h.cells.some(c => c.includes('e coli') && c.includes('mpn'))
+        );
+        if (!header) throw new Error(`Bacteria import: required column headers not found in ${bacName}; no results were imported from this file.`);
+        const column = predicate => header.cells.findIndex(predicate);
+        const DATA_START = header.index + 1;
+        const COL_SAMPLEID = column(c => c === 'sample id');
+        const COL_TIME_IN = column(c => c === 'time in');
+        const COL_TIME_OUT = column(c => c === 'time out');
+        const COL_COLIFORM = column(c => c.includes('coliform') && c.includes('mpn') && !c.includes('e coli'));
+        const COL_ECOLI = column(c => c.includes('e coli') && c.includes('mpn'));
+        if ([COL_SAMPLEID,COL_TIME_IN,COL_TIME_OUT,COL_COLIFORM,COL_ECOLI].some(c => c < 0))
+          throw new Error(`Bacteria import: ambiguous or missing MPN columns in ${bacName}; import stopped.`);
+        context.log('[bac] mapped columns', { sampleId:COL_SAMPLEID, timeIn:COL_TIME_IN, timeOut:COL_TIME_OUT, coliform:COL_COLIFORM, ecoli:COL_ECOLI });
 
         // Build lookup from sample ID → result row
         const bacData = {};
@@ -153,7 +166,7 @@ app.http('import-bacteria', {
           const ecoli     = row[COL_ECOLI];
           const timeIn    = row[COL_TIME_IN];
           const timeOut   = row[COL_TIME_OUT];
-          if (coliform == null && ecoli == null) continue;
+          if ((coliform == null || String(coliform).trim() === '') && (ecoli == null || String(ecoli).trim() === '')) continue;
           bacData[baseId] = { coliform, ecoli, timeIn, timeOut };
         }
 
