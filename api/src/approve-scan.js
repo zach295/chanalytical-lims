@@ -1224,6 +1224,9 @@ app.http('approve-scan', {
           if (!existing) {
             await createItem(LISTS.CLIENTS, {
               ClientName:       formalClientName,
+              // Clients list uses Phone as the DBA Name field (see clients-write.js).
+              // For public clients store a readable first-and-last name, not Public-Last, First.
+              Phone:            isPublicName ? formatCustomerName(formalClientName) : '',
               Aliases:          clientInfo.reportEmail || email || '',         // Report Email Address
               Notes:            clientInfo.billingEmail || email || '',        // Billing Email Address
               Active:           clientInfo.phone || phone || '',               // Phone #
