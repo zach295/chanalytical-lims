@@ -1949,6 +1949,7 @@ document.addEventListener('DOMContentLoaded', function() {
   applyRolePermissions(_session?.role || 'office');
   // ── Client list state — must be declared before loadScanQueue() is called ──
   let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
+  let _PUBLIC_PRICING_CLIENTS = new Set(); // classify by Pricing Category, not name prefix
   let _clientsLastLoaded = 0;
   let _CLIENT_EMAILS     = {}; // map: clientName → report email
   let _CLIENT_PHONES     = {}; // map: clientName → phone
@@ -2879,6 +2880,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const clients = data.clients || [];
       _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
+      _PUBLIC_PRICING_CLIENTS = new Set(clients
+        .filter(c => String(c.pricingCategory || '').trim().toLowerCase() === 'public pricing')
+        .map(c => c.clientName));
       _CLIENT_EMAILS   = {};
       _CLIENT_PHONES   = {};
       _CLIENT_BADDRESS = {};
@@ -4629,7 +4633,7 @@ document.addEventListener('DOMContentLoaded', function() {
         ? sigWords.filter(w => customerLower.includes(w)).length >= 2
         : sigWords.every(w => customerLower.includes(w));
     }) : null;
-    const isPublicClient = !matchedClient;
+    const isPublicClient = !matchedClient || _PUBLIC_PRICING_CLIENTS.has(matchedClient);
 
     // Client-specific flag banner — must be after matchedClient is declared
     const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
@@ -4649,7 +4653,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     const clientTestRule = matchedClient ? _CLIENT_TEST_RULES[matchedClient] : null;
     const clientOptions = ['<option value="">— Select or type below —</option>',
-      ..._ALL_CLIENTS.filter(c => !c.startsWith('Public-')).map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
+      ..._ALL_CLIENTS.filter(c => !_PUBLIC_PRICING_CLIENTS.has(c)).map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
     ].join('');
 
     const testCheckboxes =
