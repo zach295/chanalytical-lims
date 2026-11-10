@@ -4620,6 +4620,7 @@ document.addEventListener('DOMContentLoaded', function() {
       'labs','laboratory','laboratories','and','the','of','for']);
     const customerLower = (r.customer||'').toLowerCase().trim();
     const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
+      if (_PUBLIC_PRICING_CLIENTS.has(c)) return false;
       const cl = c.toLowerCase();
       // Exact match
       if (cl === customerLower) return true;
