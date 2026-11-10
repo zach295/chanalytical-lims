@@ -1044,7 +1044,7 @@ app.http('approve-scan', {
       // Business clients (with LLC, Inc, Inspections etc.) should never get PUBLIC
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|real estate)\b/i;
       const nameIsBusinessLike = BWORDS.test(rawFormalName) || rawFormalName.includes('/') || rawFormalName.includes('&');
-      const usePublic = !selectedBusiness && (isPublicClient || (!!isPublicOverride && !nameIsBusinessLike));
+      const usePublic = !selectedBusiness && (isPublicClient || (!clientInfo.clientName && !!isPublicOverride && !nameIsBusinessLike));
       const formalName = usePublic && !clientInfo.clientName ? publicCanonical(rawFormalName) : rawFormalName;
       // Classification comes from the Clients list's Pricing Category when the client exists.
       const abbrev = usePublic ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
