@@ -39,13 +39,35 @@ app.http('clients-write', {
       const { action, itemId, client, updatedBy } = body;
       if (!client?.clientName) return { status: 400, jsonBody: { error: 'clientName required' } };
       await getToken(); // preserve existing auth/connection check
-      const fields = toSpFields(client);
+      const normalizedClient = { ...client };
+      // New manually-added public clients follow the same Last, First naming
+      // convention as public clients created by Review Queue.
+      if (action === 'add' && String(client.pricingCategory || '').trim().toLowerCase() === 'public pricing') {
+        const raw = String(client.clientName || '').trim().replace(/^Public-/i, '').trim();
+        const parts = raw.split(/\s+/).filter(Boolean);
+        let last = '', first = '';
+        if (raw.includes(',')) {
+          const comma = raw.indexOf(',');
+          last = raw.slice(0, comma).trim();
+          first = raw.slice(comma + 1).trim();
+        } else if (parts.length > 1) {
+          last = parts.pop();
+          first = parts.join(' ');
+        } else {
+          last = raw;
+        }
+        normalizedClient.clientName = first ? `${last}, ${first}` : last;
+        normalizedClient.dbaName = first ? `${first} ${last}` : last;
+        normalizedClient.abbrev = 'PUBLIC';
+        normalizedClient.billingPreference = 'Pre-Pay';
+      }
+      const fields = toSpFields(normalizedClient);
       const actor = updatedBy || 'Admin';
 
       if (action === 'add') {
         const result = await createItem(LISTS.CLIENTS, fields);
         const details = `New client added. Code: ${client.clientCode || '—'} | Pricing: ${client.pricingCategory || '—'} | Status: ${client.status || 'Active'} | Report Email: ${client.reportEmail || '—'} | Phone: ${client.phone || '—'} | Billing Address: ${client.billingAddress || '—'}`;
-        const audit = await writeActivityLog({ labId: client.clientName, type: 'Client Added', notes: details, by: actor, context });
+        const audit = await writeActivityLog({ labId: normalizedClient.clientName, type: 'Client Added', notes: details, by: actor, context });
         return { status: 200, jsonBody: { success: true, id: result?.id, auditWarning: audit.success ? null : audit.error } };
       }
 
