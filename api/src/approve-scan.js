@@ -379,6 +379,17 @@ const HARD_ALIASES = {
   'pillar to post':                          'Downeast Home Inspections, LLC',
 };
 
+function publicCanonical(name) {
+  const clean = String(name || '').trim().replace(/^Public-/i, '').trim();
+  if (!clean) return '';
+  if (clean.includes(',')) {
+    const [last, ...first] = clean.split(',');
+    return first.join(',').trim() ? `${last.trim()}, ${first.join(',').trim()}` : last.trim();
+  }
+  const parts = clean.split(/\s+/);
+  return parts.length > 1 ? `${parts.pop()}, ${parts.join(' ')}` : clean;
+}
+
 function matchClient(name, clients) {
   if (!name || !clients.length) return null;
   const nl = name.toLowerCase().trim();
@@ -388,6 +399,12 @@ function matchClient(name, clients) {
     if (found) return found;
   }
   let m = clients.find(c => c.name.toLowerCase().trim() === nl); if (m) return m;
+  // Match existing public records (with or without legacy Public- prefix)
+  // using exact normalized personal names, not loose surname matching.
+  const normalized = publicCanonical(name).toLowerCase();
+  m = clients.find(c => String(c.pricingCategory || '').trim().toLowerCase() === 'public pricing' &&
+    publicCanonical(c.name).toLowerCase() === normalized);
+  if (m) return m;
   m = clients.find(c => (c.aliases||'').split(',').map(a=>a.trim().toLowerCase())
     .some(a => a.length >= 3 && (nl.includes(a) || a === nl))); if (m) return m;
   m = clients.find(c => { const cl=c.name.toLowerCase().trim(); return cl.includes(nl)||nl.includes(cl); }); if (m) return m;
@@ -413,18 +430,14 @@ function getAbbrev(name) {
   return name.split(/\s+/).map(w=>w[0]?.toUpperCase()||'').join('').slice(0,5)||'UNK';
 }
 
-// Format public client name: "Public-Chandler, Zach" → "Zach Chandler"
+// DBA display name for newly created public clients: "Smith, John" → "John Smith".
 function formatCustomerName(name) {
-  if (!name) return '';
-  if (!name.startsWith('Public-')) return name;
-  const inner = name.slice('Public-'.length).trim();
-  const commaIdx = inner.indexOf(',');
-  if (commaIdx > 0) {
-    const last  = inner.slice(0, commaIdx).trim();
-    const first = inner.slice(commaIdx + 1).trim();
-    return first ? `${first} ${last}` : last;
-  }
-  return inner;
+  const canonical = publicCanonical(name);
+  const commaIdx = canonical.indexOf(',');
+  if (commaIdx < 0) return canonical;
+  const last = canonical.slice(0, commaIdx).trim();
+  const first = canonical.slice(commaIdx + 1).trim();
+  return first ? `${first} ${last}` : last;
 }
 
 // ── Get client info from SharePoint Clients list ───────────────────────────────
@@ -923,7 +936,7 @@ app.http('approve-scan', {
         const selected = String(selectedBusiness).trim();
         const clients = await listItems(LISTS.CLIENTS);
         const exact = clients.find(c => String(c.ClientName || c.Title || '').trim() === selected);
-        if (!exact || selected.startsWith('Public-')) {
+        if (!exact || String(exact.PricingCategory || '').trim().toLowerCase() === 'public pricing') {
           return { status:400, jsonBody:{ error:'Selected business does not match a master client. Refresh the Review Queue and select again.' } };
         }
         customer = selected;
@@ -1025,16 +1038,16 @@ app.http('approve-scan', {
       // Get client info from SP Clients list
       // clientInfo loaded in parallel above
       const clientCode   = clientInfo.clientCode;
-      const formalName   = clientInfo.formalName || customer;
-      const isPublicClient = formalName.startsWith('Public-');
+      const rawFormalName = clientInfo.formalName || customer;
+      const isPublicClient = String(clientInfo.pricingCategory || '').trim().toLowerCase() === 'public pricing';
       // Only use PUBLIC abbrev for genuine public (residential) clients
       // Business clients (with LLC, Inc, Inspections etc.) should never get PUBLIC
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|real estate)\b/i;
-      const nameIsBusinessLike = BWORDS.test(formalName) || formalName.includes('/') || formalName.includes('&');
-      const usePublic = !selectedBusiness && (isPublicOverride || isPublicClient) && !nameIsBusinessLike;
-      // If the client was found in the Clients list and has an abbreviation, always use it
-      // (overrides PUBLIC — a listed client is a known business, not a residential public)
-      const abbrev    = clientInfo.abbrev || (usePublic ? 'PUBLIC' : getAbbrev(formalName));
+      const nameIsBusinessLike = BWORDS.test(rawFormalName) || rawFormalName.includes('/') || rawFormalName.includes('&');
+      const usePublic = !selectedBusiness && (isPublicClient || (!clientInfo.clientName && !!isPublicOverride && !nameIsBusinessLike));
+      const formalName = usePublic && !clientInfo.clientName ? publicCanonical(rawFormalName) : rawFormalName;
+      // Classification comes from the Clients list's Pricing Category when the client exists.
+      const abbrev = usePublic ? 'PUBLIC' : (clientInfo.abbrev || getAbbrev(formalName));
 
       // ── Write Accession Log ──────────────────────────────────────────────────
       // Field mapping (Excel-imported): Title=timestamp, field_1=baseId,
@@ -1208,24 +1221,14 @@ app.http('approve-scan', {
         try {
           const BUSINESS_WORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|real estate|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|analytic|analytics|engineering|consultants|consulting|solutions|management|partners|professionals|experts|company|businesses|industries|contractors|construction|renovations|hvac|electric|electrical|mechanical|roofing|flooring|painting|appliance|home|remodeling|restoration|development)\b/i;
           const looksLikeBusiness = customer.includes('/')||customer.includes('&')||BUSINESS_WORDS.test(customer);
-          const isPublicName = !selectedBusiness && (!!isPublicOverride || (!looksLikeBusiness && !!customer.trim()));
-          let formalClientName = customer;
-          if (isPublicName) {
-            const parts = customer.trim().split(/\s+/);
-            if (parts.length >= 2) {
-              const last = parts[parts.length-1];
-              const first = parts.slice(0,parts.length-1).join(' ');
-              formalClientName = `Public-${last}, ${first}`;
-            } else {
-              formalClientName = `Public-${customer}`;
-            }
-          }
+          const isPublicName = usePublic && !looksLikeBusiness;
+          const formalClientName = isPublicName ? publicCanonical(customer) : customer;
           const existing = await findItem(LISTS.CLIENTS, 'Title', formalClientName).catch(()=>null);
           if (!existing) {
             await createItem(LISTS.CLIENTS, {
               ClientName:       formalClientName,
               // Clients list uses Phone as the DBA Name field (see clients-write.js).
-              // For public clients store a readable first-and-last name, not Public-Last, First.
+              // For public clients keep a readable first-and-last DBA, with no name prefix.
               Phone:            isPublicName ? formatCustomerName(formalClientName) : '',
               Aliases:          clientInfo.reportEmail || email || '',         // Report Email Address
               Notes:            clientInfo.billingEmail || email || '',        // Billing Email Address
@@ -1663,17 +1666,9 @@ app.http('approve-scan', {
           if (name === 'Expanded Safety (Mortgage Test)') return 'Expanded Safety (Mtg Test)';
           return name;
         };
-        const coaCustomerName = (() => {
-          const current = String(formalName || customer || '').trim();
-          if (!usePublic || current.startsWith('Public-')) return current;
-          const parts = String(customer || current).trim().split(/\s+/).filter(Boolean);
-          if (parts.length >= 2) {
-            const last = parts[parts.length - 1];
-            const first = parts.slice(0, -1).join(' ');
-            return `Public-${last}, ${first}`;
-          }
-          return current ? `Public-${current}` : current;
-        })();
+        // Keep the canonical client name consistent across Clients, intake, billing and COA.
+        // Existing legacy public clients retain their original stored names.
+        const coaCustomerName = String(formalName || customer || '').trim();
         const sheetRows = labItems
           .flatMap(l => {
             // A single Lab ID may contain a package plus one or more separately ordered
