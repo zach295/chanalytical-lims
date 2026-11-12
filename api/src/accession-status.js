@@ -302,7 +302,7 @@ app.http('accession-status', {
           await Promise.all(matches.map(r =>
             updateItem(LISTS.ARCHIVED_INTAKE, r._id, { field_14: newStatus })
           ));
-          return { status: 200, jsonBody: { success: true, baseId, status: newStatus } };
+          return { status: 200, jsonBody: { success: true, baseId, status: newStatus, rowsUpdated: matches.length } };
         }
 
         return { status: 400, jsonBody: { error: 'Unknown action: ' + action } };

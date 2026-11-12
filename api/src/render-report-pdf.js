@@ -419,6 +419,15 @@ app.http('render-report-pdf', {
     const needsFHA  = reportData.needsFHA;
     const isRadon       = reportData.isRadon;
     const isArsenicSpec = reportData.isArsenicSpec;
+    // Two HTTP stages keep expensive Graph work below Azure Static Web Apps'
+    // request limit. Finalize revalidates the same data and signed workbook ID.
+    const phase = body.phase || 'legacy';
+    if (!['legacy', 'prepare', 'finalize'].includes(phase)) {
+      return { status: 400, jsonBody: { error: 'Invalid PDF generation phase' } };
+    }
+    const payloadHash = crypto.createHash('sha256').update(JSON.stringify({
+      reportData: body.reportData, previewColors, authorizedBy, reviewDate,
+    })).digest('hex');
     // Snapshot keys include sheet type: FHA and standard reports can contain
     // the same parameter with different indicator colors.
     const mainType = isArsenicSpec ? 'spec' : isRadon ? 'radon' : 'lab';
@@ -452,10 +461,31 @@ app.http('render-report-pdf', {
     const renderStartedAt = Date.now();
     const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
+    let tempId;
+    if (phase === 'finalize') {
+      const ticket = body.stageTicket || {};
+      const expiry = Number(ticket.expiry);
+      const validFormat = /^[a-f0-9]{64}$/i.test(String(ticket.signature || '')) &&
+        typeof ticket.tempId === 'string' && ticket.tempId.length > 5 &&
+        Number.isSafeInteger(expiry) && expiry > Date.now() &&
+        expiry < Date.now() + 15 * 60 * 1000;
+      if (!validFormat || !process.env.MS_CLIENT_SECRET) {
+        return { status: 409, jsonBody: { error: 'PDF preparation token missing or expired. Generate the PDF again.' } };
+      }
+      const ticketPayload = [ticket.tempId, labId, expiry, payloadHash].join(':');
+      const expected = crypto.createHmac('sha256', process.env.MS_CLIENT_SECRET)
+        .update(ticketPayload).digest();
+      const supplied = Buffer.from(ticket.signature, 'hex');
+      if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
+        return { status: 409, jsonBody: { error: 'PDF preparation token does not match the validated report data.' } };
+      }
+      tempId = ticket.tempId;
+    }
     let token;
     try { token = await getToken(); }
     catch(e) { return { status: 500, jsonBody: { error: 'Auth: ' + e.message } }; }
 
+    if (phase !== 'finalize') {
     // ── Step 1: Download template ───────────────────────────────────────────
     const tmplPath = process.env.SP_REPORT_TEMPLATE ||
       '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Report Templates.xlsx';
@@ -479,7 +509,6 @@ app.http('render-report-pdf', {
 
     // ── Step 2: Upload as temp copy ─────────────────────────────────────────
     const tempName = `TEMP_${labId}_${Date.now()}.xlsx`;
-    let tempId;
     try {
       const upR = await fetch(
         `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}/${encodeURIComponent(tempName)}:/content`, {
@@ -680,7 +709,24 @@ app.http('render-report-pdf', {
         `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`,
         token, {}, sid).catch(() => {});
     }
-    await new Promise(r => setTimeout(r, 3000));
+    // Give Excel time to persist the closed session. Any missing results are
+    // still caught by the strict workbook read-back in the next phase.
+    await new Promise(r => setTimeout(r, 750));
+    if (phase === 'prepare') {
+      if (!process.env.MS_CLIENT_SECRET) {
+        await deleteTempWorkbook(siteId, tempId, token, context);
+        return { status: 500, jsonBody: { error: 'PDF validation signing is unavailable.' } };
+      }
+      const expiry = Date.now() + 10 * 60 * 1000;
+      const ticketPayload = [tempId, labId, expiry, payloadHash].join(':');
+      const signature = crypto.createHmac('sha256', process.env.MS_CLIENT_SECRET)
+        .update(ticketPayload).digest('hex');
+      return { status: 200, jsonBody: {
+        success: true, phase: 'prepared',
+        stageTicket: { tempId, expiry, signature },
+      } };
+    }
+    } // Finalization starts a separate, shorter API request.
 
     // ── Step 8b: Fail-safe verification before PDF export ───────────────────
     // Read back the exact workbook copy that is about to be converted. A report
