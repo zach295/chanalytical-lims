@@ -298,6 +298,29 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
   return cellColors;
 }
 
+// Delete a temporary workbook only after verifying the Graph response.
+// 404 means the item was already removed. Do not count HTTP 423/5xx as success.
+async function deleteTempWorkbook(siteId, itemId, token, context) {
+  let last = 'not attempted';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(GRAPH + '/sites/' + siteId + '/drive/items/' + itemId, {
+        method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+      });
+      if (response.ok || response.status === 404) return { deleted: true };
+      last = 'HTTP ' + response.status;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (![408,409,423,429,500,502,503,504].includes(response.status)) break;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    } catch (err) {
+      last = err.message;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    }
+  }
+  return { deleted: false, error: last };
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 app.http('prepare-report', {
   methods:   ['POST'],
@@ -350,24 +373,42 @@ app.http('prepare-report', {
       tmplBuffer = Buffer.from(await dlR.arrayBuffer());
       context.log('[prepare] Template downloaded:', tmplBuffer.length, 'bytes');
 
-      // ── Orphan cleanup: delete * Report.xlsx files older than 30 minutes ──
+      // Remove abandoned report working copies only. Keep files younger than
+      // 24 hours, so an open editing session is never removed by the scavenger.
+      // Include TEMP_ PDFs-workbooks and the older named preview workbooks.
       try {
-        const cleanupRes = await fetch(
-          `${GRAPH}/sites/${siteId}/drive/root:/${folderPath}:/children?$select=id,name,lastModifiedDateTime&$top=100`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (cleanupRes.ok) {
-          const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
-          const staleFiles   = ((await cleanupRes.json()).value || []).filter(f =>
-            /\s+Report\.xlsx$/i.test(f.name) && new Date(f.lastModifiedDateTime) < thirtyMinAgo
-          );
-          for (const f of staleFiles) {
-            await fetch(`${GRAPH}/sites/${siteId}/drive/items/${f.id}`,
-              { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
-            context.log('[prepare] Cleaned up stale:', f.name);
+        let next = GRAPH + '/sites/' + siteId + '/drive/root:/' + folderPath +
+          ':/children?$select=id,name,lastModifiedDateTime,file&$top=200';
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        let found = 0, cleaned = 0, failed = 0;
+        while (next) {
+          const response = await fetch(next, { headers: { Authorization: 'Bearer ' + token } });
+          if (!response.ok) {
+            context.log('[prepare] Orphan listing failed: HTTP ' + response.status);
+            break;
           }
+          const data = await response.json();
+          for (const file of (data.value || [])) {
+            const name = String(file.name || '');
+            const generated = /^TEMP_\\d{6}-\\d{3}.*_\\d+\\.xlsx$/i.test(name) ||
+              /^\\d{6}-\\d{3}(?: RW)? Report\\.xlsx$/i.test(name);
+            const modified = Date.parse(file.lastModifiedDateTime || '');
+            if (!file.file || !generated || !Number.isFinite(modified) || modified >= cutoff) continue;
+            found++;
+            const removed = await deleteTempWorkbook(siteId, file.id, token, context);
+            if (removed.deleted) cleaned++;
+            else {
+              failed++;
+              context.log('[prepare] Orphan retained: ' + name + ' (' + removed.error + ')');
+            }
+          }
+          next = data['@odata.nextLink'] || null;
         }
-      } catch(e) { context.log('[prepare] Orphan cleanup error (non-fatal):', e.message); }
+        context.log('[prepare] Orphan cleanup eligible=' + found +
+          ', deleted=' + cleaned + ', failed=' + failed);
+      } catch (err) {
+        context.log('[prepare] Orphan cleanup error (non-fatal): ' + err.message);
+      }
 
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
@@ -383,16 +424,10 @@ app.http('prepare-report', {
       if (existCheck.ok) {
         const existData = await existCheck.json();
         if (existData.id) {
-          // Retry delete up to 3 times — file may be briefly locked
-          for (let attempt = 0; attempt < 3; attempt++) {
-            const delR = await fetch(`${GRAPH}/sites/${siteId}/drive/items/${existData.id}`,
-              { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-            if (delR.ok || delR.status === 404) break;
-            context.log(`[prepare] Delete attempt ${attempt + 1} failed (${delR.status}), retrying...`);
-            await new Promise(r => setTimeout(r, 1500));
-          }
-          context.log('[prepare] Deleted existing file:', fileName);
-          await new Promise(r => setTimeout(r, 1000)); // wait for deletion to propagate
+          const removed = await deleteTempWorkbook(siteId, existData.id, token, context);
+          if (!removed.deleted) throw new Error('Previous report workbook could not be removed: ' + removed.error);
+          context.log('[prepare] Removed previous working copy: ' + fileName);
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
       }
 
@@ -409,7 +444,7 @@ app.http('prepare-report', {
     const session = await openWorkbookSession(siteId, tempId, token, context);
     const sid = session.sid;
     if (!sid) {
-      await gReq('DELETE', '/sites/' + siteId + '/drive/items/' + tempId, token).catch(() => {});
+      await deleteTempWorkbook(siteId, tempId, token, context);
       return { status: 409, jsonBody: {
         error: 'Excel workbook preparation failed after retries: ' + session.error,
         code: 'REPORT_PREP_SESSION_FAILED',
