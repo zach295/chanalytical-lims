@@ -6140,8 +6140,8 @@ document.addEventListener('DOMContentLoaded', function() {
       statusEl.style.color = 'var(--success)';
 
       // Prepare Excel in background — fills template, returns colors for preview
-      prepareReportExcel(currentReportData).then(() => {
-        statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
+      prepareReportExcel(currentReportData).then(prepared => {
+        if (prepared) statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
       });
 
     } catch (err) {
@@ -6296,15 +6296,35 @@ document.addEventListener('DOMContentLoaded', function() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportData, authorizedBy, reviewDate }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) { console.warn('[prepare] failed:', data.error); return; }
+      const responseText = await res.text();
+      let data = {};
+      try { data = JSON.parse(responseText); } catch (_) {}
+      if (!res.ok || !data.success) {
+        const reason = data.error || data.message || responseText.slice(0, 250) || 'No error details returned';
+        console.error('[prepare-report] HTTP ' + res.status + ': ' + reason);
+        const status = document.getElementById('rpt-gen-status');
+        if (status && currentReportData === reportData) {
+          status.textContent = '⚠️ Excel preparation failed (HTTP ' + res.status + '): ' + reason;
+          status.style.color = 'var(--error)';
+        }
+        return false;
+      }
 
       reportData._tempId = data.tempId;
       console.log('[prepare] tempId:', data.tempId);
       // Save tempId to sessionStorage so orphan cleanup can find it on next load
       sessionStorage.setItem('_prevTempId', data.tempId);
       startKeepalive(data.tempId);
-    } catch(e) { console.error('[prepare] error:', e); }
+      return true;
+    } catch(e) {
+      console.error('[prepare] error:', e);
+      const status = document.getElementById('rpt-gen-status');
+      if (status && currentReportData === reportData) {
+        status.textContent = '⚠️ Excel preparation error: ' + e.message;
+        status.style.color = 'var(--error)';
+      }
+      return false;
+    }
   }
 
   // Delete a kept temp file (fire and forget)
@@ -7640,8 +7660,13 @@ document.addEventListener('DOMContentLoaded', function() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate, previewColors }),
         });
-        const pdfData = await pdfRes.json().catch(() => ({}));
-        if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+        const pdfText = await pdfRes.text();
+        let pdfData = {};
+        try { pdfData = JSON.parse(pdfText); } catch (_) {}
+        if (!pdfRes.ok || !pdfData.success) {
+          throw new Error(pdfData.error || pdfData.message ||
+            `PDF generation failed (HTTP ${pdfRes.status}): ${pdfText.slice(0,250) || 'no response details'}`);
+        }
         const pdfBase64 = pdfData.pdfBase64;
         const fileName  = pdfData.fileName;
 
