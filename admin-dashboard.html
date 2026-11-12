@@ -6147,10 +6147,12 @@ document.addEventListener('DOMContentLoaded', function() {
       statusEl.textContent = '✅ Report loaded — preparing Excel file...';
       statusEl.style.color = 'var(--success)';
 
-      // Prepare Excel in background — fills template, returns colors for preview
-      prepareReportExcel(currentReportData).then(prepared => {
-        if (prepared) statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
-      });
+      // The editable preview lives in currentReportData. Final PDF rendering
+      // independently writes and validates a fresh workbook from these values.
+      // Do not create a second, unused Excel workbook on report load: its
+      // slow SharePoint cleanup/workbook session can exceed the 45s API limit
+      // and compete with the actual validated PDF generation.
+      statusEl.textContent = `✅ Report ready for ${labId} — click any value to edit.`;
 
     } catch (err) {
       statusEl.textContent = '⚠️ ' + err.message;
@@ -7923,7 +7925,7 @@ document.addEventListener('DOMContentLoaded', function() {
           });
           const markData = await markRes.json();
           if (!markRes.ok) throw new Error(markData.error);
-          console.log(`[mark-reported] ${reportedBaseId} → Reported (${markData.rowsUpdated} rows updated)`);
+          console.log(`[mark-reported] ${reportedBaseId} → Reported (${markData.rowsUpdated ?? 'unknown'} rows updated)`);
         } catch(e) {
           console.warn('mark-reported failed:', e.message);
         }
