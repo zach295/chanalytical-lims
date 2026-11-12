@@ -7666,10 +7666,20 @@ document.addEventListener('DOMContentLoaded', function() {
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Send failed');
-        statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✅ Report emailed to ${data.sentTo || overrideEmail}`;
-        showToast(`✅ Emailed to ${data.sentTo || overrideEmail}`);
+        if (!res.ok || !data.success) {
+          // Even an HTTP error can occur after email delivery. Block blind
+          // retries in this browser session until staff verify Sent Mail.
+          if (data.deliveryUnconfirmed || res.status >= 500) {
+            window._reportLastSentKey = sendKey;
+            throw new Error('Delivery unconfirmed for this report. Do not click Send again. Check Labs@chanalytical.com Sent Mail before attempting a resend. ' + (data.error || `HTTP ${res.status}`));
+          }
+          throw new Error(data.error || `Send failed (HTTP ${res.status})`);
+        }
+        statusEl.style.color = data.postSendWarning ? 'var(--warning)' : 'var(--success)';
+        statusEl.textContent = data.postSendWarning
+          ? `⚠️ Email accepted by Gmail for ${data.sentTo || overrideEmail}; follow-up warning: ${data.postSendWarning}`
+          : `✅ Report emailed to ${data.sentTo || overrideEmail}`;
+        showToast(data.postSendWarning ? '⚠️ Email sent; follow-up warning. Check report status.' : `✅ Emailed to ${data.sentTo || overrideEmail}`);
         window._reportLastSentKey = sendKey;
         // Clean up the temp Excel file now that report is sent
         if (currentReportData._tempId) {
