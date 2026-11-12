@@ -173,6 +173,10 @@ app.http('send-report', {
   methods: ['POST'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
+    // Once Gmail confirms acceptance, downstream failures must not tell
+    // staff the email failed and encourage another send.
+    let gmailAccepted = false;
+    let acceptedTo = '';
     try {
       const body       = await request.json().catch(() => ({}));
       const { labId, pdfBase64, toEmail: overrideEmail2, overrideEmail, clientName: overrideName, location, isRadon, fileName: bodyFileName } = body;
@@ -319,7 +323,9 @@ app.http('send-report', {
         return { status: 500, jsonBody: { error: `Gmail send failed (${sendRes.status}): ${errText.slice(0, 100)}` } };
       }
 
-      context.log(`[send-report] Sent to ${toEmail} with ${attachments.length} attachment(s)`);
+      gmailAccepted = true;
+      acceptedTo = toEmail;
+      context.log(`[send-report] Gmail accepted email to ${toEmail} with ${attachments.length} attachment(s)`);
 
       // Save report PDF to Archive immediately after confirmed send
       try {
@@ -559,7 +565,20 @@ app.http('send-report', {
 
     } catch (err) {
       context.log('[send-report] Error:', err.message);
-      return { status: 500, jsonBody: { error: err.message } };
+      if (gmailAccepted) {
+        // Delivery is already confirmed; a post-send write or audit failure
+        // must be presented as a warning, never a failed email.
+        return { status: 200, jsonBody: {
+          success: true, sentTo: acceptedTo,
+          postSendWarning: `Email accepted by Gmail, but report follow-up processing failed: ${err.message}`,
+        } };
+      }
+      return { status: 500, jsonBody: {
+        error: err.message,
+        // Gmail API errors can be ambiguous: Gmail might have accepted the
+        // message despite a failed HTTP response. Never invite blind retries.
+        deliveryUnconfirmed: true,
+      } };
     }
   },
 });
