@@ -6183,6 +6183,33 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  // Each request stays within Azure Static Web Apps' 45-second gateway limit.
+  // Finalization reads back workbook values, verifies Excel and visible PDF
+  // colors, and returns the same server-signed proof required by send-report.
+  async function requestValidatedReportPdf(reportData, authorizedBy, reviewDate, previewColors) {
+    const payload = { reportData, authorizedBy, reviewDate, previewColors };
+    const requestPhase = async (phase, stageTicket) => {
+      const response = await fetch('/api/render-report-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, phase, ...(stageTicket ? { stageTicket } : {}) }),
+      });
+      const raw = await response.text();
+      let data = {};
+      try { data = JSON.parse(raw); } catch (_) {}
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message ||
+          `PDF ${phase} failed (HTTP ${response.status}): ${raw.slice(0, 220) || 'no response details'}`);
+      }
+      return data;
+    };
+    const prepared = await requestPhase('prepare');
+    if (!prepared.stageTicket?.tempId || !prepared.stageTicket?.signature) {
+      throw new Error('PDF preparation did not return a validated session ticket. Nothing was sent.');
+    }
+    return requestPhase('finalize', prepared.stageTicket);
+  }
+
   async function preGenerateReportPdf(reportData, forceRegenerate) {
     const authorizedBy = document.getElementById('rpt-authorized-by')?.value || getAdminName();
     const reviewDate   = document.getElementById('rpt-review-date')?.value || '';
@@ -6190,14 +6217,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (currentReportData._cachedPdfBase64 && !forceRegenerate) return; // already ready
 
     try {
-      const pdfRes = await fetch('/api/render-report-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportData, authorizedBy, reviewDate,
-          previewColors: captureReportPreviewColors(reportData) }),
-      });
-      const pdfData = await pdfRes.json().catch(() => ({}));
-      if (!pdfRes.ok || !pdfData.success) throw new Error(pdfData.error || 'PDF generation failed');
+      const pdfData = await requestValidatedReportPdf(
+        reportData, authorizedBy, reviewDate, captureReportPreviewColors(reportData));
 
       // Cache the generated PDF
       currentReportData._cachedPdfBase64 = pdfData.pdfBase64;
@@ -7666,17 +7687,8 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = '⏳ Preparing PDF...';
         // Generate PDF from currentReportData — always has all edits in memory
         statusEl.textContent = '⏳ Generating PDF...';
-        const pdfRes = await fetch('/api/render-report-pdf', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate, previewColors }),
-        });
-        const pdfText = await pdfRes.text();
-        let pdfData = {};
-        try { pdfData = JSON.parse(pdfText); } catch (_) {}
-        if (!pdfRes.ok || !pdfData.success) {
-          throw new Error(pdfData.error || pdfData.message ||
-            `PDF generation failed (HTTP ${pdfRes.status}): ${pdfText.slice(0,250) || 'no response details'}`);
-        }
+        const pdfData = await requestValidatedReportPdf(
+          currentReportData, authorizedBy, reviewDate, previewColors);
         const pdfBase64 = pdfData.pdfBase64;
         const fileName  = pdfData.fileName;
 
@@ -7727,12 +7739,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // ── Save PDF — always use render-report-pdf with currentReportData ────
         // currentReportData always has all edits in memory, making this reliable
         statusEl.textContent = '⏳ Generating PDF...';
-        const pdfRes2 = await fetch('/api/render-report-pdf', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportData: currentReportData, authorizedBy, reviewDate, previewColors }),
-        });
-        const pdfData2 = await pdfRes2.json().catch(() => ({}));
-        if (!pdfRes2.ok || !pdfData2.success) throw new Error(pdfData2.error || 'PDF generation failed');
+        const pdfData2 = await requestValidatedReportPdf(
+          currentReportData, authorizedBy, reviewDate, previewColors);
         const pdfBase642 = pdfData2.pdfBase64;
         const fileName2  = pdfData2.fileName;
         const bytes2 = Uint8Array.from(atob(pdfBase642), c => c.charCodeAt(0));
