@@ -73,6 +73,36 @@ async function graphBatch(reqs, token, sid) {
   return d.responses || [];
 }
 
+async function openWorkbookSession(siteId, tempId, token, context) {
+  const path = '/sites/' + siteId + '/drive/items/' + tempId + '/workbook/createSession';
+  const transient = new Set([408,409,423,429,500,502,503,504]);
+  let error = 'No session ID returned';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await gReq('POST', path, token, { persistChanges: true });
+      const raw = await response.text().catch(() => '');
+      let data = {};
+      try { data = JSON.parse(raw); } catch (_) {}
+      if (response.ok && data.id) return { sid: data.id };
+      error = 'Graph HTTP ' + response.status + ': ' +
+        (data.error?.code || '') + ' ' + (data.error?.message || raw.slice(0,180) || 'empty response');
+      context.log('[Excel session] attempt ' + attempt + '/3: ' + error);
+      if (response.status === 202 || !transient.has(response.status)) break;
+      if (attempt < 3) {
+        const retryAfter = Number(response.headers.get('Retry-After'));
+        const delay = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(retryAfter * 1000, 15000) : attempt * 1500;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (e) {
+      error = e.message;
+      context.log('[Excel session] attempt ' + attempt + '/3 exception: ' + error);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    }
+  }
+  return { sid: null, error };
+}
+
 async function hideSheet(siteId, itemId, wsId, token, sid) {
   // Set worksheet visibility to hidden so it doesn't appear in the PDF
   // Use relative path — gReq prepends ${GRAPH} automatically
@@ -424,23 +454,16 @@ app.http('render-report-pdf', {
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
     // ── Step 3: Open Workbook session ───────────────────────────────────────
-    let sid = null;
-    const sr = await gReq('POST',
-      `/sites/${siteId}/drive/items/${tempId}/workbook/createSession`,
-      token, { persistChanges: true });
-    if (sr.ok) sid = (await sr.json()).id || null;
-    context.log('[pdf] Session:', sid ? 'OK' : 'none');
+    const session = await openWorkbookSession(siteId, tempId, token, context);
+    const sid = session.sid;
     if (!sid) {
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
-      return {
-        status: 409,
-        jsonBody: {
-          error: 'Report preparation failed before data could be written. Nothing was sent. Please retry.',
-          retry: true,
-          code: 'REPORT_PREP_SESSION_FAILED'
-        }
-      };
+      await gReq('DELETE', '/sites/' + siteId + '/drive/items/' + tempId, token).catch(() => {});
+      return { status: 409, jsonBody: {
+        error: 'Excel workbook session failed after retries: ' + session.error + '. Nothing was sent.',
+        code: 'REPORT_PREP_SESSION_FAILED', retry: true,
+      } };
     }
+    context.log('[pdf] Session: OK');
 
     // ── Step 4: Get all sheets ──────────────────────────────────────────────
     const wr     = await gReq('GET', `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets`, token, undefined, sid);
