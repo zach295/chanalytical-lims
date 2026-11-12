@@ -431,6 +431,7 @@ app.http('render-report-pdf', {
       p.previewColor = item.color.toUpperCase();
     }
 
+    const renderStartedAt = Date.now();
     const today     = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month:'2-digit', day:'2-digit', year:'2-digit' });
 
     let token;
@@ -473,7 +474,7 @@ app.http('render-report-pdf', {
         });
       if (!upR.ok) throw new Error(`Upload failed (${upR.status})`);
       tempId = (await upR.json()).id;
-      context.log('[pdf] Temp uploaded:', tempId);
+      context.log('[pdf] Temp uploaded:', tempId, 'elapsedMs=' + (Date.now() - renderStartedAt));
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
     // ── Step 3: Open Workbook session ───────────────────────────────────────
@@ -654,6 +655,7 @@ app.http('render-report-pdf', {
       await fitOnePage(fhaSheet.id);
     }
 
+    context.log('[pdf] Workbook fill complete elapsedMs=' + (Date.now() - renderStartedAt));
     // ── Step 8: Close session + wait ────────────────────────────────────────
     if (sid) {
       await gReq('POST',
@@ -763,6 +765,10 @@ app.http('render-report-pdf', {
           if (headerRow < 0) throw new Error(`Result header missing in ${sheet.name}; Excel template layout may have changed`);
           const resultCol = sheetRows[headerRow].findIndex(isResultHeader);
           if (resultCol < 1) throw new Error(`Color indicator column missing in ${sheet.name}`);
+          // Verify result values from the single usedRange read, then batch
+          // color-indicator GETs in groups of 20. Every expected indicator
+          // still has to return a matching color; missing responses fail closed.
+          const colorChecks = [];
           for (const p of sheetParams) {
             const expectedValue = String(p.value ?? '').trim();
             if (!expectedValue) continue;
@@ -772,21 +778,48 @@ app.http('render-report-pdf', {
                 const key = normalizeCell(v);
                 return key && (key === name || key.startsWith(name) || name.startsWith(key));
               }));
-            if (idx < 0) throw new Error(`${sheet.name}: missing result row for ${p.name}`);
+            if (idx < 0) throw new Error(sheet.name + ': missing result row for ' + p.name);
             const actualValue = String(sheetRows[idx][resultCol] ?? '').trim();
-            if (actualValue !== expectedValue) throw new Error(`${p.name}: preview value "${expectedValue}" differs from Excel "${actualValue}"`);
-            const expectedColor = p.previewColor;
-            if (!expectedColor) continue; // No configured threshold: neutral template formatting.
-            const cell = `${colLetter(startCol + resultCol - 1)}${startRow + idx}`;
-            const fill = await gReq('GET',
-              `/sites/${siteId}/drive/items/${tempId}/workbook/worksheets/${sheet.id}/range(address='${cell}')/format/fill`,
-              token, undefined, verifySid);
-            if (!fill.ok) throw new Error(`${p.name}: Excel color verification unavailable (${fill.status})`);
-            const actualColor = String((await fill.json()).color || '').toUpperCase();
-            if (actualColor !== expectedColor.toUpperCase()) {
-              throw new Error(`${p.name} ("${expectedValue}"): preview expects ${expectedColor}, Excel indicator is ${actualColor || 'missing'}`);
+            if (actualValue !== expectedValue) {
+              throw new Error(p.name + ': preview value "' + expectedValue + '" differs from Excel "' + actualValue + '"');
+            }
+            if (!p.previewColor) continue;
+            const cell = colLetter(startCol + resultCol - 1) + (startRow + idx);
+            colorChecks.push({
+              param: p.name, expectedValue, expectedColor: String(p.previewColor).toUpperCase(),
+              url: '/sites/' + siteId + '/drive/items/' + tempId +
+                '/workbook/worksheets/' + sheet.id +
+                "/range(address='" + cell + "')/format/fill",
+            });
+          }
+          const colorStart = Date.now();
+          for (let offset = 0; offset < colorChecks.length; offset += 20) {
+            const chunk = colorChecks.slice(offset, offset + 20);
+            const responses = await graphBatch(chunk.map(check => ({
+              method: 'GET', url: check.url,
+            })), token, verifySid);
+            if (responses.length !== chunk.length) {
+              throw new Error('Excel color verification returned ' + responses.length +
+                '/' + chunk.length + ' results for ' + sheet.name);
+            }
+            const indexed = new Map(responses.map(response => [String(response.id), response]));
+            for (let i = 0; i < chunk.length; i++) {
+              const check = chunk[i];
+              const response = indexed.get(String(i + 1));
+              if (!response || Number(response.status) !== 200) {
+                throw new Error(check.param + ': Excel color verification unavailable (' +
+                  (response?.status || 'missing batch response') + ')');
+              }
+              const actualColor = String(response.body?.color || '').toUpperCase();
+              if (!actualColor || actualColor !== check.expectedColor) {
+                throw new Error(check.param + ' ("' + check.expectedValue +
+                  '"): preview expects ' + check.expectedColor +
+                  ', Excel indicator is ' + (actualColor || 'missing'));
+              }
             }
           }
+          context.log('[pdf] Excel color verification: ' + colorChecks.length +
+            ' indicators on ' + sheet.name + ' in ' + (Date.now() - colorStart) + 'ms');
         }
 
         context.log(`[pdf] Verification passed for ${labId}: sheet="${expectedSheet.name}", results=${expectedResultValues.length}, metadata=${hasMetadata}`);
@@ -808,6 +841,7 @@ app.http('render-report-pdf', {
       };
     }
 
+    context.log('[pdf] Workbook verification complete elapsedMs=' + (Date.now() - renderStartedAt));
     // ── Step 9: Export as PDF ───────────────────────────────────────────────
     let pdfBase64;
     try {
@@ -824,6 +858,7 @@ app.http('render-report-pdf', {
       return { status: 500, jsonBody: { error: e.message } };
     }
 
+    context.log('[pdf] PDF export complete elapsedMs=' + (Date.now() - renderStartedAt));
     // ── Step 9b: Verify the rendered PDF, not just the workbook's direct fills ──
     // Excel conditional formatting can override Graph /format/fill. Render the
     // exported PDF and compare visible indicator pixels to the preview rules.
@@ -845,6 +880,7 @@ app.http('render-report-pdf', {
       }};
     }
 
+    context.log('[pdf] Visible PDF validation complete elapsedMs=' + (Date.now() - renderStartedAt));
     // ── Step 10: Close session then delete temp file ───────────────────────
     // Close workbook session first so the file isn't locked
     await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}).catch(() => {});
