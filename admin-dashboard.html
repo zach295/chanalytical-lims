@@ -7135,11 +7135,14 @@ document.addEventListener('DOMContentLoaded', function() {
       const pdfStatus = document.getElementById('rpt-pdf-status');
       if (pdfStatus) pdfStatus.textContent = '⚠️ Fields edited — PDF updating...';
     }
-    // Debounce: regenerate PDF 2s after last edit
+    // Do not start another expensive SharePoint PDF render while staff edit
+    // the HTML preview. PDF tab selection and Save/Email render on demand.
+    // This avoids competing Excel sessions and duplicate background renders.
     clearTimeout(window._pdfRegenTimer);
-    window._pdfRegenTimer = setTimeout(() => {
-      if (currentReportData?._pdfStale) preGenerateReportPdf(currentReportData, true);
-    }, 2000);
+    if (currentReportData?._pdfStale) {
+      const pdfStatus = document.getElementById('rpt-pdf-status');
+      if (pdfStatus) pdfStatus.textContent = 'PDF needs refresh — open PDF preview or Save/Email to regenerate.';
+    }
     const key = el.dataset.key;
     const val = el.textContent.trim();
     if (key.startsWith('result:')) {
