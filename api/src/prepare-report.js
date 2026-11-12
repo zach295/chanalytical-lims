@@ -390,8 +390,8 @@ app.http('prepare-report', {
           const data = await response.json();
           for (const file of (data.value || [])) {
             const name = String(file.name || '');
-            const generated = /^TEMP_\\d{6}-\\d{3}.*_\\d+\\.xlsx$/i.test(name) ||
-              /^\\d{6}-\\d{3}(?: RW)? Report\\.xlsx$/i.test(name);
+            const generated = /^TEMP_\d{6}-\d{3}.*_\d+\.xlsx$/i.test(name) ||
+              /^\d{6}-\d{3}(?: RW)? Report\.xlsx$/i.test(name);
             const modified = Date.parse(file.lastModifiedDateTime || '');
             if (!file.file || !generated || !Number.isFinite(modified) || modified >= cutoff) continue;
             found++;
