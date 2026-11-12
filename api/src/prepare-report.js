@@ -373,42 +373,10 @@ app.http('prepare-report', {
       tmplBuffer = Buffer.from(await dlR.arrayBuffer());
       context.log('[prepare] Template downloaded:', tmplBuffer.length, 'bytes');
 
-      // Remove abandoned report working copies only. Keep files younger than
-      // 24 hours, so an open editing session is never removed by the scavenger.
-      // Include TEMP_ PDFs-workbooks and the older named preview workbooks.
-      try {
-        let next = GRAPH + '/sites/' + siteId + '/drive/root:/' + folderPath +
-          ':/children?$select=id,name,lastModifiedDateTime,file&$top=200';
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        let found = 0, cleaned = 0, failed = 0;
-        while (next) {
-          const response = await fetch(next, { headers: { Authorization: 'Bearer ' + token } });
-          if (!response.ok) {
-            context.log('[prepare] Orphan listing failed: HTTP ' + response.status);
-            break;
-          }
-          const data = await response.json();
-          for (const file of (data.value || [])) {
-            const name = String(file.name || '');
-            const generated = /^TEMP_\d{6}-\d{3}.*_\d+\.xlsx$/i.test(name) ||
-              /^\d{6}-\d{3}(?: RW)? Report\.xlsx$/i.test(name);
-            const modified = Date.parse(file.lastModifiedDateTime || '');
-            if (!file.file || !generated || !Number.isFinite(modified) || modified >= cutoff) continue;
-            found++;
-            const removed = await deleteTempWorkbook(siteId, file.id, token, context);
-            if (removed.deleted) cleaned++;
-            else {
-              failed++;
-              context.log('[prepare] Orphan retained: ' + name + ' (' + removed.error + ')');
-            }
-          }
-          next = data['@odata.nextLink'] || null;
-        }
-        context.log('[prepare] Orphan cleanup eligible=' + found +
-          ', deleted=' + cleaned + ', failed=' + failed);
-      } catch (err) {
-        context.log('[prepare] Orphan cleanup error (non-fatal): ' + err.message);
-      }
+      // Do not run orphan workbook scanning/deletion on the hot reporting
+      // path. It can take longer than the SWA API gateway request limit and
+      // prevents otherwise healthy report preparation from completing.
+      // Immediate per-file cleanup remains in export-pdf/render-report-pdf.
 
     } catch(e) { return { status: 500, jsonBody: { error: e.message } }; }
 
