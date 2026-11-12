@@ -132,40 +132,45 @@ function buildEmailBody(clientName, labId) {
   </div>`;
 }
 // ── Find COC scan in SharePoint ───────────────────────────────────────────────
-async function findCOCScan(siteId, labId, token) {
-  // Search ONLY within the Archive folder — never search globally to avoid
-  // accidentally finding files mid-move or in processing folders.
-  // We only READ bytes — the original archived file is never modified or deleted.
-  const SCAN_ARCHIVE = process.env.SP_SCAN_ARCHIVE ||
+async function findCOCScan(siteId, labId, token, context) {
+  // Approved scans are filed under Archived/Month YYYY/MM-DD-YY.
+  // Retrieve the specific day's children instead of unreliable indexed search.
+  const root = process.env.SP_SCAN_ARCHIVE ||
     '/sites/Laboratory/Shared Documents/Documents/Lab Scans/Archived';
-  try {
-    const marker     = 'Shared Documents/';
-    const mi         = SCAN_ARCHIVE.indexOf(marker);
-    const folderPath = mi >= 0 ? SCAN_ARCHIVE.slice(mi + marker.length) : SCAN_ARCHIVE.replace(/^\/+/, '');
-
-    const isCOC = f =>
-      f.name?.toLowerCase().endsWith('.pdf') &&
-      !f.name?.toLowerCase().includes('report') &&
-      !f.name?.toLowerCase().includes('temp_');
-
-    // Try search terms in order: full labId, then base ID without suffix
-    const baseId     = labId.split(' ')[0].trim();
-    const searchTerms = [labId, baseId].filter((v, i, a) => a.indexOf(v) === i);
-
-    for (const term of searchTerms) {
-      const searchRes = await fetch(
-        `${GRAPH}/sites/${siteId}/drive/root:/${encodeURIComponent(folderPath)}:/search(q='${encodeURIComponent(term)}')?$select=id,name,parentReference&$top=20`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!searchRes.ok) continue;
-      const { value } = await searchRes.json();
-      const match = (value || []).find(f =>
-        f.name?.toLowerCase().includes(term.toLowerCase()) && isCOC(f)
-      );
-      if (match) return match;
+  const mi = root.indexOf('Shared Documents/');
+  const rel = mi >= 0 ? root.slice(mi + 'Shared Documents/'.length) : root.replace(/^\/+/, '');
+  const baseId = String(labId || '').match(/(\d{6}-\d{3})/)?.[1];
+  if (!baseId) throw new Error('Invalid Lab ID for COC: ' + labId);
+  const d = baseId.slice(0,6);
+  const month = Number(d.slice(0,2)), day = Number(d.slice(2,4)), year = 2000 + Number(d.slice(4,6));
+  const dt = new Date(Date.UTC(year, month - 1, day, 12));
+  if (dt.getUTCMonth() !== month-1 || dt.getUTCDate() !== day) throw new Error('Invalid Lab ID date: ' + labId);
+  const folder = rel + '/' +
+    dt.toLocaleDateString('en-US', { month:'long', year:'numeric', timeZone:'UTC' }) +
+    '/' + d.slice(0,2) + '-' + d.slice(2,4) + '-' + d.slice(4,6);
+  const encoded = folder.split('/').map(encodeURIComponent).join('/');
+  let url = GRAPH + '/sites/' + siteId + '/drive/root:/' + encoded + ':/children?$select=id,name,file&$top=200';
+  const candidates = [];
+  do {
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (!res.ok) throw new Error('COC archive folder lookup failed (HTTP ' + res.status + '): ' + folder);
+    const data = await res.json();
+    for (const file of (data.value || [])) {
+      const name = String(file.name || '');
+      if (file.file && name.startsWith(baseId) &&
+          /^[ _.-]/.test(name.slice(baseId.length)) &&
+          /\.pdf$/i.test(name) && !/\breport\b|temp_/i.test(name)) candidates.push(file);
     }
-    return null;
-  } catch (e) { return null; }
+    url = data['@odata.nextLink'] || null;
+  } while (url);
+  const wantsRW = /\bRW\b/i.test(String(labId).slice(baseId.length));
+  candidates.sort((a,b) => {
+    const rank = f => /^\s*RW[_\s]/i.test(f.name.slice(baseId.length)) ? 1 : 0;
+    return wantsRW ? rank(b)-rank(a) : rank(a)-rank(b);
+  });
+  context.log('[send-report] COC lookup ' + baseId + ' in ' + folder +
+    ': ' + candidates.length + ' match(es)');
+  return candidates[0] || null;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -266,25 +271,6 @@ app.http('send-report', {
         contentBytes: pdfBase64,
       }];
 
-      // Try to attach COC scan
-      const coc = await findCOCScan(siteId, labId, token);
-      if (coc) {
-        try {
-          const cocRes = await fetch(
-            `${GRAPH}/sites/${siteId}/drive/items/${coc.id}/content`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          if (cocRes.ok) {
-            const buf = await cocRes.arrayBuffer();
-            attachments.push({
-              name:         coc.name,
-              contentType:  'application/pdf',
-              contentBytes: Buffer.from(buf).toString('base64'),
-            });
-          }
-        } catch (e) { context.log('[send-report] COC attach failed:', e.message); }
-      }
-
       // Skip email if saveOnly
       if (body.saveOnly) {
         // Just log and return
@@ -300,6 +286,37 @@ app.http('send-report', {
         }).catch(() => {});
         return { status: 200, jsonBody: { success: true, logged: true } };
       }
+
+      // Every emailed report requires the original archived COC.
+      // Do not send an incomplete report or conceal a missing attachment.
+      const coc = await findCOCScan(siteId, labId, token, context);
+      if (!coc) {
+        return { status: 409, jsonBody: {
+          code: 'COC_SCAN_MISSING',
+          error: 'Original COC scan not found for ' + labId + '. Email was NOT sent. Check the archived scan.',
+        } };
+      }
+      let cocBytes;
+      try {
+        const cocRes = await fetch(
+          GRAPH + '/sites/' + siteId + '/drive/items/' + coc.id + '/content',
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        if (!cocRes.ok) throw new Error('SharePoint HTTP ' + cocRes.status);
+        cocBytes = Buffer.from(await cocRes.arrayBuffer());
+        if (cocBytes.length < 5 || cocBytes.subarray(0,5).toString() !== '%PDF-') {
+          throw new Error('COC file is empty or not a PDF');
+        }
+      } catch (e) {
+        return { status: 502, jsonBody: {
+          code: 'COC_SCAN_UNAVAILABLE',
+          error: 'COC scan could not be downloaded for ' + labId + ': ' + e.message + '. Email was NOT sent.',
+        } };
+      }
+      attachments.push({
+        name: coc.name, contentType: 'application/pdf',
+        contentBytes: cocBytes.toString('base64'),
+      });
 
       // Get Gmail access token
       const gmailToken = await getGmailToken();
