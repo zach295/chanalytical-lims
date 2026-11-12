@@ -103,6 +103,29 @@ async function openWorkbookSession(siteId, tempId, token, context) {
   return { sid: null, error };
 }
 
+// Delete a temporary workbook only after verifying the Graph response.
+// 404 means the item was already removed. Do not count HTTP 423/5xx as success.
+async function deleteTempWorkbook(siteId, itemId, token, context) {
+  let last = 'not attempted';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(GRAPH + '/sites/' + siteId + '/drive/items/' + itemId, {
+        method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+      });
+      if (response.ok || response.status === 404) return { deleted: true };
+      last = 'HTTP ' + response.status;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (![408,409,423,429,500,502,503,504].includes(response.status)) break;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    } catch (err) {
+      last = err.message;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    }
+  }
+  return { deleted: false, error: last };
+}
+
 async function hideSheet(siteId, itemId, wsId, token, sid) {
   // Set worksheet visibility to hidden so it doesn't appear in the PDF
   // Use relative path — gReq prepends ${GRAPH} automatically
@@ -457,7 +480,7 @@ app.http('render-report-pdf', {
     const session = await openWorkbookSession(siteId, tempId, token, context);
     const sid = session.sid;
     if (!sid) {
-      await gReq('DELETE', '/sites/' + siteId + '/drive/items/' + tempId, token).catch(() => {});
+      await deleteTempWorkbook(siteId, tempId, token, context);
       return { status: 409, jsonBody: {
         error: 'Excel workbook session failed after retries: ' + session.error + '. Nothing was sent.',
         code: 'REPORT_PREP_SESSION_FAILED', retry: true,
@@ -774,7 +797,7 @@ app.http('render-report-pdf', {
       }
     } catch (verifyErr) {
       context.log('[pdf] VERIFICATION FAILED:', verifyErr.message);
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      await deleteTempWorkbook(siteId, tempId, token, context);
       return {
         status: 409,
         jsonBody: {
@@ -797,7 +820,7 @@ app.http('render-report-pdf', {
       pdfBase64 = pdfBuffer.toString('base64');
       context.log('[pdf] PDF size:', pdfBase64.length);
     } catch(e) {
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      await deleteTempWorkbook(siteId, tempId, token, context);
       return { status: 500, jsonBody: { error: e.message } };
     }
 
@@ -815,7 +838,7 @@ app.http('render-report-pdf', {
       context.log(`[pdf] Visible PDF verified for ${labId}: ${visible.verified} indicators on ${visible.pages} pages`);
     } catch (visualError) {
       context.log(`[pdf] VISIBLE VALIDATION FAILED for ${labId}: ${visualError.message}`);
-      await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => {});
+      await deleteTempWorkbook(siteId, tempId, token, context);
       return { status: 409, jsonBody: {
         error: `Report validation failed: ${visualError.message}. PDF was not released or sent.`,
         code: 'PDF_VISIBLE_COLOR_MISMATCH', retry: false,
@@ -825,14 +848,8 @@ app.http('render-report-pdf', {
     // ── Step 10: Close session then delete temp file ───────────────────────
     // Close workbook session first so the file isn't locked
     await gReq('POST', `/sites/${siteId}/drive/items/${tempId}/workbook/closeSession`, token, {}).catch(() => {});
-    // Retry delete up to 3 times with a small delay
-    let deleted = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const delRes = await gReq('DELETE', `/sites/${siteId}/drive/items/${tempId}`, token).catch(() => null);
-      if (delRes !== null) { deleted = true; break; }
-      await new Promise(r => setTimeout(r, attempt * 1000));
-    }
-    context.log('[pdf] Temp file', deleted ? 'deleted' : 'delete failed — will be caught by orphan cleanup');
+    const cleanup = await deleteTempWorkbook(siteId, tempId, token, context);
+    context.log('[pdf] Temp file ' + (cleanup.deleted ? 'deleted' : 'retained: ' + cleanup.error));
 
     // Build pretty filename: [address]_[abbrev]_[labId] Report.pdf
     const safe = s => (s || '').trim().replace(/[<>:"/\\|?*]/g, '').trim();

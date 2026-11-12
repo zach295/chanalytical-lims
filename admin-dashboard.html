@@ -6030,6 +6030,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (!labId) { showToast('Select or enter a Lab ID first.'); return; }
 
+    // Discard the previous report's editable working copy before switching IDs.
+    // Only working Excel files are deleted; validated PDFs/archives are untouched.
+    if (currentReportData?._tempId && currentReportData.labId !== labId) {
+      cleanupTempFile(currentReportData._tempId);
+      currentReportData._tempId = null;
+      stopKeepalive();
+    }
+
     statusEl.style.display = 'block';
     statusEl.style.color = 'var(--slate)';
     statusEl.textContent = '⏳ Loading report data...';
@@ -7744,6 +7752,12 @@ document.addEventListener('DOMContentLoaded', function() {
           }),
         }).catch(()=>{});
         showToast('✅ PDF saved');
+        // The saved PDF is independent of the editable Excel working copy.
+        if (currentReportData._tempId) {
+          cleanupTempFile(currentReportData._tempId);
+          currentReportData._tempId = null;
+          stopKeepalive();
+        }
         // These lines prevent the print fallback from running
         const rLabId3 = currentReportData.labId || '';
         logActivity({ date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }), client: currentReportData.meta?.customer || rLabId3, type: 'report_saved', qty: 1, notes: 'PDF — ' + rLabId3, by: authorizedBy });

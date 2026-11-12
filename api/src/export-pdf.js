@@ -15,6 +15,29 @@ const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
 
+// Delete a temporary workbook only after verifying the Graph response.
+// 404 means the item was already removed. Do not count HTTP 423/5xx as success.
+async function deleteTempWorkbook(siteId, itemId, token, context) {
+  let last = 'not attempted';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(GRAPH + '/sites/' + siteId + '/drive/items/' + itemId, {
+        method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+      });
+      if (response.ok || response.status === 404) return { deleted: true };
+      last = 'HTTP ' + response.status;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (![408,409,423,429,500,502,503,504].includes(response.status)) break;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    } catch (err) {
+      last = err.message;
+      context?.log('[Temp cleanup] attempt ' + attempt + '/3 ' + itemId + ': ' + last);
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+    }
+  }
+  return { deleted: false, error: last };
+}
+
 app.http('export-pdf', {
   methods:   ['POST'],
   authLevel: 'anonymous',
@@ -29,11 +52,13 @@ app.http('export-pdf', {
       if (body.cleanupOnly) {
         const siteId2 = process.env.SP_SITE_ID;
         const token2  = await getToken();
-        // Just delete on cleanup — orphaned sessions don't need archiving
-        await fetch(`${GRAPH}/sites/${siteId2}/drive/items/${tempId}`,
-          { method: 'DELETE', headers: { Authorization: `Bearer ${token2}` } }).catch(() => {});
-        context.log('[export-pdf] Cleanup only — deleted tempId:', tempId);
-        return { status: 200, jsonBody: { success: true, deleted: true } };
+        const result = await deleteTempWorkbook(siteId2, tempId, token2, context);
+        context.log('[export-pdf] Cleanup only: ' + tempId + ' ' +
+          (result.deleted ? 'deleted' : result.error));
+        return { status: result.deleted ? 200 : 503, jsonBody: {
+          success: result.deleted, deleted: result.deleted,
+          error: result.deleted ? undefined : 'Temporary workbook cleanup failed: ' + result.error,
+        } };
       }
 
       if (!labId)  return { status: 400, jsonBody: { error: 'labId required'  } };
@@ -64,10 +89,9 @@ app.http('export-pdf', {
       // ── Delete temp Excel and save PDF copy to Archive ───────────────────────
       if (!keepTemp) {
         // Delete the temp Excel file
-        await fetch(`${GRAPH}/sites/${siteId}/drive/items/${tempId}`,
-          { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
-        ).catch(e => context.log('[export-pdf] Delete failed (non-fatal):', e.message));
-        context.log('[export-pdf] Temp Excel deleted');
+        const result = await deleteTempWorkbook(siteId, tempId, token, context);
+        context.log('[export-pdf] Temp Excel ' +
+          (result.deleted ? 'deleted' : 'cleanup failed: ' + result.error));
 
         // Save PDF copy to Archive folder
         try {
