@@ -334,19 +334,37 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
       } catch(e) {}
     }
 
-    // Step 2: Delete rows bottom to top
-    for (const rowNum of descending) {
-      const addr = `A${rowNum}:${colLetter((nc||10)-1)}${rowNum}`;
-      await fetch(
-        `${GRAPH}/sites/${siteId}/drive/items/${itemId}/workbook/worksheets/${wsId}/range(address='${addr}')/delete`,
+    // Delete contiguous unused rows together, from bottom to top. This is
+    // equivalent to the former individual deletions but saves round trips.
+    const deleteBlocks = [];
+    for (const row of descending) {
+      const previous = deleteBlocks[deleteBlocks.length - 1];
+      if (previous && row === previous.first - 1) previous.first = row;
+      else deleteBlocks.push({ first: row, last: row });
+    }
+    const rowDeleteStart = Date.now();
+    for (const block of deleteBlocks) {
+      const addr = 'A' + block.first + ':' + colLetter((nc || 10) - 1) + block.last;
+      const response = await fetch(
+        GRAPH + '/sites/' + siteId + '/drive/items/' + itemId +
+          "/workbook/worksheets/" + wsId + "/range(address='" + addr + "')/delete",
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'workbook-session-id': sid },
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+            'workbook-session-id': sid,
+          },
           body: JSON.stringify({ shift: 'Up' }),
         }
-      ).catch(e => context.log('[fillSheet] delete error:', e.message));
+      );
+      if (!response.ok) {
+        throw new Error('Required report row deletion failed (' +
+          response.status + ') at ' + addr);
+      }
     }
-    context.log(`[pdf] Deleted ${toDelete.length} unused rows`);
+    context.log('[pdf] Deleted ' + toDelete.length + ' unused rows in ' +
+      deleteBlocks.length + ' blocks (' + (Date.now() - rowDeleteStart) + 'ms)');
 
     // Step 3: Re-apply bottom border to all remaining param rows (row numbers have shifted)
     if (savedBorder) {
