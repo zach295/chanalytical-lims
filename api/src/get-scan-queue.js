@@ -1,6 +1,6 @@
 const { app } = require('@azure/functions');
 const { listItems, LISTS } = require('../shared/graph');
-const { loadClientDirectory, resolveClient } = require('../shared/client-identity');
+const { loadClientDirectory, displayNameForInput } = require('../shared/client-identity');
 
 app.http('get-scan-queue', {
   methods: ['GET'],
@@ -12,14 +12,17 @@ app.http('get-scan-queue', {
       // so $top:100 could return an older slice of the list and hide the scan that
       // was just created. Load the list, then sort by SharePoint item id newest-first.
       const [queueItems, clientDirectory] = await Promise.all([
-        listItems(LISTS.REVIEW_QUEUE), loadClientDirectory(),
+        listItems(LISTS.REVIEW_QUEUE),
+        loadClientDirectory().catch(err => {
+          context.log('[get-scan-queue] DBA directory unavailable; retaining stored client labels:', err.message);
+          return null;
+        }),
       ]);
-      // Resolve a DBA for display only. Never rewrite the stored ClientName or
-      // choose between multiple accounts with a shared DBA/official name.
-      const displayCustomer = name => {
-        const match = resolveClient(clientDirectory, name);
-        return match.status === 'matched' ? match.displayName : String(name || '');
-      };
+      // Resolve a DBA for display only. Never rewrite stored ClientName or
+      // choose between multiple accounts sharing a DBA/official name.
+      const displayCustomer = name => clientDirectory
+        ? displayNameForInput(clientDirectory, name)
+        : String(name || '');
       queueItems.sort((a, b) => Number(b._id || 0) - Number(a._id || 0));
 
       const filtered = queueItems.filter(r => {
