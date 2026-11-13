@@ -5996,7 +5996,7 @@ document.addEventListener('DOMContentLoaded', function() {
         _pendingLabIds.sort((a,b) => a.baseId > b.baseId ? 1 : -1);
         sel.innerHTML = ['<option value="">— Select Lab ID —</option>',
           ..._pendingLabIds.map(r =>
-            `<option value="${r.baseId}">${r.baseId} — ${r.customer||'Unknown'} — ${r.tests.join(', ')}</option>`
+            `<option value="${adminEsc(r.baseId)}">${adminEsc(r.baseId)} — ${adminEsc(r.displayCustomer || r.customer || 'Unknown')} — ${adminEsc((r.tests || []).join(', '))}</option>`
           )
         ].join('');
       }
@@ -6031,7 +6031,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="margin-top:8px;padding:10px 14px;background:var(--off);border-radius:8px;font-size:13px;">
           <div><strong>${entry.fullIds.join(', ')}</strong> — ${entry.tests.join(' · ')}</div>
           <div style="color:var(--slate);margin-top:4px;">
-            ${entry.customer||''}
+            ${adminEsc(entry.displayCustomer || entry.customer || '')}
             ${entry.location ? ' · ' + entry.location : ''}
             ${entry.city ? ', ' + entry.city : ''}
             ${entry.state ? ' ' + entry.state : ''}
