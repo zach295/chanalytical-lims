@@ -5,6 +5,8 @@
  */
 const { app }                          = require('@azure/functions');
 const { listItems, updateItem, LISTS } = require('../shared/graph');
+const { loadClientDirectory } = require('../shared/client-identity');
+const { projectOverviewRecords } = require('../shared/overview-dba');
 
 function fmtName(name) {
   if (!name || !name.startsWith('Public-')) return name || '';
@@ -66,15 +68,20 @@ app.http('accession-status', {
 
         // overview-stats — returns raw records for the Overview tab
         if (action === 'overview-stats') {
-          const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []);
-          const records  = allItems.map(r => ({
-            labId:        (r.field_1  || '').trim(),
-            testType:     (r.field_2  || '').trim(),
-            customer:     fmtName(r.field_3 || ''),
-            dateReceived: (r.field_6  || '').trim(),
-            status:       (r.field_14 || 'Pending').trim(),
-          })).filter(r => r.labId);
-          return { status: 200, jsonBody: { records } };
+          // Resolve display names from the Clients directory, but preserve
+          // the official account identity and every original intake record.
+          // Fail with a visible error if the directory cannot be read; do not
+          // silently present a partial or misattributed DBA conversion.
+          const [allItems, directory] = await Promise.all([
+            listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }),
+            loadClientDirectory(),
+          ]);
+          const records = projectOverviewRecords(allItems, directory);
+          return { status: 200, jsonBody: {
+            records,
+            dbaConflicts: directory.conflicts.length,
+            unresolvedClients: records.filter(r => r.clientMatchStatus !== 'matched').length,
+          } };
         }
 
         // read-clients
