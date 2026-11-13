@@ -2873,6 +2873,21 @@ document.addEventListener('DOMContentLoaded', function() {
   let scanQueueData = { pending: [], approved: [] };
   let recentlyApprovedCache = []; // in-memory list since approved rows are deleted from sheet
 
+  // Presentation only. Use a unique exact legal name/DBA match for approvals
+  // created in this browser session; archived records are resolved server-side.
+  function reviewApprovedDisplayName(row) {
+    if (row?.displayCustomer) return row.displayCustomer;
+    const raw = String(row?.customer || '').trim();
+    if (!raw) return '—';
+    const matches = (_REVIEW_CLIENTS || []).filter(c =>
+      [c.clientName, c.dbaName].some(label =>
+        label && String(label).trim().toLowerCase() === raw.toLowerCase()));
+    return matches.length === 1
+      ? (matches[0].dbaName || matches[0].clientName || raw)
+      : raw;
+  }
+
+
   async function refreshClientList() {
     try {
       const res  = await fetch('/api/accession-status', {
@@ -3008,7 +3023,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Approved Today breakdown — use server-side breakdown (all items, not just top 5)
         const clientBreakdown = todayData.clientBreakdown || [];
         if (todayBreakEl && clientBreakdown.length) {
-          todayBreakEl.innerHTML = clientBreakdown.map(({name,count})=>`<div>${name}: <strong>${count}</strong></div>`).join('');
+          todayBreakEl.innerHTML = clientBreakdown.map(({name,count})=>`<div>${adminEsc(name)}: <strong>${count}</strong></div>`).join('');
           todayBreakEl.style.display = 'block';
         }
 
@@ -3036,7 +3051,7 @@ document.addEventListener('DOMContentLoaded', function() {
           approvedBody.innerHTML = recent.length
             ? recent.map(a => `<tr>
                 <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
-                <td class="client-name">${a.customer||'—'}</td>
+                <td class="client-name">${adminEsc(reviewApprovedDisplayName(a))}</td>
                 <td style="font-size:12px;">${a.coaTest||'—'}</td>
                 <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
               </tr>`).join('')
@@ -5130,7 +5145,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const recent = recentlyApprovedCache.slice(0, 5);
         approvedBodyEl.innerHTML = recent.map(a => `<tr>
           <td style="font-family:monospace;font-weight:700;color:var(--teal);">${a.fullId||'—'}</td>
-          <td class="client-name">${a.customer||'—'}</td>
+          <td class="client-name">${adminEsc(reviewApprovedDisplayName(a))}</td>
           <td style="font-size:12px;">${a.coaTest||'—'}</td>
           <td style="font-size:12px;color:var(--slate);">${a.approvedBy||'—'}</td>
         </tr>`).join('');
@@ -5996,7 +6011,7 @@ document.addEventListener('DOMContentLoaded', function() {
         _pendingLabIds.sort((a,b) => a.baseId > b.baseId ? 1 : -1);
         sel.innerHTML = ['<option value="">— Select Lab ID —</option>',
           ..._pendingLabIds.map(r =>
-            `<option value="${r.baseId}">${r.baseId} — ${r.customer||'Unknown'} — ${r.tests.join(', ')}</option>`
+            `<option value="${adminEsc(r.baseId)}">${adminEsc(r.baseId)} — ${adminEsc(r.displayCustomer || r.customer || 'Unknown')} — ${adminEsc((r.tests || []).join(', '))}</option>`
           )
         ].join('');
       }
@@ -6031,7 +6046,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="margin-top:8px;padding:10px 14px;background:var(--off);border-radius:8px;font-size:13px;">
           <div><strong>${entry.fullIds.join(', ')}</strong> — ${entry.tests.join(' · ')}</div>
           <div style="color:var(--slate);margin-top:4px;">
-            ${entry.customer||''}
+            ${adminEsc(entry.displayCustomer || entry.customer || '')}
             ${entry.location ? ' · ' + entry.location : ''}
             ${entry.city ? ', ' + entry.city : ''}
             ${entry.state ? ' ' + entry.state : ''}

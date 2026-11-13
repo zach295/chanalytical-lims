@@ -7,6 +7,7 @@ const { app }                          = require('@azure/functions');
 const { listItems, updateItem, LISTS } = require('../shared/graph');
 const { loadClientDirectory } = require('../shared/client-identity');
 const { projectOverviewRecords } = require('../shared/overview-dba');
+const { createReportLabIdDisplayResolver } = require('../shared/report-labid-display');
 
 function fmtName(name) {
   if (!name || !name.startsWith('Public-')) return name || '';
@@ -28,7 +29,11 @@ app.http('accession-status', {
 
       // ── GET ──────────────────────────────────────────────────────────────────
       if (request.method === 'GET') {
-        const items = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 });
+        const [items, clientDirectory] = await Promise.all([
+          listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }),
+          loadClientDirectory(),
+        ]);
+        const displayClient = createReportLabIdDisplayResolver(clientDirectory);
         const byBase = {};
         for (const r of items) {
           const fullId   = (r.field_1  || '').trim();
@@ -52,6 +57,11 @@ app.http('accession-status', {
           if (status && status !== 'Pending') byBase[baseId].status = status;
         }
         const all      = Object.values(byBase);
+        // DBA is presentation-only; rawCustomer and customer continue to hold
+        // the original account label for all downstream report operations.
+        for (const entry of all) {
+          entry.displayCustomer = displayClient(entry.rawCustomer) || entry.customer;
+        }
         const pending  = all.filter(r => r.status === 'Pending');
         const reported = all.filter(r => r.status !== 'Pending');
         return {
@@ -132,7 +142,11 @@ app.http('accession-status', {
           const yy   = etParts.find(p=>p.type==='year')?.value  || '';
           const labPrefix = `${mm}${dd}${yy}`; // e.g. "080426"
 
-          const allI     = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
+          const [allI, clientDirectory] = await Promise.all([
+            listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }),
+            loadClientDirectory(),
+          ]);
+          const displayClient = createReportLabIdDisplayResolver(clientDirectory);
           const allToday = allI
             .filter(r => {
               const fullId = (r.field_1 || '').trim();
@@ -143,6 +157,7 @@ app.http('accession-status', {
               fullId:     r.field_1  || '',
               coaTest:    r.field_2  || '',
               customer:   fmtName(r.field_3 || ''),
+              displayCustomer: displayClient(r.field_3 || '') || fmtName(r.field_3 || ''),
               approvedBy: r.field_12 || '',
               timestamp:  r.Title    || '',
             }))
@@ -151,7 +166,7 @@ app.http('accession-status', {
           // Build client breakdown from ALL today's items
           const clientCounts = {};
           allToday.forEach(a => {
-            const c = a.customer || 'Unknown';
+            const c = a.displayCustomer || a.customer || 'Unknown';
             clientCounts[c] = (clientCounts[c] || 0) + 1;
           });
           const clientBreakdown = Object.entries(clientCounts)
@@ -172,7 +187,7 @@ app.http('accession-status', {
             const customer = String(item.customer || '').toLowerCase().trim();
             const match = northernClients.find(name => customer.includes(name.split(' ')[0]));
             if (!match) continue;
-            const display = item.customer || 'Unknown';
+            const display = item.displayCustomer || item.customer || 'Unknown';
             northernCounts[display] = (northernCounts[display] || 0) + 1;
           }
           const dysartsBreakdown = Object.entries(northernCounts)
