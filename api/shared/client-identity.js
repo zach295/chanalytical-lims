@@ -92,10 +92,17 @@ function resolveClient(directory, input, { clientId = '' } = {}) {
   return { status: 'matched', matchedBy, ...[...matches][0] };
 }
 
+// Presentation-only resolver. Unknown and ambiguous labels are left intact,
+// so an operator must choose the correct account rather than autoassigning it.
+function displayNameForInput(directory, input) {
+  const match = resolveClient(directory, input);
+  return match.status === 'matched' ? match.displayName : clean(input);
+}
+
 async function loadClientDirectory() {
   // listItems paginates via @odata.nextLink, unlike older 500-row reads.
   return buildClientDirectory(await listItems(LISTS.CLIENTS));
 }
 
 module.exports = { clean, isPublicPricing, toClient, buildClientDirectory,
-  resolveClient, loadClientDirectory };
+  resolveClient, displayNameForInput, loadClientDirectory };

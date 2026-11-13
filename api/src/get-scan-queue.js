@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { listItems, LISTS } = require('../shared/graph');
+const { loadClientDirectory, displayNameForInput } = require('../shared/client-identity');
 
 app.http('get-scan-queue', {
   methods: ['GET'],
@@ -10,7 +11,18 @@ app.http('get-scan-queue', {
       // Do not use $top here. SharePoint does not guarantee newest-first ordering,
       // so $top:100 could return an older slice of the list and hide the scan that
       // was just created. Load the list, then sort by SharePoint item id newest-first.
-      const queueItems = await listItems(LISTS.REVIEW_QUEUE);
+      const [queueItems, clientDirectory] = await Promise.all([
+        listItems(LISTS.REVIEW_QUEUE),
+        loadClientDirectory().catch(err => {
+          context.log('[get-scan-queue] DBA directory unavailable; retaining stored client labels:', err.message);
+          return null;
+        }),
+      ]);
+      // Resolve a DBA for display only. Never rewrite stored ClientName or
+      // choose between multiple accounts sharing a DBA/official name.
+      const displayCustomer = name => clientDirectory
+        ? displayNameForInput(clientDirectory, name)
+        : String(name || '');
       queueItems.sort((a, b) => Number(b._id || 0) - Number(a._id || 0));
 
       const filtered = queueItems.filter(r => {
@@ -38,6 +50,7 @@ app.http('get-scan-queue', {
         barcodeId:        r.BarcodeID    || r.BarcodeId    || '',
         baseId:           (r.BarcodeID    || r.BarcodeId    || '').split(' ')[0].trim(),
         customer:         r.ClientName   || '',
+        displayCustomer:  displayCustomer(r.ClientName),
         email:            r.Email        || '',
         dateDrawn:        r.SampleDate   || '',
         timeDrawn:        r.SampleTime   || '',
@@ -101,6 +114,7 @@ app.http('get-scan-queue', {
         labIds:     [...new Set(g.labIds)],
         tests:      [...new Set(g.coaTests)],
         customer:   g.customer,
+        displayCustomer: displayCustomer(g.customer),
         approvedBy: g.approvedBy,
       }));
       const todayCount = allSorted.filter(g => g.ts.startsWith(today)).length;
