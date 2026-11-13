@@ -6194,8 +6194,10 @@ document.addEventListener('DOMContentLoaded', function() {
       renderEditableReport(currentReportData);
       document.getElementById('rpt-preview-wrapper').style.display = 'block';
       document.getElementById('rpt-preview-wrapper').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      statusEl.textContent = '✅ Report loaded — preparing Excel file...';
-      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = data.reportClientWarning
+        ? '⚠️ ' + data.reportClientWarning
+        : '✅ Report loaded — preparing Excel file...';
+      statusEl.style.color = data.reportClientWarning ? 'var(--warning)' : 'var(--success)';
 
       // The editable preview lives in currentReportData. Final PDF rendering
       // independently writes and validates a fresh workbook from these values.
