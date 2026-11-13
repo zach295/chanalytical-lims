@@ -1285,11 +1285,12 @@ document.addEventListener('DOMContentLoaded', function() {
         <thead><tr style="background:var(--navy);color:white;">
           <th style="padding:10px 12px;text-align:left;">Date</th>
           <th style="padding:10px 12px;text-align:left;">Lab ID</th>
+          <th style="padding:10px 12px;text-align:left;">Client (DBA)</th>
           <th style="padding:10px 12px;text-align:left;">Type</th>
           <th style="padding:10px 12px;text-align:left;">Reason</th>
           <th style="padding:10px 12px;text-align:left;">Rejected By</th>
         </tr></thead>
-        <tbody id="rej-history"><tr><td colspan="5"><div class="empty-state">Loading...</div></td></tr></tbody>
+        <tbody id="rej-history"><tr><td colspan="6"><div class="empty-state">Loading...</div></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -3705,7 +3706,8 @@ document.addEventListener('DOMContentLoaded', function() {
         resultEl.innerHTML = matches.map(r => {
           const addr = [r.field_8, r.field_9, r.field_10].filter(Boolean).join(', ');
           return `<div style="margin-bottom:6px;">
-            ✅ <strong>${r.field_1}</strong> — ${r.field_2||''}
+            ✅ <strong>${adminEsc(r.field_1 || '')}</strong> — ${adminEsc(r.field_2 || '')}
+            <div style="font-size:12px;color:var(--navy);margin:2px 0 0 18px;">Client: ${adminEsc(r.displayCustomer || r.field_3 || 'Unknown')}</div>
             ${addr ? `<div style="font-size:12px;color:var(--slate);margin-top:2px;margin-left:18px;">📍 ${addr}</div>` : ''}
           </div>`;
         }).join('');
@@ -3785,18 +3787,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await res.json();
       const rows = data.rows || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No rejections recorded yet.</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No rejections recorded yet.</div></td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(r => `<tr style="border-bottom:1px solid var(--border);">
         <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${r[0]?.split('T')[0]||''}</td>
-        <td style="padding:10px 12px;font-family:monospace;font-size:13px;">${r[1]||''}</td>
-        <td style="padding:10px 12px;font-size:13px;color:var(--error);">${r[2]||''}</td>
+        <td style="padding:10px 12px;font-family:monospace;font-size:13px;">${adminEsc(r[1] || '')}</td>
+        <td style="padding:10px 12px;font-size:13px;">${adminEsc(r[5] || '—')}</td>
+        <td style="padding:10px 12px;font-size:13px;color:var(--error);">${adminEsc(r[2] || '')}</td>
         <td style="padding:10px 12px;font-size:13px;">${r[3]||''}</td>
         <td style="padding:10px 12px;font-size:12px;color:var(--slate);">${r[4]||''}</td>
       </tr>`).join('');
     } catch {
-      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">⚠️ Could not load rejection history.</div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">⚠️ Could not load rejection history.</div></td></tr>';
     }
   }
 
