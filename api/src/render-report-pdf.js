@@ -11,6 +11,7 @@
 const { app }      = require('@azure/functions');
 const { getToken } = require('../shared/graph');
 const { calcFillColor } = require('../shared/report-colors');
+const { reportAttentionName } = require('../shared/report-client-display');
 const { verifyVisibleReportPdf, expectedClass } = require('../shared/pdf-visual-check');
 const crypto = require('crypto');
 const GRAPH        = 'https://graph.microsoft.com/v1.0';
@@ -180,12 +181,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     const cityStateZip  = [m.city, m.state, m.zip].filter(Boolean).join(', ');
     const fullSampleAddr = [m.location, cityStateZip].filter(Boolean).join(', ');
     const attAddress    = m.billingAddress || fullSampleAddr || '';
-    const rawClientName = m.clientName || m.customer || '';
-    const isPublicClient = /^Public-/i.test(rawClientName);
-    const rawNameStr    = rawClientName.replace(/^Public-/i, '').trim();
-    const cleanName     = isPublicClient && rawNameStr.includes(', ')
-      ? rawNameStr.split(', ').reverse().join(' ')
-      : rawNameStr;
+    const cleanName     = reportAttentionName(m);
     addCell(attLbl.r,     attCol, cleanName);
     if (attAddress)  addCell(attLbl.r + 1, attCol, attAddress);
     const emailLine = m.reportEmail || m.email || '';
