@@ -4854,7 +4854,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <label for="sc-${r.fileId}-customer-select">Customer / Company <span style="font-size:10px;color:var(--slate);font-weight:400;margin-left:4px;">(Report To section)</span></label>
             <select id="sc-${r.fileId}-customer-select" onchange="
               const typed = document.getElementById('sc-${r.fileId}-customer');
-              typed.value = this.value;
+              typed.value = this.value ? (this.selectedOptions?.[0]?.textContent || this.value) : '';
               const em = document.getElementById('sc-${r.fileId}-email');
               if (em) {
                 if (this.value) {
@@ -4947,7 +4947,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const approvedCustomer = selectedBusiness || g('customer');
     if (selectedBusiness) {
       const input = document.getElementById(`sc-${fileId}-customer`);
-      if (input) input.value = selectedBusiness;
+      if (input) input.value = businessSelect?.selectedOptions?.[0]?.textContent || selectedBusiness;
     }
     // Collect checked tests
     const testEls = document.querySelectorAll(`#sc-${fileId}-tests input[type=checkbox][value]:checked`);
