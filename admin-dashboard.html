@@ -6668,9 +6668,13 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/api/accession-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'all-intake' }) }),
       ]);
 
+      if (!billingRes.ok || !clientsRes.ok || !intakeRes.ok)
+        throw new Error('Could not load required billing, client or intake records.');
       const billingData = await billingRes.json().catch(() => ({}));
       const clientsData = await clientsRes.json().catch(() => ({}));
       const intakeData  = await intakeRes.json().catch(() => ({}));
+      if (!clientsData.success || !intakeData.success)
+        throw new Error('Client directory or intake data unavailable for state report.');
       const billingRows = billingData.rows || [];
       const clients     = clientsData.clients || [];
       const intakeRows  = intakeData.items || [];
@@ -6810,9 +6814,13 @@ document.addEventListener('DOMContentLoaded', function() {
       const fromDate  = new Date(fromVal + 'T00:00:00');
       const yy        = String(fromDate.getFullYear()).slice(-2);
       const mm        = String(fromDate.getMonth() + 1).padStart(2, '0');
-      const coName    = company
-        ? (clients.find(c => c.clientCode === company || c.clientName === company)?.clientName || company)
-        : 'All';
+      // The state workbook has a fixed 11-column regulatory schema and no
+      // customer-name field. Keep its columns unchanged; apply DBA to the
+      // export filename and workbook metadata instead.
+      const selectedClient = clients.find(c => c.clientCode === company || c.clientName === company);
+      const coName = selectedClient?.displayName || selectedClient?.clientName || company || 'All';
+      wb.Props = { ...(wb.Props || {}), Title: 'Radon Water State Report — ' + coName,
+        Subject: 'Client DBA: ' + coName };
       const coSlug    = coName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
       const fileName  = `${yy}_${mm}_Radon_Water_to_State_${coSlug}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -6849,12 +6857,22 @@ document.addEventListener('DOMContentLoaded', function() {
       }).then(r=>r.json()).then(d=>{
         const clients = (d.clients||[])
           .filter(c => c.clientName && c.clientCode)
-          .sort((a,b) => a.clientName.localeCompare(b.clientName));
+          .sort((a,b) => (a.displayName || a.clientName).localeCompare(b.displayName || b.clientName));
+        // Different accounts can share a DBA. Show their official names when
+        // needed for disambiguation while retaining the original code value.
+        const labelCounts = new Map();
+        for (const c of clients) {
+          const name = (c.displayName || c.clientName).trim().toLowerCase();
+          labelCounts.set(name, (labelCounts.get(name) || 0) + 1);
+        }
         sel.innerHTML = '<option value="" disabled selected>Select a company</option>';
         for (const c of clients) {
           const opt = document.createElement('option');
           opt.value = c.clientCode || c.clientName;
-          opt.textContent = c.clientName;
+          const display = c.displayName || c.clientName;
+          opt.textContent = labelCounts.get(display.trim().toLowerCase()) > 1
+            ? display + ' (' + c.clientName + ')'
+            : display;
           sel.appendChild(opt);
         }
       }).catch(e => console.warn('[radon dropdown]', e));
@@ -6872,6 +6890,35 @@ document.addEventListener('DOMContentLoaded', function() {
     const monthLabel = fromVal === toVal ? fmtDate(fromVal) : `${fmtDate(fromVal)} – ${fmtDate(toVal)}`;
 
     showToast('⏳ Generating report...');
+
+    // Read the current client directory specifically for name presentation.
+    // Never use DBA values for northern-client filtering or kit deduplication.
+    let dysartsClients;
+    try {
+      const clientRes = await fetch('/api/accession-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clients-full' }),
+      });
+      if (!clientRes.ok) throw new Error('HTTP ' + clientRes.status);
+      const clientData = await clientRes.json();
+      if (!clientData.success) throw new Error('Client directory unavailable');
+      dysartsClients = clientData.clients || [];
+    } catch (err) {
+      showToast('⚠️ Cannot resolve DBA names for Dysart\'s report: ' + err.message);
+      return;
+    }
+    const byOfficial = new Map();
+    for (const c of dysartsClients) {
+      const name = String(c.clientName || '').trim().toLowerCase();
+      if (!name) continue;
+      if (!byOfficial.has(name)) byOfficial.set(name, []);
+      byOfficial.get(name).push(c);
+    }
+    const dysartsDisplay = official => {
+      const raw = String(official || '').trim();
+      const matches = byOfficial.get(raw.toLowerCase()) || [];
+      return matches.length === 1 ? (matches[0].displayName || raw) : raw;
+    };
 
     // Pull all intake data if not already loaded
     if (!_intakeRows.length) await loadIntake();
@@ -6905,7 +6952,9 @@ document.addEventListener('DOMContentLoaded', function() {
       ].join('|');
 
       if (!kitMap[kitKey]) {
-        kitMap[kitKey] = { ...r, _allLabIds: [r.labId], _allServices: [r.services].filter(Boolean) };
+        kitMap[kitKey] = { ...r,
+          _dbaDisplay: dysartsDisplay(r.clientName || r.customer),
+          _allLabIds: [r.labId], _allServices: [r.services].filter(Boolean) };
       } else {
         kitMap[kitKey]._allLabIds.push(r.labId);
         if (r.services) kitMap[kitKey]._allServices.push(r.services);
@@ -6969,7 +7018,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const kitsWord = dayKits.length === 1 ? 'kit' : 'kits';
       const dayRows = dayKits.map((s, i) =>
         `<tr style="background:${i % 2 === 0 ? 'white' : '#f9fafb'}">
-          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${(s.clientName||s.customer||'—').trim()}</td>
+          <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${adminEsc(s._dbaDisplay || s.clientName || s.customer || '—')}</td>
           <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;font-weight:600;color:#1e3a5f;">${s.labId||'—'}</td>
           <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;">${s.services||'—'}</td>
           <td style="padding:5px 10px;border:1px solid #ddd;font-size:11px;color:#555;">${s.location||'—'}</td>
