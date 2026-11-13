@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { getToken, listItems } = require('../shared/graph');
+const { toClient, buildClientDirectory } = require('../shared/client-identity');
 
 app.http('clients-read', {
   methods: ['GET'],
@@ -18,6 +19,7 @@ app.http('clients-read', {
       const data = await res.json();
 
       const clients = (data.value || []).map(item => {
+        const identity = toClient({ _id: item.id, ...item.fields });
         const f = item.fields || {};
         return {
           _id:              item.id,
@@ -26,6 +28,7 @@ app.http('clients-read', {
           abbrev:           f.Abbrev           || '',
           mainContact:      f.Email            || '',   // Main Contact (first name)
           dbaName:          f.Phone            || '',   // DBA Name
+          displayName:      identity.displayName,      // Phase 1: read-only DBA-first display label
           reportEmail:      f.Aliases          || '',   // Report Email Address
           billingEmail:     f.Notes            || '',   // Billing Email Address
           phone:            f.Active           || '',   // Phone #
@@ -42,7 +45,8 @@ app.http('clients-read', {
       return {
         status: 200,
         headers: { 'Cache-Control': 'no-store' },
-        jsonBody: { clients },
+        // Report conflicts without changing which client any workflow selects.
+        jsonBody: { clients, dbaConflicts: buildClientDirectory(clients).conflicts },
       };
     } catch(e) {
       context.log('[clients-read] Error:', e.message);
