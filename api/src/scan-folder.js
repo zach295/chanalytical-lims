@@ -10,7 +10,9 @@ const {
   spListGet,
   spListCreate,
   spListQuery,
+  listItems, LISTS,
 } = require('../shared/graph');
+const { matchIntakeClient } = require('../shared/intake-client-match');
 
 // ── ET time helpers (inline — no external dependency needed) ──────────────────
 const TZ = 'America/New_York';
@@ -125,27 +127,21 @@ async function moveSpFile(itemId, destFolderPath, token) {
 
 // ── SharePoint List helpers ───────────────────────────────────────────────────
 
-// Load clients from SharePoint "Clients" list
-async function loadClients(token) {
-  try {
-    const siteId = process.env.SP_SITE_ID;
-    const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=Title,ClientName,ClientCode,Abbrev,Email,Aliases,Active,BillingAddress,Notes)&$top=500`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.value || []).map(item => ({
-      clientName:     item.fields?.ClientName || item.fields?.Title || '',
-      clientCode:     item.fields?.ClientCode     || '',
-      abbrev:         item.fields?.Abbrev         || '',
-      email:          item.fields?.Aliases        || '', // Aliases = Report Email Address
-      reportEmail:    item.fields?.Aliases        || '',
-      aliases:        item.fields?.Aliases        || '',
-      phone:          item.fields?.Active         || '', // Active = Phone #
-      billingAddress: item.fields?.BillingAddress || '',
-    }));
-  } catch { return []; }
+// Use the full paginated Clients directory, including DBA and pricing category.
+async function loadClients() {
+  const rows = await listItems(LISTS.CLIENTS);
+  return rows.map(f => ({
+    clientId:       f._id,
+    clientName:     f.ClientName || f.Title || '',
+    dbaName:        f.Phone || '', // DBA Name (SharePoint internal field)
+    pricingCategory:f.PricingCategory || '',
+    clientCode:     f.ClientCode || '',
+    abbrev:         f.Abbrev || '',
+    email:          f.Aliases || '', // Report Email; NOT a name alias
+    reportEmail:    f.Aliases || '',
+    phone:          f.Active || '',
+    billingAddress: f.BillingAddress || '',
+  }));
 }
 
 // Look up a barcode ID in the "Archived Intake" SP list
@@ -252,40 +248,9 @@ const SCAN_HARD_ALIASES = {
 
 // ── Client matching ───────────────────────────────────────────────────────────
 function matchClient(name, clients) {
-  if (!name || !clients.length) return null;
-  const normalize = str =>
-    String(str || '').toLowerCase().replace(/[.,'"()\-]/g,'').replace(/\s+/g,' ').trim();
-  const s = normalize(name);
-  if (s.length < 2) return null;
-
-  // Hard-coded alias fallback
-  const hardMatch = SCAN_HARD_ALIASES[s];
-  if (hardMatch) {
-    const found = clients.find(c => normalize(c.clientName) === normalize(hardMatch));
-    if (found) return found;
-  }
-
-  for (const c of clients) {
-    // Build all identifiers for this client: name, abbrev, clientCode, all aliases
-    const identifiers = [
-      c.clientName,
-      c.abbrev,
-      c.clientCode,
-      ...String(c.aliases || '').split(/[,;|\n]/).map(a => a.trim()).filter(Boolean),
-    ].map(normalize).filter(Boolean);
-
-    // 1. Exact match against any identifier
-    if (identifiers.some(n => n === s)) return c;
-
-    // 2. Containment match for useful aliases (min 4 chars)
-    if (identifiers.some(n => n.length >= 4 && (s.includes(n) || n.includes(s)))) return c;
-
-    // 3. Word-based match against client name
-    const cNorm  = normalize(c.clientName);
-    const words  = s.split(' ').filter(w => w.length >= 4);
-    if (words.length >= 2 && words.every(w => cNorm.includes(w))) return c;
-  }
-  return null;
+  const result = matchIntakeClient(name, clients, { hardAliases: SCAN_HARD_ALIASES });
+  if (result.status !== 'matched') return null;
+  return clients.find(c => String(c.clientId) === result.clientId) || null;
 }
 
 // ── Test validation ───────────────────────────────────────────────────────────
@@ -363,7 +328,7 @@ app.http('scan-folder', {
       const recognizedAliasContext = Object.entries(SCAN_HARD_ALIASES)
         .map(([alias, formal]) => `- "${alias}" means "${formal}"`).join('\n');
       const aliasCtx = clients.map(c =>
-        `- "${c.clientName}"${c.aliases ? ` (aliases: ${c.aliases})` : ''}${c.billingAddress ? ` [billing: ${c.billingAddress}]` : ''}`
+        `- "${c.clientName}"${c.dbaName ? ` (DBA: ${c.dbaName})` : ''}${c.billingAddress ? ` [billing: ${c.billingAddress}]` : ''}`
       ).join('\n') +
       '\nKnown handwritten/alternate names (extract the literal text, do not invent a match):\n' + recognizedAliasContext +
       '\n⚠️ Use ALL available evidence to identify the customer: the checked/marked name in the Report To section, OR match the billing address on the form against the [billing:] addresses above, OR the phone number. Return "" only if there is truly NO identifying information anywhere on the form.';
@@ -922,7 +887,16 @@ Return ONLY: {"billingAddress":""}`}],
           // ── Client matching ───────────────────────────────────────────────────
           // Refresh validatedCustomer AFTER all rescues AND barcode lookup
           validatedCustomer = ocr.customer || validatedCustomer;
-          let client = matchClient(validatedCustomer, clients);
+          const identityMatch = matchIntakeClient(validatedCustomer, clients,
+            { hardAliases: SCAN_HARD_ALIASES });
+          const nameAmbiguous = identityMatch.status === 'ambiguous';
+          let client = identityMatch.status === 'matched'
+            ? clients.find(c => String(c.clientId) === identityMatch.clientId) || null
+            : null;
+          if (nameAmbiguous) {
+            context.log('[scan] Ambiguous COC client name; requesting manual review:', validatedCustomer);
+            reviewStatus = 'Needs Client Confirmation';
+          }
 
           // ── Fallback matching: email → phone → billing address (tried individually) ──
           const normalize = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim();
@@ -937,32 +911,35 @@ Return ONLY: {"billingAddress":""}`}],
           }
 
           // 1. Email: look up the exact email against Clients list report email
-          if (!client && ocr.email && ocr.email.includes('@')) {
+          if (!client && !nameAmbiguous && ocr.email && ocr.email.includes('@')) {
             const emailLow = ocr.email.toLowerCase();
-            client = clients.find(c => (c.reportEmail||c.email||'').toLowerCase() === emailLow) || null;
+            const emailMatches = clients.filter(c => (c.reportEmail||c.email||'').toLowerCase() === emailLow);
+            client = emailMatches.length === 1 ? emailMatches[0] : null;
             if (client) context.log(`[scan] Matched by email: ${client.clientName}`);
             else context.log(`[scan] Email fallback: no match for "${emailLow}"`);
           }
 
           // 3. Phone: match last 7 digits against Clients list phone
-          if (!client && (ocr.phone || ocr.reportToPhone)) {
+          if (!client && !nameAmbiguous && (ocr.phone || ocr.reportToPhone)) {
             const pd = (ocr.phone||ocr.reportToPhone||'').replace(/\D/g,'');
             if (pd.length >= 7) {
-              client = clients.find(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7))) || null;
+              const phoneMatches = clients.filter(c => c.phone && c.phone.replace(/\D/g,'').endsWith(pd.slice(-7)));
+              client = phoneMatches.length === 1 ? phoneMatches[0] : null;
               if (client) context.log(`[scan] Matched by phone: ${client.clientName}`);
             }
           }
 
           // 4. Billing address: match first 3 significant words against Clients list billing address
-          if (!client && ocr.billingAddress) {
+          if (!client && !nameAmbiguous && ocr.billingAddress) {
             const baLow   = ocr.billingAddress.toLowerCase().replace(/[.,]/g,'').trim();
             const baParts = baLow.split(/\s+/).filter(w => w.length >= 3);
             if (baParts.length >= 2) {
-              client = clients.find(c => {
+              const addressMatches = clients.filter(c => {
                 const ca = (c.billingAddress||'').toLowerCase().replace(/[.,]/g,'');
                 if (!ca) return false;
                 return baParts.slice(0,3).every(w => ca.includes(w));
-              }) || null;
+              });
+              client = addressMatches.length === 1 ? addressMatches[0] : null;
               if (client) context.log(`[scan] Matched by billing address: ${client.clientName}`);
             }
           }
@@ -995,8 +972,7 @@ Return ONLY: {"billingAddress":""}`}],
           // Public: use the sample/property address only when TOP billing is blank.
           // A matched non-public client is business even if OCR mislabels formType.
           const matchedBusiness = !!client &&
-            String(client.abbrev || '').toUpperCase() !== 'PUBLIC' &&
-            !/^public[-\s]/i.test(String(client.clientName || ''));
+            String(client.pricingCategory || '').trim().toLowerCase() !== 'public pricing';
           const isBusinessCOC = matchedBusiness ||
             String(ocr.formType || '').toLowerCase() === 'business';
           const sampleBillingFallback = [ocr.location, ocr.city, ocr.state, ocr.zip]
@@ -1057,7 +1033,9 @@ Return ONLY: {"billingAddress":""}`}],
           const indElements = ocr.individualElements || [];
           const radonTests  = ocr.hasRadon ? ['Radon Water'] : [];
           const tests       = [...pkgTests, ...indElements, ...radonTests];
-          const valError    = validateTests(pkgTests);
+          const valError    = [validateTests(pkgTests),
+            nameAmbiguous ? 'Ambiguous client name or DBA; select the correct business manually' : '']
+            .filter(Boolean).join(' | ');
           if (valError) reviewStatus = 'Validation Error';
 
           const stamp            = `${todayDisplayET()} ${nowTimeET()}`;
