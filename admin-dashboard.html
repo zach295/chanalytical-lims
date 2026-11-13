@@ -244,6 +244,7 @@ document.addEventListener('DOMContentLoaded', function() {
       <!-- CLIENT TABLE -->
       <div class="card">
         <div class="card-header"><div class="card-title">Tests by Client</div></div>
+        <div id="ov-dba-warning" style="display:none;font-size:12px;color:var(--slate);padding:8px 14px;"></div>
         <table>
           <thead>
             <tr>
@@ -3450,6 +3451,15 @@ document.addEventListener('DOMContentLoaded', function() {
       const data    = await res.json();
       const allRecs = data.records || [];
       window._ovAllRecs = allRecs; // store for filter buttons
+      const warningEl = document.getElementById('ov-dba-warning');
+      if (warningEl) {
+        const unresolved = Number(data.unresolvedClients || 0);
+        const conflicts = Number(data.dbaConflicts || 0);
+        warningEl.textContent = unresolved || conflicts
+          ? `DBA lookup notice: ${unresolved} sample record(s) could not be uniquely matched to a client; ${conflicts} duplicate-name conflict(s) detected. Unmatched records retain their original labels.`
+          : '';
+        warningEl.style.display = warningEl.textContent ? 'block' : 'none';
+      }
       // Exclude rejected for test type and client counts
       const items   = allRecs.filter(r => (r.status || '').toLowerCase() !== 'rejected');
 
@@ -3493,27 +3503,46 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       // ── Client table ────────────────────────────────────────────────────────
-      const clientMap = {};
+      // Use the stable client account key for counting, NEVER the DBA label.
+      // Different accounts can share a DBA without combining their samples.
+      const clientMap = new Map();
       for (const r of allRecs) {
-        const client = r.customer || 'Unknown';
-        if (!clientMap[client]) clientMap[client] = { thisMonth: 0, lastMonth: 0, total: 0 };
+        const accountKey = r.clientKey || ('raw:' + (r.officialCustomer || r.customer || 'Unknown').toLowerCase());
+        if (!clientMap.has(accountKey)) {
+          clientMap.set(accountKey, {
+            name: r.customer || 'Unknown',
+            official: r.officialCustomer || r.customer || 'Unknown',
+            matchStatus: r.clientMatchStatus || 'unmatched',
+            thisMonth: 0, lastMonth: 0, total: 0,
+          });
+        }
+        const counts = clientMap.get(accountKey);
         const d = parseDate(r);
         if (d) {
-          if (d.getMonth()===thisM && d.getFullYear()===thisY) clientMap[client].thisMonth++;
-          if (d.getMonth()===lastM && d.getFullYear()===lastY) clientMap[client].lastMonth++;
+          if (d.getMonth()===thisM && d.getFullYear()===thisY) counts.thisMonth++;
+          if (d.getMonth()===lastM && d.getFullYear()===lastY) counts.lastMonth++;
         }
-        clientMap[client].total++;
+        counts.total++;
       }
-      const clientRows = Object.entries(clientMap)
-        .sort((a,b) => b[1].total - a[1].total);
+      const clientRows = [...clientMap.values()].sort((a,b) => b.total - a.total);
+      // Show official account beneath identical DBA labels to distinguish clients.
+      const displayUsage = new Map();
+      for (const c of clientRows) {
+        const k = c.name.trim().toLowerCase();
+        displayUsage.set(k, (displayUsage.get(k) || 0) + 1);
+      }
       const clientTbody = document.getElementById('ov-client-tbody');
-      clientTbody.innerHTML = clientRows.map(([name, c]) => `
-        <tr>
-          <td>${name}</td>
+      clientTbody.innerHTML = clientRows.map(c => {
+        const sharedDBA = (displayUsage.get(c.name.trim().toLowerCase()) || 0) > 1;
+        const label = adminEsc(c.name);
+        const official = sharedDBA ? `<div style="font-size:11px;color:var(--slate);">Account: ${adminEsc(c.official)}</div>` : '';
+        return `<tr>
+          <td>${label}${official}</td>
           <td style="text-align:center;font-weight:600;">${c.thisMonth}</td>
           <td style="text-align:center;">${c.lastMonth}</td>
           <td style="text-align:center;color:var(--slate);">${c.total}</td>
-        </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--slate);padding:16px;">No data</td></tr>';
+        </tr>`;
+      }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--slate);padding:16px;">No data</td></tr>';
 
       // ── Top 3 test types ────────────────────────────────────────────────────
       const typeMap = {};
