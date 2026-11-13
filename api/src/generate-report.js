@@ -7,7 +7,7 @@ const { calculateArsenicV } = require('../shared/arsenic-speciation');
 const { app }      = require('@azure/functions');
 const { getToken, listItems, LISTS } = require('../shared/graph');
 const GRAPH = 'https://graph.microsoft.com/v1.0';
-const { buildClientDirectory, resolveClient } = require('../shared/client-identity');
+const { matchIntakeClient } = require('../shared/intake-client-match');
 
 // Convert Excel date serial number → MM/DD/YY string
 function excelDateToStr(serial) {
@@ -497,8 +497,7 @@ async function getClientInfo(customerName, token) {
   // Never pick the first fuzzy/substring match: that could put a different
   // business's DBA, address or report email on a laboratory certificate.
   const rows = await listItems(LISTS.CLIENTS);
-  const directory = buildClientDirectory(rows);
-  const found = resolveClient(directory, customerName);
+  const found = matchIntakeClient(customerName, rows);
   if (found.status !== 'matched') {
     if (found.status === 'ambiguous') {
       throw new Error('Ambiguous report client: multiple accounts match the stored name. Correct the client association before generating a report.');
@@ -508,6 +507,8 @@ async function getClientInfo(customerName, token) {
   const f = rows.find(row => String(row._id ?? row.id ?? '') === found.clientId);
   if (!f) return empty;
   return {
+    clientId:         found.clientId,
+    identityMatchedBy:found.matchedBy || 'exact',
     clientName:       f.ClientName || f.Title || '',
     mainContact:      f.Email || '',
     reportEmail:      f.Aliases || '',
@@ -572,6 +573,12 @@ app.http('generate-report', {
         : rawName0;
       const formattedName = formatCustomerName(lookupName);
       const clientInfo = await getClientInfo(lookupName, token);
+      const reportClientWarning = !clientInfo.clientName
+        ? `No uniquely matching Clients record for stored customer: ${lookupName}. Check the master client record before sending.`
+        : (!clientInfo.dbaName && String(clientInfo.pricingCategory || '').trim().toLowerCase() !== 'public pricing'
+          ? `Master client ${clientInfo.clientName} has no DBA Name; the report will show the official name until a DBA is entered under Clients & Codes.`
+          : '');
+      if (reportClientWarning) log.push(`CLIENT DBA WARNING: ${reportClientWarning}`);
 
       // ── Determine test types ────────────────────────────────────────────────
       // meta.services = "Alkalinity | pH" (string from Archived Intake)
@@ -855,6 +862,7 @@ app.http('generate-report', {
           reportType: isRadon ? 'RW' : 'COA',
           today:      todayStr,
           log,
+          reportClientWarning,
           meta: {
             customer:     rawName || formatCustomerName(meta.customer || ''),
             // clientName from Clients list takes priority, fall back to cleaned display name
