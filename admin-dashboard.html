@@ -6110,6 +6110,12 @@ document.addEventListener('DOMContentLoaded', function() {
         _comments: '',
       };
 
+      if (data.reportClientWarning) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = 'var(--warning)';
+        statusEl.textContent = '⚠️ ' + data.reportClientWarning;
+      }
+
       // Build resultsMap from paramRows (includes prepDT, analDT from SharePoint)
       [...(data.paramRows||[]), ...(data.fhaRows||[])].forEach(p => {
         currentReportData.resultsMap[p.name] = {
@@ -6158,12 +6164,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!reportEmail && data.meta?.customer) {
         const custLower = (data.meta.customer || '').toLowerCase().trim()
           .replace(/^public-/i, '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim();
-        const cMatch = _clientsData.find(c => {
+        // Never auto-fill a recipient from substring matches; same-name and
+        // similar-name businesses must not receive another client's report.
+        const matches = _clientsData.filter(c => {
           const cn = (c.clientName || '').toLowerCase().trim()
-            .replace(/^public-/i, '').trim();
-          return cn === custLower || cn.includes(custLower) || custLower.includes(cn);
+            .replace(/^public-/i, '').replace(/^([^,]+),\\s*(.+)$/, '$2 $1').trim();
+          const dba = (c.dbaName || '').toLowerCase().trim();
+          return cn === custLower || dba === custLower;
         });
-        reportEmail = cMatch?.email || cMatch?.reportEmail || '';
+        const cMatch = matches.length === 1 ? matches[0] : null;
+        reportEmail = cMatch?.reportEmail || '';
       }
 
       if (emailInput) {
