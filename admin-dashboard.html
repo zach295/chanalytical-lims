@@ -6168,7 +6168,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // similar-name businesses must not receive another client's report.
         const matches = _clientsData.filter(c => {
           const cn = (c.clientName || '').toLowerCase().trim()
-            .replace(/^public-/i, '').replace(/^([^,]+),\\s*(.+)$/, '$2 $1').trim();
+            .replace(/^public-/i, '').replace(/^([^,]+),\s*(.+)$/, '$2 $1').trim();
           const dba = (c.dbaName || '').toLowerCase().trim();
           return cn === custLower || dba === custLower;
         });
