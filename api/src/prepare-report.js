@@ -1,4 +1,5 @@
 const { calcFillColor } = require('../shared/report-colors');
+const { reportAttentionName } = require('../shared/report-client-display');
 /**
  * prepare-report.js — Phase 2
  * Creates a filled copy of the Excel report template and keeps it alive.
@@ -135,8 +136,7 @@ async function fillSheet(siteId, itemId, wsId, params, meta, labId, authorizedBy
     const attCol       = attLbl.c + 1;
     const cityStateZip = [m.city, m.state, m.zip].filter(Boolean).join(', ');
     const attAddress   = m.billingAddress || [m.location, cityStateZip].filter(Boolean).join(', ') || '';
-    const rawName      = (m.clientName || m.customer || '').replace(/^Public-/i, '').trim();
-    const cleanName    = rawName.includes(', ') ? rawName.split(', ').reverse().join(' ') : rawName;
+    const cleanName    = reportAttentionName(m);
     addCell(attLbl.r,     attCol, cleanName);
     if (attAddress)  addCell(attLbl.r + 1, attCol, attAddress);
     const emailLine = m.reportEmail || m.email || '';

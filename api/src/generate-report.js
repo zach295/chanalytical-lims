@@ -7,6 +7,7 @@ const { calculateArsenicV } = require('../shared/arsenic-speciation');
 const { app }      = require('@azure/functions');
 const { getToken, listItems, LISTS } = require('../shared/graph');
 const GRAPH = 'https://graph.microsoft.com/v1.0';
+const { buildClientDirectory, resolveClient } = require('../shared/client-identity');
 
 // Convert Excel date serial number → MM/DD/YY string
 function excelDateToStr(serial) {
@@ -491,72 +492,39 @@ async function getResultsCache(baseId) {
 async function getClientInfo(customerName, token) {
   const empty = { clientName:'', mainContact:'', reportEmail:'', billingEmail:'', email:'', phone:'', dbaName:'', clientCode:'', abbrev:'', billingAddress:'', billingPreference:'', frequency:'', pricingCategory:'', startDate:'', status:'', radonLic:'' };
   if (!customerName) return empty;
-  try {
-    const siteId = process.env.SP_SITE_ID;
-    const res    = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,ClientCode,Abbrev,Email,Phone,Active,Aliases,Notes,BillingAddress,BillingFrequency,Frequency,PricingCategory,StartDate,Status,RadonLic_x0023_)&$top=500`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return empty;
-    const data      = await res.json();
-    const clients   = (data.value || []).map(item => ({ item, f: item.fields || {} }));
-    const name      = customerName.toLowerCase().replace(/[.,]/g,'').trim();
-    const formatted = formatCustomerName(customerName).toLowerCase().replace(/[.,]/g,'').trim();
 
-    const normalize = s => String(s||'').toLowerCase().replace(/[.,]/g,'').trim();
-
-    // 1. Exact match on ClientName or formatted name
-    let match = clients.find(({ f }) => {
-      const cn = normalize(f.ClientName || f.Title);
-      return cn === name || cn === formatted;
-    })?.item;
-
-    // 2. Containment match — one name includes the other (handles LLC, Inc suffix differences)
-    if (!match) {
-      match = clients.find(({ f }) => {
-        const cn = normalize(f.ClientName || f.Title);
-        if (cn.length < 4 || name.length < 4) return false;
-        return cn.includes(name) || name.includes(cn) ||
-               cn.includes(formatted) || formatted.includes(cn);
-      })?.item;
+  // Phase 5: use the paginated Clients directory and exact identity matching.
+  // Never pick the first fuzzy/substring match: that could put a different
+  // business's DBA, address or report email on a laboratory certificate.
+  const rows = await listItems(LISTS.CLIENTS);
+  const directory = buildClientDirectory(rows);
+  const found = resolveClient(directory, customerName);
+  if (found.status !== 'matched') {
+    if (found.status === 'ambiguous') {
+      throw new Error('Ambiguous report client: multiple accounts match the stored name. Correct the client association before generating a report.');
     }
-
-    // 3. Word-based match — significant words from either name appear in the other
-    if (!match) {
-      const STOP = new Set(['water','home','inspection','inspections','inc','llc','ltd','and','the','of']);
-      const sigWords = name.split(/\s+/).filter(w => w.length >= 4 && !STOP.has(w));
-      if (sigWords.length >= 1) {
-        match = clients.find(({ f }) => {
-          const cn = normalize(f.ClientName || f.Title);
-          return sigWords.every(w => cn.includes(w));
-        })?.item;
-      }
-    }
-
-    if (!match) return empty;
-    const f = match.fields || match.field || {};
-    // New Clients list field mapping (internal names differ from display names):
-    // Aliases = Report Email, Notes = Billing Email, Active = Phone #,
-    // Email = Main Contact (first name), Phone = DBA Name
-    return {
-      clientName:      f.ClientName      || f.Title   || '',
-      mainContact:     f.Email           || '',          // display: "Main Contact"
-      reportEmail:     f.Aliases         || '',          // display: "Report Email Address"
-      billingEmail:    f.Notes           || '',          // display: "Billing Email Address"
-      email:           f.Aliases         || '',          // alias for compatibility
-      phone:           f.Active          || '',          // display: "Phone #"
-      dbaName:         f.Phone           || '',          // display: "DBA Name"
-      clientCode:      f.ClientCode      || '',
-      abbrev:          f.Abbrev          || '',
-      billingAddress:  f.BillingAddress  || '',
-      billingPreference: f.BillingFrequency || '',
-      frequency:       f.Frequency       || '',
-      pricingCategory: f.PricingCategory || '',
-      startDate:       f.StartDate       || '',
-      status:          f.Status          || '',
-      radonLic:        f.RadonLic_x0023_ || '',
-    };
-  } catch { return empty; }
+    return empty;
+  }
+  const f = rows.find(row => String(row._id ?? row.id ?? '') === found.clientId);
+  if (!f) return empty;
+  return {
+    clientName:       f.ClientName || f.Title || '',
+    mainContact:      f.Email || '',
+    reportEmail:      f.Aliases || '',
+    billingEmail:     f.Notes || '',
+    email:            f.Aliases || '',
+    phone:            f.Active || '',
+    dbaName:          f.Phone || '',
+    clientCode:       f.ClientCode || '',
+    abbrev:           f.Abbrev || '',
+    billingAddress:   f.BillingAddress || '',
+    billingPreference:f.BillingFrequency || '',
+    frequency:        f.Frequency || '',
+    pricingCategory:  f.PricingCategory || '',
+    startDate:        f.StartDate || '',
+    status:           f.Status || '',
+    radonLic:         f.RadonLic_x0023_ || '',
+  };
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -603,14 +571,7 @@ app.http('generate-report', {
         ? rawName0.split(', ').reverse().join(' ')
         : rawName0;
       const formattedName = formatCustomerName(lookupName);
-      const clientInfo = await getClientInfo(lookupName, token)
-        .then(async c => {
-          if (c.email) return c;
-          // Also try with formatted/reversed name as fallback
-          if (lookupName !== rawName) return getClientInfo(rawName, token).catch(() => c);
-          return c;
-        })
-        .catch(() => empty);
+      const clientInfo = await getClientInfo(lookupName, token);
 
       // ── Determine test types ────────────────────────────────────────────────
       // meta.services = "Alkalinity | pH" (string from Archived Intake)
