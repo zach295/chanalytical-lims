@@ -1,0 +1,25 @@
+name: LIMS regression tests
+on:
+  push:
+    branches:
+      - phase4-dba-review-queue-completion-20261113
+      - phase5-dba-laboratory-reports-20261113
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Node syntax verification
+        run: |
+          for file in api/shared/*.js api/src/*.js api/tests/*.js api/test/*.js; do node --check "$file"; done
+      - name: Regression tests
+        working-directory: api
+        run: node --test tests/*.test.js test/*.test.js
