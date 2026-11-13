@@ -4689,7 +4689,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .map(c => {
           const name = String(c.displayName || c.dbaName || c.clientName).trim();
           const sameDBA = (dbaCounts.get(name.toLowerCase()) || 0) > 1;
-          const label = sameDBA ? name + ' (' + c.clientName + ')' : name;
+          const label = sameDBA ? name + ' (' + c.clientName + ' — ' + (c.clientCode || 'ID ' + c._id) + ')' : name;
           return `<option value="${adminEsc(c.clientName)}" data-client-id="${adminEsc(c._id || '')}" ${matchedRow && String(matchedRow._id) === String(c._id) ? 'selected' : ''}>${adminEsc(label)}</option>`;
         })
     ].join('');
