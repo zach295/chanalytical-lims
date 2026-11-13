@@ -7340,6 +7340,10 @@ document.addEventListener('DOMContentLoaded', function() {
       if (apIdx >= 0) { currentReportData.activeParams[apIdx].analDT = val; currentReportData.activeParams[apIdx].time = val; }
       const fpIdx = (currentReportData.fhaParams || []).findIndex(p => p.name === param);
       if (fpIdx >= 0) { currentReportData.fhaParams[fpIdx].analDT = val; currentReportData.fhaParams[fpIdx].time = val; }
+    } else if (key === 'meta:reportAttention') {
+      // Editing the printed Attention label changes display only, never the
+      // official account identity used for billing and client lookup.
+      currentReportData.meta.dbaName = val;
     } else if (key.startsWith('meta:')) {
       const field = key.replace('meta:', '');
       currentReportData.meta[field] = val;
@@ -7558,7 +7562,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <tr>
           <td style="width:50%;vertical-align:top;padding-right:16px;">
             <table style="border-collapse:collapse;width:100%;">
-              <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.clientName||meta.customer,'meta:customer')}</td></tr>
+              <tr><td style="${S.labelTd}">Attention:</td><td style="${S.valueTd}">${editable(meta.dbaName||meta.clientName||meta.customer,'meta:reportAttention')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(attAddress,'meta:billingAddress')}</td></tr>
               <tr><td style="${S.labelTd}"></td><td style="${S.valueTd}">${editable(meta.reportEmail||meta.email||'','meta:reportEmail')}</td></tr>
               <tr><td style="${S.labelTd}">Location:</td><td style="${S.valueTd}">${editable(meta.location,'meta:location')}</td></tr>
