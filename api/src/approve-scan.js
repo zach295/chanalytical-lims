@@ -5,6 +5,7 @@
  */
 const { app } = require('@azure/functions');
 const { createItem, updateItem, deleteItem, findItem, listItems, getToken, LISTS } = require('../shared/graph');
+const { matchIntakeClient } = require('../shared/intake-client-match');
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const SHEETS_ID = '15403E6ZaZFQuKNTtgJcb6-2jmlLnk02eq04BGPATqTw';
@@ -441,45 +442,41 @@ function formatCustomerName(name) {
 }
 
 // ── Get client info from SharePoint Clients list ───────────────────────────────
-async function getClientInfo(token, customerName) {
-  try {
-    const siteId = process.env.SP_SITE_ID;
-    const res = await fetch(
-      `${GRAPH}/sites/${siteId}/lists/Clients/items?$expand=fields($select=ClientName,ClientCode,Abbrev,Email,Phone,Active,Aliases,Notes,BillingAddress,PricingCategory,BillingFrequency)&$top=500`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return { formalName: customerName||'', clientCode:'', email:'', reportEmail:'', billingEmail:'', phone:'', dbaName:'', abbrev:'', billingAddress:'', pricingCategory:'', billingFrequency:'' };
-    const data = await res.json();
-    const clients = (data.value||[]).map(item => ({
-      clientName:      item.fields?.ClientName      || item.fields?.Title || '',
-      name:            item.fields?.ClientName      || item.fields?.Title || '', // alias
-      code:            item.fields?.ClientCode      || '',
-      reportEmail:     item.fields?.Aliases         || '',  // Report Email Address
-      billingEmail:    item.fields?.Notes           || '',  // Billing Email Address
-      email:           item.fields?.Aliases         || '',  // compatibility alias
-      phone:           item.fields?.Active          || '',  // Phone #
-      dbaName:         item.fields?.Phone           || '',  // DBA Name
-      abbrev:          item.fields?.Abbrev          || '',
-      billingAddress:  item.fields?.BillingAddress  || '',
-      pricingCategory: item.fields?.PricingCategory || '',
-      billingFrequency: item.fields?.BillingFrequency || '',
-    }));
-    const match = matchClient(customerName||'', clients);
-    return {
-      formalName:       match ? (match.clientName || match.name) : customerName || '',
-      clientName:       match ? (match.clientName || match.name) : '',
-      clientCode:       match ? match.code           : '',
-      email:            match ? match.email          : '',
-      reportEmail:      match ? match.reportEmail    : '',
-      billingEmail:     match ? match.billingEmail   : '',
-      phone:            match ? match.phone          : '',
-      dbaName:          match ? match.dbaName        : '',
-      abbrev:           match ? match.abbrev         : '',
-      billingAddress:   match ? match.billingAddress : '',
-      pricingCategory:  match ? match.pricingCategory: '',
-      billingFrequency: match ? match.billingFrequency: '',
-    };
-  } catch { return { formalName: customerName||'', clientCode:'', email:'', reportEmail:'', billingEmail:'', phone:'', dbaName:'', abbrev:'', billingAddress:'', pricingCategory:'', billingFrequency:'' }; }
+async function getClientInfo(token, customerName, selectedClientId = '') {
+  // Use the same identity rules as scan-folder. Account names remain official
+  // in SharePoint; DBA is for recognition and presentation only.
+  const rows = await listItems(LISTS.CLIENTS);
+  const match = matchIntakeClient(customerName, rows, {
+    clientId: selectedClientId,
+    hardAliases: HARD_ALIASES,
+  });
+  if (match.status === 'ambiguous') {
+    const err = new Error('Multiple client accounts match this name/DBA. Select a specific business in Review Queue.');
+    err.status = 409;
+    throw err;
+  }
+  if (selectedClientId && match.status !== 'matched') {
+    const err = new Error('Selected client account no longer exists. Refresh Review Queue.');
+    err.status = 409;
+    throw err;
+  }
+  const record = match.status === 'matched'
+    ? rows.find(row => String(row._id) === String(match.clientId))
+    : null;
+  return {
+    formalName: record ? (record.ClientName || record.Title || '') : customerName || '',
+    clientName: record ? (record.ClientName || record.Title || '') : '',
+    clientCode: record?.ClientCode || '',
+    email: record?.Aliases || '',
+    reportEmail: record?.Aliases || '',
+    billingEmail: record?.Notes || '',
+    phone: record?.Active || '',
+    dbaName: record?.Phone || '',
+    abbrev: record?.Abbrev || '',
+    billingAddress: record?.BillingAddress || '',
+    pricingCategory: record?.PricingCategory || '',
+    billingFrequency: record?.BillingFrequency || '',
+  };
 }
 
 // ── Move SP file to Archive folder ─────────────────────────────────────────────
@@ -922,7 +919,7 @@ app.http('approve-scan', {
     try {
       const {
         fileId, reviewQueueRow, reviewedBy,
-        customer: submittedCustomer, selectedBusiness, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
+        customer: submittedCustomer, selectedBusiness, selectedBusinessId, isPublicOverride, dateDrawn, timeDrawn, receivedDate, receivedTime,
         location, city, state, zip, tests, hasRadon, radonMitigation, wqReject, rwReject, notes, email,
         phone, billingAddress,
       } = await request.json();
@@ -935,9 +932,18 @@ app.http('approve-scan', {
       if (selectedBusiness) {
         const selected = String(selectedBusiness).trim();
         const clients = await listItems(LISTS.CLIENTS);
-        const exact = clients.find(c => String(c.ClientName || c.Title || '').trim() === selected);
-        if (!exact || String(exact.PricingCategory || '').trim().toLowerCase() === 'public pricing') {
+        const exact = selectedBusinessId
+          ? clients.find(c => String(c._id) === String(selectedBusinessId))
+          : clients.find(c => String(c.ClientName || c.Title || '').trim() === selected);
+        // Do not trust an arbitrary client ID or allow a public account to be
+        // submitted through the business dropdown.
+        if (!exact || String(exact.ClientName || exact.Title || '').trim() !== selected ||
+            String(exact.PricingCategory || '').trim().toLowerCase() === 'public pricing') {
           return { status:400, jsonBody:{ error:'Selected business does not match a master client. Refresh the Review Queue and select again.' } };
+        }
+        if (!selectedBusinessId &&
+            clients.filter(c => String(c.ClientName || c.Title || '').trim() === selected).length !== 1) {
+          return { status:409, jsonBody:{ error:'Client name is shared by multiple accounts. Refresh the Review Queue and select the correct client.' } };
         }
         customer = selected;
       }
@@ -945,7 +951,7 @@ app.http('approve-scan', {
       // Parallelize independent startup reads
       const [{ dynamicSuffixMap, dynamicPackageSet, dynamicCoverage, dynamicPricing }, clientInfo] = await Promise.all([
         loadDynamicTestTypes(token),
-        getClientInfo(token, customer),
+        getClientInfo(token, customer, selectedBusinessId || ''),
       ]);
 
       // Normalize test names. HTML checkboxes without an explicit value submit
@@ -1752,7 +1758,7 @@ app.http('approve-scan', {
 
     } catch(e) {
       context.log('[approve-scan] Error:', e.message);
-      return { status:500, jsonBody:{ error:e.message } };
+      return { status:e.status === 409 ? 409 : 500, jsonBody:{ error:e.message } };
     }
   }
 });
