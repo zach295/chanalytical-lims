@@ -1949,7 +1949,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   applyRolePermissions(_session?.role || 'office');
   // ── Client list state — must be declared before loadScanQueue() is called ──
-  let _ALL_CLIENTS       = []; // loaded from Clients sheet, used by scan card dropdown
+  let _ALL_CLIENTS       = []; // official Client Names, retained for existing workflows
+  let _REVIEW_CLIENTS = []; // DBA labels and stable IDs for review card matching
   let _PUBLIC_PRICING_CLIENTS = new Set(); // classify by Pricing Category, not name prefix
   let _clientsLastLoaded = 0;
   let _CLIENT_EMAILS     = {}; // map: clientName → report email
@@ -2879,7 +2880,9 @@ document.addEventListener('DOMContentLoaded', function() {
         body: JSON.stringify({ action: 'read-clients' }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error('Clients lookup failed (' + res.status + ')');
       const clients = data.clients || [];
+      _REVIEW_CLIENTS = clients.filter(c => c.clientName);
       _ALL_CLIENTS = clients.map(c => c.clientName).filter(Boolean);
       _PUBLIC_PRICING_CLIENTS = new Set(clients
         .filter(c => String(c.pricingCategory || '').trim().toLowerCase() === 'public pricing')
@@ -4644,26 +4647,17 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>`;
     }
 
-    const STOP_WORDS = new Set(['water','home','inspection','inspections','inc','llc','ltd',
-      'corp','co','systems','services','plumbing','well','environmental','testing',
-      'labs','laboratory','laboratories','and','the','of','for']);
-    const customerLower = (r.customer||'').toLowerCase().trim();
-    const matchedClient = customerLower ? _ALL_CLIENTS.find(c => {
-      if (_PUBLIC_PRICING_CLIENTS.has(c)) return false;
-      const cl = c.toLowerCase();
-      // Exact match
-      if (cl === customerLower) return true;
-      // One fully contains the other (handles abbreviations like "FPI" in "FPI / ChanCorp")
-      if (cl.includes(customerLower) || customerLower.includes(cl)) return true;
-      // Significant word match — only non-stop words of 4+ chars
-      const sigWords = cl.split(/[\s,./]+/).filter(w => w.length >= 4 && !STOP_WORDS.has(w));
-      if (!sigWords.length) return false;
-      // ALL significant words must appear in customer (not just one)
-      return sigWords.length >= 2
-        ? sigWords.filter(w => customerLower.includes(w)).length >= 2
-        : sigWords.every(w => customerLower.includes(w));
-    }) : null;
-    const isPublicClient = !matchedClient || _PUBLIC_PRICING_CLIENTS.has(matchedClient);
+    // Match against either official Client Name or DBA. Only a unique exact
+    // match auto-selects an account; fuzzy matching could misroute a COC.
+    const customerLower = String(r.customer || '').toLowerCase().trim();
+    const matchedCandidates = customerLower ? _REVIEW_CLIENTS.filter(c =>
+      String(c.pricingCategory || '').trim().toLowerCase() !== 'public pricing' &&
+      [c.clientName, c.dbaName, c.clientCode, c.abbrev].some(value =>
+        value && String(value).toLowerCase().trim() === customerLower)
+    ) : [];
+    const matchedRow = matchedCandidates.length === 1 ? matchedCandidates[0] : null;
+    const matchedClient = matchedRow?.clientName || null;
+    const isPublicClient = !matchedRow;
 
     // Client-specific flag banner — must be after matchedClient is declared
     const clientFlag = matchedClient ? _CLIENT_FLAGS[matchedClient] : null;
@@ -4682,8 +4676,22 @@ document.addEventListener('DOMContentLoaded', function() {
       },
     };
     const clientTestRule = matchedClient ? _CLIENT_TEST_RULES[matchedClient] : null;
+    const businessClients = _REVIEW_CLIENTS.filter(c =>
+      String(c.pricingCategory || '').trim().toLowerCase() !== 'public pricing');
+    const dbaCounts = new Map();
+    for (const c of businessClients) {
+      const display = String(c.displayName || c.dbaName || c.clientName).trim().toLowerCase();
+      dbaCounts.set(display, (dbaCounts.get(display) || 0) + 1);
+    }
     const clientOptions = ['<option value="">— Select or type below —</option>',
-      ..._ALL_CLIENTS.filter(c => !_PUBLIC_PRICING_CLIENTS.has(c)).map(c => `<option value="${c}" ${c === matchedClient ? 'selected' : ''}>${c}</option>`)
+      ...businessClients
+        .sort((a,b) => String(a.displayName || a.dbaName || a.clientName).localeCompare(String(b.displayName || b.dbaName || b.clientName)))
+        .map(c => {
+          const name = String(c.displayName || c.dbaName || c.clientName).trim();
+          const sameDBA = (dbaCounts.get(name.toLowerCase()) || 0) > 1;
+          const label = sameDBA ? name + ' (' + c.clientName + ')' : name;
+          return `<option value="${adminEsc(c.clientName)}" data-client-id="${adminEsc(c._id || '')}" ${matchedRow && String(matchedRow._id) === String(c._id) ? 'selected' : ''}>${adminEsc(label)}</option>`;
+        })
     ].join('');
 
     const testCheckboxes =
@@ -4932,7 +4940,10 @@ document.addEventListener('DOMContentLoaded', function() {
       return el ? el.value.trim() : '';
     };
 
-    const selectedBusiness = document.getElementById(`sc-${fileId}-customer-select`)?.value?.trim() || '';
+    const businessSelect = document.getElementById(`sc-${fileId}-customer-select`);
+    const selectedBusiness = businessSelect?.value?.trim() || '';
+    const selectedBusinessId = selectedBusiness
+      ? (businessSelect?.selectedOptions?.[0]?.dataset?.clientId || '') : '';
     const approvedCustomer = selectedBusiness || g('customer');
     if (selectedBusiness) {
       const input = document.getElementById(`sc-${fileId}-customer`);
@@ -4967,10 +4978,9 @@ document.addEventListener('DOMContentLoaded', function() {
       // Require email for public/unmatched clients
       const customerVal = approvedCustomer.toLowerCase().trim();
       // Check if customer matches any known client (fuzzy — contains or is contained)
-      const isKnownClient = _ALL_CLIENTS.some(c => {
-        const cl = c.toLowerCase().trim();
-        return cl === customerVal || cl.includes(customerVal) || customerVal.includes(cl);
-      });
+      const isKnownClient = _REVIEW_CLIENTS.some(c =>
+        [c.clientName, c.dbaName].some(name =>
+          name && String(name).toLowerCase().trim() === customerVal));
       // Check if customer looks like a business (never treat businesses as public)
       const BWORDS = /\b(inc|llc|ltd|corp|co\b|inspection|inspections|water|environmental|radon|plumbing|realty|services|systems|labs|laboratory|laboratories|associates|group|enterprise|properties|testing|analysis|home|real estate)\b/i;
       const looksLikeBusiness = BWORDS.test(approvedCustomer) || approvedCustomer.includes('/') || approvedCustomer.includes('&');
@@ -5014,6 +5024,7 @@ document.addEventListener('DOMContentLoaded', function() {
           reviewedBy:   getAdminName(),
           customer:     approvedCustomer,
           selectedBusiness,
+          selectedBusinessId,
           // If nothing was selected from the dropdown, the client was typed manually → treat as public
           isPublicOverride: !document.getElementById(`sc-${fileId}-customer-select`)?.value,
           dateDrawn:    g('dateDrawn'),
