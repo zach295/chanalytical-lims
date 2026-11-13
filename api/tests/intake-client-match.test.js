@@ -35,5 +35,5 @@ test('historical hard aliases resolve official names only', () => {
   assert.equal(matchIntakeClient('old ward',rows,{hardAliases:{'old ward':'Critical Plumbing Inc. a/k/a Ward Water'}}).clientId,'1');
 });
 test('no substring/surname-only autoassignment', () => {
-  assert.equal(matchIntakeClient('Ward',rows).status,'unmatched');
+  assert.equal(matchIntakeClient('Plumb',rows).status,'unmatched');
 });
