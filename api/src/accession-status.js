@@ -8,6 +8,7 @@ const { listItems, updateItem, LISTS } = require('../shared/graph');
 const { loadClientDirectory } = require('../shared/client-identity');
 const { projectOverviewRecords } = require('../shared/overview-dba');
 const { createReportLabIdDisplayResolver } = require('../shared/report-labid-display');
+const { buildCorrectionClientOptions } = require('../shared/sample-correction-clients');
 
 function fmtName(name) {
   if (!name || !name.startsWith('Public-')) return name || '';
@@ -299,13 +300,7 @@ app.http('accession-status', {
         if (action === 'client-options') {
           const directory = await loadClientDirectory();
           return { status: 200, jsonBody: {
-            clients: directory.clients.map(c => ({
-              clientId: c.clientId,
-              clientName: c.officialName,
-              dbaName: c.dbaName,
-              displayName: c.displayName,
-              pricingCategory: c.pricingCategory,
-            })),
+            clients: buildCorrectionClientOptions(directory.clients),
           }};
         }
 
