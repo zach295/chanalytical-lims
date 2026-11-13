@@ -8,6 +8,7 @@ const { listItems, updateItem, LISTS } = require('../shared/graph');
 const { loadClientDirectory } = require('../shared/client-identity');
 const { projectOverviewRecords } = require('../shared/overview-dba');
 const { createReportLabIdDisplayResolver } = require('../shared/report-labid-display');
+const { buildCorrectionClientOptions } = require('../shared/sample-correction-clients');
 
 function fmtName(name) {
   if (!name || !name.startsWith('Public-')) return name || '';
@@ -294,11 +295,24 @@ app.http('accession-status', {
           return { status: 200, jsonBody: { success: true, items } };
         }
 
+        // client-options: searchable Sample Correction customer directory. The
+        // UI displays DBAs; the server-side update still receives official names.
+        if (action === 'client-options') {
+          const directory = await loadClientDirectory();
+          return { status: 200, jsonBody: {
+            clients: buildCorrectionClientOptions(directory.clients),
+          }};
+        }
+
         // list-intake
         if (action === 'list-intake') {
           const searchId = body.baseId || '';
           if (!searchId) return { status: 400, jsonBody: { error: 'baseId required' } };
-          const allItems = await listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }).catch(() => []);
+          const [allItems, directory] = await Promise.all([
+            listItems(LISTS.ARCHIVED_INTAKE, { top: 500 }),
+            loadClientDirectory(),
+          ]);
+          const displayClient = createReportLabIdDisplayResolver(directory);
           const matches  = allItems.filter(r =>
             (r.field_1 || '').split(' ')[0].trim() === searchId
           ).map(r => ({
@@ -307,6 +321,7 @@ app.http('accession-status', {
             field_6: r.field_6||'', field_7: r.field_7||'', field_8: r.field_8||'',
             field_9: r.field_9||'', field_10: r.field_10||'', field_11: r.field_11||'',
             field_12: r.field_12||'', field_13: r.field_13||'', field_14: r.field_14||'',
+            displayCustomer: displayClient(r.field_3 || '') || r.field_3 || '',
             resolvedCoaTest: (r.field_2 || '').trim(),
           }));
           return { status: 200, jsonBody: { matches } };

@@ -1,12 +1,24 @@
 const { app } = require('@azure/functions');
 const { listItems, LISTS } = require('../shared/graph');
+const { loadClientDirectory } = require('../shared/client-identity');
+const { createReportLabIdDisplayResolver } = require('../shared/report-labid-display');
 
 app.http('get-rejections', {
   methods: ['GET'],
   authLevel: 'anonymous',
   handler: async (request, context) => {
     try {
-      const items = await listItems(LISTS.REJECTED, { top: 100 });
+      const [items, archived, directory] = await Promise.all([
+        listItems(LISTS.REJECTED, { top: 100 }),
+        listItems(LISTS.ARCHIVED_INTAKE, { top: 2000 }).catch(() => []),
+        loadClientDirectory().catch(() => null),
+      ]);
+      const displayClient = directory ? createReportLabIdDisplayResolver(directory) : null;
+      const archivedCustomers = new Map();
+      for (const item of archived) {
+        const baseId = String(item.field_1 || '').split(' ')[0].trim();
+        if (baseId && !archivedCustomers.has(baseId)) archivedCustomers.set(baseId, item.field_3 || '');
+      }
 
       // Sort newest first by Created date
       items.sort((a, b) => {
@@ -22,6 +34,10 @@ app.http('get-rejections', {
         r.field_2 || '',
         r.field_3 || '',
         r.field_4 || '',
+        (() => {
+          const original = archivedCustomers.get(String(r.field_1 || '').split(' ')[0].trim()) || '';
+          return (displayClient && displayClient(original)) || original;
+        })(),
       ]);
 
       return {
