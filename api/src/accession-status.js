@@ -243,6 +243,10 @@ app.http('accession-status', {
             return {
               clientCode:     f.ClientCode  || f.Title || '',
               clientName:     f.ClientName  || '',
+              // Internal Phone is the DBA Name in the existing Clients list.
+              dbaName:        f.Phone || '',
+              displayName:    f.Phone || f.ClientName || '',
+              clientId:       f._id || '',
               radonLic,
               radonKeys,
               billingZip:     (f.BillingAddress || '').match(/\d{5}/)?.[0] || '',
