@@ -20,6 +20,9 @@ jobs:
       - name: Node syntax verification
         run: |
           for file in api/shared/*.js api/src/*.js api/tests/*.js api/test/*.js; do node --check "$file"; done
+      - name: Install API dependencies
+        working-directory: api
+        run: npm install --no-audit --no-fund
       - name: Regression tests
         working-directory: api
         run: node --test tests/*.test.js test/*.test.js
