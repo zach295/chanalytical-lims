@@ -6679,6 +6679,15 @@ document.addEventListener('DOMContentLoaded', function() {
       const clients     = clientsData.clients || [];
       const intakeRows  = intakeData.items || [];
 
+      // A shared client code could otherwise select billing rows for more
+      // than one legal account. Refuse this ambiguous selection.
+      const selectedMatches = clients.filter(c => c.clientCode === company || c.clientName === company);
+      if (selectedMatches.length !== 1) {
+        throw new Error(selectedMatches.length
+          ? 'Multiple client accounts share this selection code. Resolve the duplicate client code before exporting.'
+          : 'Selected client could not be resolved. Refresh the client list and try again.');
+      }
+
       // Build intake lookup by lab ID for city/town
       const intakeMap = {};
       for (const r of intakeRows) {
@@ -6817,8 +6826,8 @@ document.addEventListener('DOMContentLoaded', function() {
       // The state workbook has a fixed 11-column regulatory schema and no
       // customer-name field. Keep its columns unchanged; apply DBA to the
       // export filename and workbook metadata instead.
-      const selectedClient = clients.find(c => c.clientCode === company || c.clientName === company);
-      const coName = selectedClient?.displayName || selectedClient?.clientName || company || 'All';
+      const selectedClient = selectedMatches[0];
+      const coName = selectedClient.displayName || selectedClient.clientName;
       wb.Props = { ...(wb.Props || {}), Title: 'Radon Water State Report — ' + coName,
         Subject: 'Client DBA: ' + coName };
       const coSlug    = coName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
